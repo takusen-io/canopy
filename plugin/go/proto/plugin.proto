@@ -110,6 +110,20 @@ message PluginBeginRequest {
   // next_validator_set is the core-frozen next committee once the handoff
   // cutoff has been reached; empty before preparation.
   bytes next_validator_set = 4;
+  repeated AuxiliaryCertificate auxiliary_certificates = 5;
+}
+
+message AuxiliaryCandidate {
+  string kind = 1;
+  bytes key = 2;
+  bytes digest = 3;
+  bytes payload = 4;
+}
+
+message AuxiliaryAggregateSignature { bytes signature = 1; bytes bitmap = 2; }
+message AuxiliaryCertificate {
+  AuxiliaryCandidate candidate = 1;
+  AuxiliaryAggregateSignature signature = 2;
 }
 
 // PluginBeginResponse acknowledges begin block execution
@@ -165,6 +179,8 @@ message PluginEndResponse {
   // validator_set_epoch_prepare freezes the next core committee atomically at
   // the nominal boundary while the current committee remains authoritative.
   bool validator_set_epoch_prepare = 3; // @gotags: json:"validatorSetEpochPrepare"
+  repeated AuxiliaryCandidate auxiliary_candidates = 4; // @gotags: json:"auxiliaryCandidates,omitempty"
+  bool replace_auxiliary_candidates = 5; // @gotags: json:"replaceAuxiliaryCandidates"
   PluginError error = 99;
 }
 

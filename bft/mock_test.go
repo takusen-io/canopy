@@ -574,6 +574,8 @@ func (t *testController) SendToProposer(msg lib.Signable) {
 	t.sendToProposerChan <- msg
 }
 
+func (t *testController) AuxiliaryCandidates() []*lib.AuxiliaryCandidate { return nil }
+
 func (t *testController) LoadMinimumEvidenceHeight(_, _ uint64) (*uint64, lib.ErrorI) {
 	h := uint64(0)
 	return &h, nil

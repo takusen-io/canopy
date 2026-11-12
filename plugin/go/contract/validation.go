@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"golang.org/x/crypto/sha3"
+	"google.golang.org/protobuf/proto"
 )
 
 const addressSize = 20
@@ -279,6 +280,23 @@ func checkObserveAuthorizations(message *MessageObserveAuthorizations) ([]byte, 
 		seen[authorization.RequestId] = struct{}{}
 	}
 	return message.ObserverAddress, nil
+}
+
+func checkQueueAuthorization(message *MessageQueueAuthorization) ([]byte, *PluginError) {
+	if message == nil || !validAddress(message.RelayerAddress) || message.Authorization == nil {
+		return nil, ErrInvalidTransaction("invalid queued request authorization")
+	}
+	authorization := message.Authorization
+	if authorization.DirectEoa || len(authorization.ObserverAddress) != 0 || authorization.AuthorizationChainBlockNumber == 0 ||
+		len(authorization.AuthorizationChainBlockHash) != 32 {
+		return nil, ErrInvalidTransaction("queued authorization must contain pinned ERC-1271 evidence without an observer")
+	}
+	copy := proto.Clone(authorization).(*MessageObserveAuthorization)
+	copy.ObserverAddress = message.RelayerAddress
+	if _, err := checkObserveAuthorization(copy); err != nil {
+		return nil, err
+	}
+	return message.RelayerAddress, nil
 }
 
 func checkSubmitExecution(message *MessageSubmitExecution) ([]byte, *PluginError) {

@@ -20,6 +20,7 @@ const (
 	MessageResolveSettlementName     = "takusenResolveSettlement"
 	MessageObserveAuthorizationName  = "takusenObserveAuthorization"
 	MessageObserveAuthorizationsName = "takusenObserveAuthorizations"
+	MessageQueueAuthorizationName    = "takusenQueueAuthorization"
 	MessageSubmitExecutionName       = "takusenSubmitExecution"
 	MessageSubmitExecutionsName      = "takusenSubmitExecutions"
 	MessageReassignRequestName       = "takusenReassignRequest"
@@ -52,6 +53,7 @@ var ContractConfig = &PluginConfig{
 		MessageResolveSettlementName,
 		MessageObserveAuthorizationName,
 		MessageObserveAuthorizationsName,
+		MessageQueueAuthorizationName,
 		MessageSubmitExecutionName,
 		MessageSubmitExecutionsName,
 		MessageReassignRequestName,
@@ -77,6 +79,7 @@ var ContractConfig = &PluginConfig{
 		"type.googleapis.com/types.MessageResolveSettlement",
 		"type.googleapis.com/types.MessageObserveAuthorization",
 		"type.googleapis.com/types.MessageObserveAuthorizations",
+		"type.googleapis.com/types.MessageQueueAuthorization",
 		"type.googleapis.com/types.MessageSubmitExecution",
 		"type.googleapis.com/types.MessageSubmitExecutions",
 		"type.googleapis.com/types.MessageReassignRequest",
@@ -104,6 +107,8 @@ var ContractConfig = &PluginConfig{
 		assignmentIndexPrefix, epochValidatorPrefix, settlementIndexPrefix, producerIdentityPrefix,
 		rotationProofIndexPrefix, pendingSlashPrefix, latestEpochPrefix, provisionalReservationIndexPrefix,
 		activeServicerIndexPrefix, pendingEpochAuthorizationPrefix, pendingBridgeBurnPrefix,
+		handoffManifestPrefix, domainRotationStatePrefix, handoffCancellationManifestPrefix,
+		consensusCertificatePrefix, nativeAuthorizationIntentPrefix, pendingAuthorizationPrefix,
 	},
 }
 
@@ -197,6 +202,12 @@ func (c *Contract) BeginBlock(request *PluginBeginRequest) *PluginBeginResponse 
 		}
 		deletes = append(deletes, nextDeletes...)
 	}
+	for key, record := range c.consumeAuxiliaryCertificates(request.Height, request.AuxiliaryCertificates) {
+		records[key] = record
+	}
+	if expired, pruneErr := c.expiredPendingAuthorizations(request.Height, 32); pruneErr == nil {
+		deletes = append(deletes, expired...)
+	}
 	write := &PluginStateWriteRequest{Sets: []*PluginSetOp{{Key: KeyForBlockAnchor(), Value: encoded}}}
 	for _, key := range sortedRecordKeys(records) {
 		value, marshalErr := Marshal(records[key])
@@ -247,6 +258,8 @@ func (c *Contract) CheckTx(request *PluginCheckRequest) *PluginCheckResponse {
 		signer, err = checkObserveAuthorization(message)
 	case *MessageObserveAuthorizations:
 		signer, err = checkObserveAuthorizations(message)
+	case *MessageQueueAuthorization:
+		signer, err = checkQueueAuthorization(message)
 	case *MessageSubmitExecution:
 		signer, err = checkSubmitExecution(message)
 	case *MessageSubmitExecutions:
@@ -314,6 +327,8 @@ func (c *Contract) DeliverTx(request *PluginDeliverRequest) *PluginDeliverRespon
 		return c.deliverObserveAuthorization(request.Height, message)
 	case *MessageObserveAuthorizations:
 		return c.deliverObserveAuthorizations(request.Height, message)
+	case *MessageQueueAuthorization:
+		return c.deliverQueueAuthorization(request.Height, message)
 	case *MessageSubmitExecution:
 		return c.deliverSubmitExecution(request.Height, message)
 	case *MessageSubmitExecutions:

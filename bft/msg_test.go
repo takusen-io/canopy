@@ -150,6 +150,16 @@ func TestSignBytes(t *testing.T) {
 	}
 }
 
+func TestReplicaSignBytesIgnoreAuxiliaryVotes(t *testing.T) {
+	message := &Message{Qc: &QC{Header: &lib.View{Height: 7, Round: 2, Phase: PrecommitVote}, BlockHash: []byte("block"), ResultsHash: []byte("results")}}
+	want := append([]byte(nil), message.SignBytes()...)
+	message.AuxiliaryVotes = []*AuxiliaryVote{{
+		Candidate: &lib.AuxiliaryCandidate{Kind: "watcher", Key: []byte("fact"), Digest: make([]byte, 32)},
+		Signature: []byte("best-effort"),
+	}}
+	require.Equal(t, want, message.SignBytes(), "best-effort auxiliary votes must never change the ordinary consensus vote")
+}
+
 // TestObsoleteElectionProposalIsRejectedBeforeValidation() verifies deterministic mode rejects obsolete election proposals early.
 func TestObsoleteElectionProposalIsRejectedBeforeValidation(t *testing.T) {
 	c := newTestConsensus(t, Election, 3)

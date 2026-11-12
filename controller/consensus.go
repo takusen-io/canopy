@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"fmt"
 	"math/rand"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/canopy-network/canopy/bft"
@@ -520,8 +522,76 @@ func (c *Controller) SendToReplicas(replicas lib.ValidatorSet, msg lib.Signable)
 	}
 }
 
+func (c *Controller) AuxiliaryCandidates() []*lib.AuxiliaryCandidate {
+	result := append([]*lib.AuxiliaryCandidate(nil), c.FSM.AuxiliaryCandidates()...)
+	c.auxiliaryMu.RLock()
+	defer c.auxiliaryMu.RUnlock()
+	local := make([]*lib.AuxiliaryCandidate, 0, len(c.auxiliaryCandidates))
+	for _, candidate := range c.auxiliaryCandidates {
+		local = append(local, candidate)
+	}
+	sort.Slice(local, func(i, j int) bool {
+		if local[i].Kind != local[j].Kind {
+			return local[i].Kind < local[j].Kind
+		}
+		if compared := bytes.Compare(local[i].Key, local[j].Key); compared != 0 {
+			return compared < 0
+		}
+		return bytes.Compare(local[i].Digest, local[j].Digest) < 0
+	})
+	for _, candidate := range local {
+		if len(result) == 32 {
+			break
+		}
+		result = append(result, candidate)
+	}
+	return result
+}
+
+func (c *Controller) SubmitAuxiliaryCandidate(candidate *lib.AuxiliaryCandidate) error {
+	if candidate == nil || len(candidate.Kind) == 0 || len(candidate.Kind) > 64 || len(candidate.Key) == 0 || len(candidate.Key) > 128 || len(candidate.Digest) != 32 || len(candidate.Payload) > 16<<10 {
+		return fmt.Errorf("invalid auxiliary candidate")
+	}
+	// Runtime submissions are reserved for independently verified external
+	// observations. Native-state authorizations come only from deterministic
+	// plugin EndBlock output and cannot be injected through the admin API.
+	if !strings.HasPrefix(candidate.Kind, "evm-observation/") {
+		return fmt.Errorf("runtime auxiliary candidates must be EVM observations")
+	}
+	logical := candidate.Kind + string(candidate.Key)
+	c.auxiliaryMu.Lock()
+	defer c.auxiliaryMu.Unlock()
+	if prior := c.auxiliaryCandidates[logical]; prior != nil && (!bytes.Equal(prior.Digest, candidate.Digest) || !bytes.Equal(prior.Payload, candidate.Payload)) {
+		return fmt.Errorf("conflicting auxiliary candidate")
+	}
+	if len(c.auxiliaryCandidates) >= 32 && c.auxiliaryCandidates[logical] == nil {
+		return fmt.Errorf("auxiliary candidate pool is full")
+	}
+	c.auxiliaryCandidates[logical] = candidate
+	return nil
+}
+
+func (c *Controller) consumeAuxiliaryCertificates(certificates []*lib.AuxiliaryCertificate) {
+	c.auxiliaryMu.Lock()
+	defer c.auxiliaryMu.Unlock()
+	for _, certificate := range certificates {
+		if candidate := certificate.GetCandidate(); candidate != nil {
+			delete(c.auxiliaryCandidates, candidate.Kind+string(candidate.Key))
+		}
+	}
+}
+
 // SendToProposer() sends a bft message to the leader of the Consensus round
 func (c *Controller) SendToProposer(msg lib.Signable) {
+	if consensusMessage, ok := msg.(*bft.Message); ok && consensusMessage.IsReplicaMessage() {
+		for _, candidate := range c.AuxiliaryCandidates() {
+			if candidate != nil && len(candidate.Digest) == 32 {
+				consensusMessage.AuxiliaryVotes = append(consensusMessage.AuxiliaryVotes, &bft.AuxiliaryVote{
+					Candidate: candidate, Signature: c.PrivateKey.Sign(candidate.Digest),
+				})
+			}
+		}
+	}
 	// sign the message
 	if err := msg.Sign(c.PrivateKey); err != nil {
 		// log the error

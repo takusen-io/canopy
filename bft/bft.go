@@ -669,15 +669,17 @@ func (b *BFT) StartCommitPhase() {
 		b.RoundInterrupt()
 		return
 	}
+	auxiliaryCertificates := b.AuxiliaryCertificates(vote)
 	// SEND MSG TO REPLICAS
 	b.SendToReplicas(b.ValidatorSet, &Message{
 		Header: b.Copy(), // header
 		Qc: &QC{
-			Header:      vote.Qc.Header,   // vote view
-			BlockHash:   b.GetBlockHash(), // vote block payload
-			ResultsHash: b.Results.Hash(), // vote certificate results payload
-			ProposerKey: b.ProposerKey,
-			Signature:   as,
+			Header:                vote.Qc.Header,   // vote view
+			BlockHash:             b.GetBlockHash(), // vote block payload
+			ResultsHash:           b.Results.Hash(), // vote certificate results payload
+			ProposerKey:           b.ProposerKey,
+			Signature:             as,
+			AuxiliaryCertificates: auxiliaryCertificates,
 		},
 		Timestamp: timestamp,
 	})
@@ -1413,6 +1415,8 @@ type (
 		SendToReplicas(replicas lib.ValidatorSet, msg lib.Signable)
 		// SendToProposer() is a P2P call to directly send a Consensus message to the Leader
 		SendToProposer(msg lib.Signable)
+		// AuxiliaryCandidates returns bounded deterministic/local watcher facts.
+		AuxiliaryCandidates() []*lib.AuxiliaryCandidate
 		// LoadRootChainId() returns the unique identifier of the root chain
 		LoadRootChainId(height uint64) (rootChainId uint64)
 		// IsOwnRoot() returns a boolean if self chain is root

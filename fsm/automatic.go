@@ -23,6 +23,14 @@ func (s *StateMachine) BeginBlock() (lib.Events, lib.ErrorI) {
 	}
 	// execute plugin begin block if enabled
 	if s.Plugin != nil {
+		var auxiliaryCertificates []*lib.AuxiliaryCertificate
+		if s.Height() > 1 {
+			certificate, loadErr := s.LoadCertificate(s.Height() - 1)
+			if loadErr != nil {
+				return nil, loadErr
+			}
+			auxiliaryCertificates = certificate.AuxiliaryCertificates
+		}
 		validatorSet, err := s.EncodeActiveValidatorSet()
 		if err != nil {
 			return nil, err
@@ -40,10 +48,11 @@ func (s *StateMachine) BeginBlock() (lib.Events, lib.ErrorI) {
 			return nil, err
 		}
 		resp, err := s.Plugin.BeginBlock(s, &lib.PluginBeginRequest{
-			Height:            s.height,
-			PreviousBlockHash: previousBlockHash,
-			ValidatorSet:      validatorSet,
-			NextValidatorSet:  nextValidatorSet,
+			Height:                s.height,
+			PreviousBlockHash:     previousBlockHash,
+			ValidatorSet:          validatorSet,
+			NextValidatorSet:      nextValidatorSet,
+			AuxiliaryCertificates: auxiliaryCertificates,
 		})
 		if err != nil {
 			return nil, err
@@ -146,6 +155,35 @@ func (s *StateMachine) EndBlock(proposerAddress []byte) (events lib.Events, err 
 			}
 			if err = s.addPluginEvents(resp.Events); err != nil {
 				return nil, err
+			}
+			if resp.ReplaceAuxiliaryCandidates {
+				if len(resp.AuxiliaryCandidates) > 32 {
+					return nil, lib.ErrInvalidArgument()
+				}
+				logical := make(map[string]struct{}, len(resp.AuxiliaryCandidates))
+				for _, candidate := range resp.AuxiliaryCandidates {
+					if candidate == nil || len(candidate.Kind) == 0 || len(candidate.Kind) > 64 || len(candidate.Key) == 0 || len(candidate.Key) > 128 || len(candidate.Digest) != 32 || len(candidate.Payload) > 16<<10 {
+						return nil, lib.ErrInvalidArgument()
+					}
+					key := candidate.Kind + string(candidate.Key)
+					if _, duplicate := logical[key]; duplicate {
+						return nil, lib.ErrInvalidArgument()
+					}
+					logical[key] = struct{}{}
+				}
+				if len(resp.AuxiliaryCandidates) == 0 {
+					if err = s.Delete(AuxiliaryCandidatesKey()); err != nil {
+						return nil, err
+					}
+				} else {
+					encoded, marshalErr := lib.Marshal(&lib.AuxiliaryCandidates{Candidates: resp.AuxiliaryCandidates})
+					if marshalErr != nil {
+						return nil, marshalErr
+					}
+					if err = s.Set(AuxiliaryCandidatesKey(), encoded); err != nil {
+						return nil, err
+					}
+				}
 			}
 			if resp.ValidatorSetEpochPrepare {
 				if err = s.PrepareValidatorSets(); err != nil {

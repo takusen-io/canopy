@@ -359,6 +359,42 @@ func validateProposalTime(proposed uint64, previous *lib.BlockResult) lib.ErrorI
 	return nil
 }
 
+type auxiliaryDigestSignBytes []byte
+
+func (a auxiliaryDigestSignBytes) SignBytes() []byte { return a }
+
+// sanitizeAuxiliaryCertificate retains only an independently valid strict
+// >2/3 certificate for the application-selected manifest root. Auxiliary
+// failure is deliberately fail-open for Native block consensus: it delays the
+// external handoff and the next block retries collection.
+func (c *Controller) sanitizeAuxiliaryCertificate(qc *lib.QuorumCertificate) {
+	if qc == nil {
+		return
+	}
+	if len(qc.AuxiliaryCertificates) > 32 {
+		qc.AuxiliaryCertificates = nil
+		return
+	}
+	valid := make([]*lib.AuxiliaryCertificate, 0, len(qc.AuxiliaryCertificates))
+	logical := make(map[string]struct{}, len(qc.AuxiliaryCertificates))
+	for _, certificate := range qc.AuxiliaryCertificates {
+		candidate := certificate.GetCandidate()
+		if candidate == nil || len(candidate.Kind) == 0 || len(candidate.Kind) > 64 || len(candidate.Key) == 0 || len(candidate.Key) > 128 || len(candidate.Digest) != 32 || len(candidate.Payload) > 16<<10 || certificate.Signature == nil {
+			continue
+		}
+		key := candidate.Kind + string(candidate.Key)
+		if _, duplicate := logical[key]; duplicate {
+			continue
+		}
+		partial, err := certificate.Signature.Check(auxiliaryDigestSignBytes(candidate.Digest), c.Consensus.ValidatorSet)
+		if err == nil && !partial {
+			logical[key] = struct{}{}
+			valid = append(valid, certificate)
+		}
+	}
+	qc.AuxiliaryCertificates = valid
+}
+
 // CommitCertificate() is executed after the quorum agrees on a block
 // - applies block against the fsm
 // - indexes the block and its transactions
@@ -395,6 +431,8 @@ func (c *Controller) CommitCertificate(qc *lib.QuorumCertificate, block *lib.Blo
 			return
 		}
 	}
+	c.sanitizeAuxiliaryCertificate(qc)
+	c.consumeAuxiliaryCertificates(qc.AuxiliaryCertificates)
 	// log indexing the quorum certificate
 	c.log.Debugf("Indexing certificate for height %d", qc.Header.Height)
 	// index the quorum certificate in the store
@@ -508,6 +546,8 @@ func (c *Controller) CommitCertificateParallel(qc *lib.QuorumCertificate, block 
 			return
 		}
 	}
+	c.sanitizeAuxiliaryCertificate(qc)
+	c.consumeAuxiliaryCertificates(qc.AuxiliaryCertificates)
 	// log indexing the quorum certificate
 	c.log.Debugf("Indexing certificate for height %d", qc.Header.Height)
 	// index the quorum certificate in the store

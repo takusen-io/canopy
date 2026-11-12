@@ -11,7 +11,76 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+func (c *Contract) deliverQueueAuthorization(height uint64, message *MessageQueueAuthorization) *PluginDeliverResponse {
+	authorization := proto.Clone(message.Authorization).(*MessageObserveAuthorization)
+	authorization.ObserverAddress = nil
+	if found, err := c.read(KeyForRequest(authorization.RequestId), new(RequestRecord)); err != nil {
+		return &PluginDeliverResponse{Error: err}
+	} else if found {
+		return &PluginDeliverResponse{}
+	}
+	key := KeyForPendingAuthorization(authorization.RequestId)
+	existing := new(PendingAuthorization)
+	if found, err := c.read(key, existing); err != nil {
+		return &PluginDeliverResponse{Error: err}
+	} else if found {
+		encoded, marshalErr := Marshal(authorization)
+		if marshalErr != nil {
+			return &PluginDeliverResponse{Error: marshalErr}
+		}
+		if !bytes.Equal(existing.Authorization, encoded) {
+			return &PluginDeliverResponse{Error: ErrConflict("request authorization intent already exists with different fields")}
+		}
+		return &PluginDeliverResponse{}
+	}
+	params, paramsErr := c.currentProtocolParams()
+	if paramsErr != nil {
+		return &PluginDeliverResponse{Error: paramsErr}
+	}
+	if !authorizationWindowValid(height, authorization.AuthorizationDeadline, params.AuthorizationDeadlineBlocks) {
+		return &PluginDeliverResponse{Error: ErrInvalidTransaction("request authorization has expired or exceeds the governed limit")}
+	}
+	encoded, err := Marshal(authorization)
+	if err != nil {
+		return &PluginDeliverResponse{Error: err}
+	}
+	return &PluginDeliverResponse{Error: c.write(map[string]proto.Message{string(key): &PendingAuthorization{
+		RequestId: authorization.RequestId, SettlementDomainId: append([]byte(nil), authorization.SettlementDomainId...),
+		Authorization: encoded, QueuedHeight: height,
+	}})}
+}
+
+func (c *Contract) expiredPendingAuthorizations(height uint64, limit uint64) ([][]byte, *PluginError) {
+	entries, err := c.rangeReadPage(PendingAuthorizationPrefix(), nil, limit)
+	if err != nil {
+		return nil, err
+	}
+	deletes := make([][]byte, 0)
+	for _, entry := range entries {
+		pending := new(PendingAuthorization)
+		if Unmarshal(entry.Value, pending) != nil {
+			continue
+		}
+		authorization := new(MessageObserveAuthorization)
+		if Unmarshal(pending.Authorization, authorization) != nil {
+			continue
+		}
+		found, readErr := c.read(KeyForRequest(pending.RequestId), new(RequestRecord))
+		if readErr != nil {
+			return nil, readErr
+		}
+		if found || authorization.AuthorizationDeadline <= height || authorization.DeadlineHeight <= height {
+			deletes = append(deletes, append([]byte(nil), entry.Key...))
+		}
+	}
+	return deletes, nil
+}
+
 func (c *Contract) deliverObserveAuthorization(height uint64, message *MessageObserveAuthorization) *PluginDeliverResponse {
+	return c.deliverObserveAuthorizationCertified(height, message, false)
+}
+
+func (c *Contract) deliverObserveAuthorizationCertified(height uint64, message *MessageObserveAuthorization, certified bool) *PluginDeliverResponse {
 	params, paramsErr := c.currentProtocolParams()
 	if paramsErr != nil {
 		return &PluginDeliverResponse{Error: paramsErr}
@@ -50,16 +119,11 @@ func (c *Contract) deliverObserveAuthorization(height uint64, message *MessageOb
 	reached := false
 	records := make(map[string]proto.Message)
 	if message.DirectEoa {
-		validators, _, activeErr := c.activeValidators()
-		if activeErr != nil {
-			return &PluginDeliverResponse{Error: activeErr}
-		}
-		if _, ok := validators[hex.EncodeToString(message.ObserverAddress)]; !ok {
-			return &PluginDeliverResponse{Error: ErrUnauthorized("direct authorization submitter is not an active validator")}
-		}
 		if verifyErr := verifyEOARequestAuthorization(message, params); verifyErr != nil {
 			return &PluginDeliverResponse{Error: verifyErr}
 		}
+		reached = true
+	} else if certified {
 		reached = true
 	} else {
 		observation, observed, observeErr := c.observe(observationAuthorization, subject, claim, message.ObserverAddress, height)
@@ -154,6 +218,9 @@ func (c *Contract) deliverObserveAuthorization(height uint64, message *MessageOb
 			records[string(KeyForProvisionalReservation(message.SettlementDomainId, message.Requester, message.RequestId))] = &ReplayMarker{Id: []byte(message.RequestId)}
 		}
 	}
+	if certified && reached {
+		return &PluginDeliverResponse{Error: c.writeChanges(records, [][]byte{KeyForPendingAuthorization(message.RequestId)})}
+	}
 	return &PluginDeliverResponse{Error: c.write(records)}
 }
 
@@ -185,13 +252,6 @@ func (c *Contract) deliverDirectAuthorizations(height uint64, message *MessageOb
 	params, err := c.currentProtocolParams()
 	if err != nil {
 		return &PluginDeliverResponse{Error: err}
-	}
-	validators, _, err := c.activeValidators()
-	if err != nil {
-		return &PluginDeliverResponse{Error: err}
-	}
-	if _, ok := validators[hex.EncodeToString(message.ObserverAddress)]; !ok {
-		return &PluginDeliverResponse{Error: ErrUnauthorized("direct authorization submitter is not an active validator")}
 	}
 	if verifyErr := verifyEOARequestAuthorizations(message.Authorizations, params); verifyErr != nil {
 		return &PluginDeliverResponse{Error: verifyErr}
@@ -348,6 +408,10 @@ func assignmentMaxProviderCost(reservedBudget uint64, modelIndex, modelCount int
 }
 
 func (c *Contract) deliverReassignRequest(height uint64, message *MessageReassignRequest) *PluginDeliverResponse {
+	return c.deliverReassignRequestWithCertificate(height, message, false)
+}
+
+func (c *Contract) deliverReassignRequestWithCertificate(height uint64, message *MessageReassignRequest, certified bool) *PluginDeliverResponse {
 	request := new(RequestRecord)
 	if found, err := c.read(KeyForRequest(message.RequestId), request); err != nil {
 		return &PluginDeliverResponse{Error: err}
@@ -377,11 +441,16 @@ func (c *Contract) deliverReassignRequest(height uint64, message *MessageReassig
 	}
 	subject := reassignmentSubject(message, nextAttempt)
 	claim := hashFields([]byte("reassignment"), []byte(message.RequestId), []byte(message.Model), uint32Bytes(nextAttempt), uint64Bytes(message.NewDeadlineHeight))
-	observation, reached, err := c.observe(observationReassignment, subject, claim, message.ObserverAddress, height)
-	if err != nil {
-		return &PluginDeliverResponse{Error: err}
+	reached := certified
+	records := make(map[string]proto.Message)
+	if !certified {
+		observation, observed, err := c.observe(observationReassignment, subject, claim, message.ObserverAddress, height)
+		if err != nil {
+			return &PluginDeliverResponse{Error: err}
+		}
+		reached = observed
+		records = observationRecords(observationReassignment, subject, claim, message.ObserverAddress, observation)
 	}
-	records := observationRecords(observationReassignment, subject, claim, message.ObserverAddress, observation)
 	if reached {
 		if !awaitingServicer {
 			previousAddress := append([]byte(nil), assignment.ServicerAddress...)
@@ -550,6 +619,14 @@ func (c *Contract) deliverFinalizeRequests(height uint64, message *MessageFinali
 	if err := c.verifyValidatorCertificate(settlementBatchSubject(message.Requests), message.ValidatorSetId, message.SignerBitmap, message.AggregateSignature); err != nil {
 		return &PluginDeliverResponse{Error: err}
 	}
+	return c.deliverFinalizeRequestsConsensus(height, message)
+}
+
+// deliverFinalizeRequestsConsensus applies an EVM fact already certified by
+// the Native auxiliary-certificate path. Its aggregate signs the
+// domain/block-bound observation envelope, so it must not be reinterpreted as
+// the legacy settlement-subject certificate checked above.
+func (c *Contract) deliverFinalizeRequestsConsensus(height uint64, message *MessageFinalizeRequests) *PluginDeliverResponse {
 	loaded, loadErr := c.prefetchFinalizationState(message.Requests)
 	if loadErr != nil {
 		return &PluginDeliverResponse{Error: loadErr}

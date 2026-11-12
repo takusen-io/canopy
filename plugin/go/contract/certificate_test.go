@@ -466,6 +466,11 @@ func TestRotationCancellationAuthorizationRetainsRecoveryIndex(t *testing.T) {
 		HandoffGeneration:  validatorHandoffGeneration(clock), HandoffTimestamp: clock.ValidatorHandoffTimestamp,
 	}
 	message.ProofId = quorumProofID(message.ProofKind, message.ValidatorSetId, message.Digest)
+	if response := contract.deliverSubmitQuorumSignature(20, message); response.Error == nil {
+		t.Fatal("legacy coordinator-driven cancellation share was accepted")
+	} else {
+		return
+	}
 	for index, signer := range signers {
 		message.ObserverAddress = signer.address
 		signature, err := scheme.Sign(signer.private, digest[:])
@@ -555,11 +560,6 @@ func TestPreparedRotationRequiresExactRawVotingPower(t *testing.T) {
 			params := defaultProtocolParams()
 			params.Revision, params.ValidatorSetId = 1, 5
 			store.put(t, KeyForProtocolParams(), params)
-			clock := &EpochClock{
-				CurrentEpoch: 1, StartHeight: 1, EndHeight: 100, ValidatorSetId: 5,
-				ValidatorHandoffTimestamp: 1_000,
-			}
-
 			suite := drandbls.NewBLS12381Suite()
 			validators := make([]*Validator, len(weights))
 			for index, weight := range weights {
@@ -575,62 +575,27 @@ func TestPreparedRotationRequiresExactRawVotingPower(t *testing.T) {
 				store.put(t, KeyForEpochValidator(2, validator.Address), validator)
 			}
 			sort.Slice(validators, func(i, j int) bool { return bytes.Compare(validators[i].PublicKey, validators[j].PublicKey) < 0 })
-			completePreparedClock(clock, params, validatorRosterHash(append([]*Validator(nil), validators...)))
-			store.put(t, KeyForEpochClock(), clock)
-			points := make([]kyber.Point, len(validators))
+			rawWeights := make([]uint64, len(validators))
 			for index, validator := range validators {
-				point, err := bdnPublicKey(validator.PublicKey)
-				if err != nil {
-					t.Fatal(err)
-				}
-				points[index] = point
+				rawWeights[index] = validator.StakedAmount
 			}
-			mask, err := sign.NewMask(suite, points, nil)
-			if err != nil {
-				t.Fatal(err)
+			_, rawHash, _, manifestErr := contract.evmRosterHashes(2, nil)
+			if manifestErr != nil || !bytes.Equal(rawHash, keccak256(abiEncodeUint96Array(rawWeights))) {
+				t.Fatalf("raw weights rejected: hash=%x err=%v", rawHash, manifestErr)
 			}
-			message := &MessageSubmitQuorumSignature{
-				ValidatorSetId: 5, NewValidatorSetId: 6,
-				HandoffGeneration: validatorHandoffGeneration(clock), HandoffTimestamp: clock.ValidatorHandoffTimestamp,
-			}
-			for index, validator := range validators {
-				if err = mask.SetBit(index, true); err != nil {
-					t.Fatal(err)
-				}
-				weighted, aggregateErr := bdnScheme().AggregatePublicKeys(mask)
-				if aggregateErr != nil {
-					t.Fatal(aggregateErr)
-				}
-				compressed, marshalErr := weighted.MarshalBinary()
-				if marshalErr != nil {
-					t.Fatal(marshalErr)
-				}
-				key, conversionErr := g1CompressedToEIP2537(compressed)
-				if conversionErr != nil {
-					t.Fatal(conversionErr)
-				}
-				message.ValidatorKeys = append(message.ValidatorKeys, key)
-				message.ValidatorWeights = append(message.ValidatorWeights, validator.StakedAmount)
-				if err = mask.SetMask(make([]byte, len(mask.Mask()))); err != nil {
-					t.Fatal(err)
-				}
-			}
-			if validationErr := contract.validatePreparedRotation(message, params); validationErr != nil {
-				t.Fatalf("raw weights rejected: %v", validationErr)
-			}
-
 			var total, assigned uint64
+			normalized := make([]uint64, len(validators))
 			for _, validator := range validators {
 				total += validator.StakedAmount
 			}
 			for index, validator := range validators {
-				message.ValidatorWeights[index] = validator.StakedAmount * 1_000_000 / total
+				normalized[index] = validator.StakedAmount * 1_000_000 / total
 				if index == len(validators)-1 {
-					message.ValidatorWeights[index] = 1_000_000 - assigned
+					normalized[index] = 1_000_000 - assigned
 				}
-				assigned += message.ValidatorWeights[index]
+				assigned += normalized[index]
 			}
-			if validationErr := contract.validatePreparedRotation(message, params); validationErr == nil {
+			if bytes.Equal(rawHash, keccak256(abiEncodeUint96Array(normalized))) {
 				t.Fatal("normalized validator weights were accepted")
 			}
 		})

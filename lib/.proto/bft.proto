@@ -50,6 +50,15 @@ message Message {
   uint64 timestamp = 8;
   // rcBuildHeight: the root height when the block was built
   uint64 rcBuildHeight = 9;
+  // Optional bounded BDN vote extensions. The normal consensus signature
+  // authenticates these attachments, but consensus progress never depends on
+  // their presence or validity.
+  repeated AuxiliaryVote auxiliary_votes = 10;
+}
+
+message AuxiliaryVote {
+  AuxiliaryCandidate candidate = 1;
+  bytes signature = 2;
 }
 
 // double_sign_evidence is proof that a validator has signed two conflicting proposals at the same block height and round

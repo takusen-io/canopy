@@ -9,6 +9,10 @@ import (
 )
 
 func (c *Contract) deliverObserveDeposit(height uint64, message *MessageObserveDeposit) *PluginDeliverResponse {
+	return c.deliverObserveDepositCertified(height, message, false)
+}
+
+func (c *Contract) deliverObserveDepositCertified(height uint64, message *MessageObserveDeposit, certified bool) *PluginDeliverResponse {
 	params, paramsErr := c.currentProtocolParams()
 	if paramsErr != nil {
 		return &PluginDeliverResponse{Error: paramsErr}
@@ -27,11 +31,16 @@ func (c *Contract) deliverObserveDeposit(height uint64, message *MessageObserveD
 	}
 	subject := depositSubject(message)
 	claim := hashFields([]byte("deposit"), message.ChainTxHash)
-	observation, reached, err := c.observe(observationDeposit, subject, claim, message.ObserverAddress, height)
-	if err != nil {
-		return &PluginDeliverResponse{Error: err}
+	reached := certified
+	records := make(map[string]proto.Message)
+	if !certified {
+		observation, observed, err := c.observe(observationDeposit, subject, claim, message.ObserverAddress, height)
+		if err != nil {
+			return &PluginDeliverResponse{Error: err}
+		}
+		reached = observed
+		records = observationRecords(observationDeposit, subject, claim, message.ObserverAddress, observation)
 	}
-	records := observationRecords(observationDeposit, subject, claim, message.ObserverAddress, observation)
 	if reached {
 		account := new(CreditAccount)
 		found, readErr := c.read(KeyForCredit(message.SettlementDomainId, message.Requester), account)

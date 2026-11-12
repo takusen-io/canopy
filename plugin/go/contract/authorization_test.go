@@ -3,11 +3,46 @@ package contract
 import (
 	"bytes"
 	"crypto/sha256"
+	"strings"
 	"testing"
+
+	"google.golang.org/protobuf/proto"
 
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 	secpECDSA "github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa"
 )
+
+func TestQueueAuthorizationPublishesIntentWithoutValidatorApproval(t *testing.T) {
+	contract, store, _, _ := newMemoryContract(t)
+	params := defaultProtocolParams()
+	params.AuthorizationDeadlineBlocks = 360
+	store.put(t, KeyForProtocolParams(), params)
+	relayer := bytes.Repeat([]byte{0x91}, 20)
+	authorization := &MessageObserveAuthorization{
+		SettlementDomainId: params.SettlementDomains[0].Id, RequestId: "erc1271-request",
+		InputHash: bytes.Repeat([]byte{2}, 32), RequestArchiveId: "sha256:" + strings.Repeat("02", 32),
+		Requester: bytes.Repeat([]byte{3}, 20), ReservedBudget: 10, OutputType: "boolean",
+		OutputMinimum: 0, OutputMaximum: 1, Models: []string{"model"}, ExecutionQuorum: 1,
+		DeadlineHeight: 200, AuthorizationSignature: []byte{1, 2, 3}, AuthorizationDeadline: 200,
+		AuthorizationChainBlockNumber: 77, AuthorizationChainBlockHash: bytes.Repeat([]byte{4}, 32),
+	}
+	authorization.SchemaHash = requestOutputSchemaHash(authorization)
+	message := &MessageQueueAuthorization{RelayerAddress: relayer, Authorization: authorization}
+	if signer, err := checkQueueAuthorization(message); err != nil || !bytes.Equal(signer, relayer) {
+		t.Fatalf("queued authorization validation: signer=%x err=%v", signer, err)
+	}
+	if response := contract.deliverQueueAuthorization(100, message); response.Error != nil {
+		t.Fatal(response.Error)
+	}
+	pending := new(PendingAuthorization)
+	if found, err := contract.read(KeyForPendingAuthorization(authorization.RequestId), pending); err != nil || !found {
+		t.Fatalf("pending authorization missing: found=%v err=%v", found, err)
+	}
+	decoded := new(MessageObserveAuthorization)
+	if proto.Unmarshal(pending.Authorization, decoded) != nil || decoded.RequestId != authorization.RequestId || len(decoded.ObserverAddress) != 0 {
+		t.Fatalf("pending authorization = %+v", decoded)
+	}
+}
 
 func TestDirectEOAAuthorizationMatchesEIP712(t *testing.T) {
 	private := secp256k1.PrivKeyFromBytes(bytes.Repeat([]byte{7}, 32))

@@ -67,41 +67,42 @@ const (
 	// eth
 	EthereumRoutePath = "/v1/eth"
 	// admin
-	KeystoreRoutePath          = "/v1/admin/keystore"
-	KeystoreNewKeyRoutePath    = "/v1/admin/keystore-new-key"
-	KeystoreImportRoutePath    = "/v1/admin/keystore-import"
-	KeystoreImportRawRoutePath = "/v1/admin/keystore-import-raw"
-	KeystoreDeleteRoutePath    = "/v1/admin/keystore-delete"
-	KeystoreGetRoutePath       = "/v1/admin/keystore-get"
-	TxSendRoutePath            = "/v1/admin/tx-send"
-	TxSendVestingRoutePath     = "/v1/admin/tx-send-vesting"
-	TxStakeRoutePath           = "/v1/admin/tx-stake"
-	TxEditStakeRoutePath       = "/v1/admin/tx-edit-stake"
-	TxUnstakeRoutePath         = "/v1/admin/tx-unstake"
-	TxPauseRoutePath           = "/v1/admin/tx-pause"
-	TxUnpauseRoutePath         = "/v1/admin/tx-unpause"
-	TxChangeParamRoutePath     = "/v1/admin/tx-change-param"
-	TxDAOTransferRoutePath     = "/v1/admin/tx-dao-transfer"
-	TxCreateOrderRoutePath     = "/v1/admin/tx-create-order"
-	TxEditOrderRoutePath       = "/v1/admin/tx-edit-order"
-	TxDeleteOrderRoutePath     = "/v1/admin/tx-delete-order"
-	TxDexLimitOrderPath        = "/v1/admin/tx-dex-limit-order"
-	TxDexLiquidityDepositPath  = "/v1/admin/tx-dex-liquidity-deposit"
-	TxDexLiquidityWithdrawPath = "/v1/admin/tx-dex-liquidity-withdraw"
-	TxLockOrderRoutePath       = "/v1/admin/tx-lock-order"
-	TxCloseOrderRoutePath      = "/v1/admin/tx-close-order"
-	TxSubsidyRoutePath         = "/v1/admin/tx-subsidy"
-	TxStartPollRoutePath       = "/v1/admin/tx-start-poll"
-	TxVotePollRoutePath        = "/v1/admin/tx-vote-poll"
-	ResourceUsageRoutePath     = "/v1/admin/resource-usage"
-	PeerInfoRoutePath          = "/v1/admin/peer-info"
-	ConsensusInfoRoutePath     = "/v1/admin/consensus-info"
-	ForceRoundRoutePath        = "/v1/admin/consensus-force-round"
-	PeerBookRoutePath          = "/v1/admin/peer-book"
-	ConfigRoutePath            = "/v1/admin/config"
-	LogsRoutePath              = "/v1/admin/log"
-	AddVoteRoutePath           = "/v1/gov/add-vote"
-	DelVoteRoutePath           = "/v1/gov/del-vote"
+	KeystoreRoutePath           = "/v1/admin/keystore"
+	KeystoreNewKeyRoutePath     = "/v1/admin/keystore-new-key"
+	KeystoreImportRoutePath     = "/v1/admin/keystore-import"
+	KeystoreImportRawRoutePath  = "/v1/admin/keystore-import-raw"
+	KeystoreDeleteRoutePath     = "/v1/admin/keystore-delete"
+	KeystoreGetRoutePath        = "/v1/admin/keystore-get"
+	TxSendRoutePath             = "/v1/admin/tx-send"
+	TxSendVestingRoutePath      = "/v1/admin/tx-send-vesting"
+	TxStakeRoutePath            = "/v1/admin/tx-stake"
+	TxEditStakeRoutePath        = "/v1/admin/tx-edit-stake"
+	TxUnstakeRoutePath          = "/v1/admin/tx-unstake"
+	TxPauseRoutePath            = "/v1/admin/tx-pause"
+	TxUnpauseRoutePath          = "/v1/admin/tx-unpause"
+	TxChangeParamRoutePath      = "/v1/admin/tx-change-param"
+	TxDAOTransferRoutePath      = "/v1/admin/tx-dao-transfer"
+	TxCreateOrderRoutePath      = "/v1/admin/tx-create-order"
+	TxEditOrderRoutePath        = "/v1/admin/tx-edit-order"
+	TxDeleteOrderRoutePath      = "/v1/admin/tx-delete-order"
+	TxDexLimitOrderPath         = "/v1/admin/tx-dex-limit-order"
+	TxDexLiquidityDepositPath   = "/v1/admin/tx-dex-liquidity-deposit"
+	TxDexLiquidityWithdrawPath  = "/v1/admin/tx-dex-liquidity-withdraw"
+	TxLockOrderRoutePath        = "/v1/admin/tx-lock-order"
+	TxCloseOrderRoutePath       = "/v1/admin/tx-close-order"
+	TxSubsidyRoutePath          = "/v1/admin/tx-subsidy"
+	TxStartPollRoutePath        = "/v1/admin/tx-start-poll"
+	TxVotePollRoutePath         = "/v1/admin/tx-vote-poll"
+	ResourceUsageRoutePath      = "/v1/admin/resource-usage"
+	PeerInfoRoutePath           = "/v1/admin/peer-info"
+	ConsensusInfoRoutePath      = "/v1/admin/consensus-info"
+	ForceRoundRoutePath         = "/v1/admin/consensus-force-round"
+	AuxiliaryCandidateRoutePath = "/v1/admin/auxiliary-candidate"
+	PeerBookRoutePath           = "/v1/admin/peer-book"
+	ConfigRoutePath             = "/v1/admin/config"
+	LogsRoutePath               = "/v1/admin/log"
+	AddVoteRoutePath            = "/v1/gov/add-vote"
+	DelVoteRoutePath            = "/v1/gov/del-vote"
 )
 
 const (
@@ -197,6 +198,7 @@ const (
 	PeerInfoRouteName               = "peer-info"
 	ConsensusInfoRouteName          = "consensus-info"
 	ForceRoundRouteName             = "consensus-force-round"
+	AuxiliaryCandidateRouteName     = "auxiliary-candidate"
 	PeerBookRouteName               = "peer-book"
 	ConfigRouteName                 = "config"
 	LogsRouteName                   = "logs"
@@ -300,6 +302,7 @@ var routePaths = routes{
 	PeerInfoRouteName:               {Method: http.MethodGet, Path: PeerInfoRoutePath},
 	ConsensusInfoRouteName:          {Method: http.MethodGet, Path: ConsensusInfoRoutePath},
 	ForceRoundRouteName:             {Method: http.MethodPost, Path: ForceRoundRoutePath},
+	AuxiliaryCandidateRouteName:     {Method: http.MethodPost, Path: AuxiliaryCandidateRoutePath},
 	PeerBookRouteName:               {Method: http.MethodGet, Path: PeerBookRoutePath},
 	ConfigRouteName:                 {Method: http.MethodGet, Path: ConfigRoutePath},
 	LogsRouteName:                   {Method: http.MethodGet, Path: LogsRoutePath},
@@ -419,6 +422,7 @@ func createAdminRouter(s *Server) *httprouter.Router {
 		PeerInfoRouteName:               s.PeerInfo,
 		ConsensusInfoRouteName:          s.ConsensusInfo,
 		ForceRoundRouteName:             s.ConsensusForceRound,
+		AuxiliaryCandidateRouteName:     s.AuxiliaryCandidate,
 		PeerBookRouteName:               s.PeerBook,
 		ConfigRouteName:                 s.Config,
 		LogsRouteName:                   logsHandler(s),

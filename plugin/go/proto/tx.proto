@@ -144,6 +144,16 @@ message MessageObserveAuthorizations {
   repeated MessageObserveAuthorization authorizations = 2;
 }
 
+// MessageQueueAuthorization publishes an ERC-1271 request intent to Native
+// state. The relayer pays the normal Native transaction fee but does not
+// certify the EVM fact. Validator-local watchers independently verify the
+// contract wallet at the pinned finalized block and certify it through
+// consensus vote extensions.
+message MessageQueueAuthorization {
+  bytes relayer_address = 1;
+  MessageObserveAuthorization authorization = 2;
+}
+
 message MessageSubmitExecution {
   bytes servicer_address = 1;
   bytes receipt_json = 2;
@@ -225,6 +235,7 @@ message MessageSubmitQuorumSignature {
   uint64 control_block_number = 27;
   bytes control_block_hash = 28;
   bytes lifecycle_intent_id = 29;
+  uint64 outgoing_authority_cutoff = 30;
 }
 
 message MessageObserveBridgeLock {

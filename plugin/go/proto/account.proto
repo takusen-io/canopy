@@ -193,6 +193,13 @@ message ReservationRecord {
   bytes settlement_domain_id = 14;
 }
 
+message PendingAuthorization {
+  string request_id = 1;
+  bytes settlement_domain_id = 2;
+  bytes authorization = 3;
+  uint64 queued_height = 4;
+}
+
 message SettlementDomain {
   bytes id = 1;
   uint64 chain_id = 2;
@@ -362,6 +369,7 @@ message EpochClock {
   bytes validator_handoff_domain_set_hash = 14;
   uint64 validator_handoff_outgoing_authority_cutoff = 15;
   uint64 validator_handoff_native_chain_id = 16;
+  bool validator_handoff_cancelling = 17;
 }
 
 message BridgeState {
@@ -432,6 +440,86 @@ message QuorumProof {
   uint64 control_block_number = 20;
   bytes control_block_hash = 21;
   bytes lifecycle_intent_id = 22;
+  uint64 outgoing_authority_cutoff = 23;
+}
+
+// ConsensusCertificate is a bounded auxiliary fact certified as part of a
+// finalized Native quorum certificate. Auxiliary participation is optional
+// for ordinary block consensus; this record exists only after strictly more
+// than two-thirds of the frozen committee signed the exact digest.
+message ConsensusCertificate {
+  string kind = 1;
+  bytes key = 2;
+  bytes digest = 3;
+  bytes payload = 4;
+  uint64 validator_set_id = 5;
+  uint64 validator_epoch = 6;
+  bytes signer_bitmap = 7;
+  bytes aggregate_signature = 8;
+  bytes aggregate_signature_eip2537 = 9;
+  uint64 signed_weight = 10;
+  uint64 total_weight = 11;
+  uint64 completed_height = 12;
+}
+
+// ValidatorHandoffDomainManifest is one settlement-domain leaf in the
+// consensus-created global handoff manifest. The leaf hash uses Solidity ABI
+// fixed-width encoding and the manifest root is a positional Keccak Merkle
+// tree over leaves sorted by settlement_domain_id.
+message ValidatorHandoffDomainManifest {
+  bytes settlement_domain_id = 1;
+  uint64 evm_chain_id = 2;
+  bytes verifier_address = 3;
+  uint64 rotation_nonce = 4;
+  bytes validator_keys_hash = 5;
+  bytes validator_weights_hash = 6;
+  bytes leaf_hash = 7;
+  bytes pending_validator_set_hash = 8;
+}
+
+// ValidatorHandoffManifest is atomically created at the nominal epoch
+// boundary (and deterministically renewed). Its root is certified by optional
+// next-height consensus vote attachments, never by plugin transactions.
+message ValidatorHandoffManifest {
+  bytes root = 1;
+  uint64 created_height = 2;
+  uint64 native_chain_id = 3;
+  uint64 epoch = 4;
+  uint64 old_validator_set_id = 5;
+  uint64 new_validator_set_id = 6;
+  bytes frozen_roster_hash = 7;
+  bytes frozen_domain_set_hash = 8;
+  uint64 attempt = 9;
+  bytes generation = 10;
+  uint64 handoff_timestamp = 11;
+  uint64 outgoing_authority_cutoff = 12;
+  repeated ValidatorHandoffDomainManifest domains = 13;
+}
+
+message ValidatorHandoffCancellationDomainManifest {
+  bytes settlement_domain_id = 1;
+  uint64 evm_chain_id = 2;
+  bytes verifier_address = 3;
+  uint64 rotation_nonce = 4;
+  bytes pending_validator_set_hash = 5;
+  bytes leaf_hash = 6;
+}
+
+message ValidatorHandoffCancellationManifest {
+  bytes root = 1;
+  uint64 created_height = 2;
+  uint64 native_chain_id = 3;
+  uint64 epoch = 4;
+  uint64 old_validator_set_id = 5;
+  uint64 new_validator_set_id = 6;
+  bytes handoff_generation = 7;
+  uint64 handoff_timestamp = 8;
+  repeated ValidatorHandoffCancellationDomainManifest domains = 9;
+}
+
+message SettlementDomainRotationState {
+  bytes settlement_domain_id = 1;
+  uint64 rotation_nonce = 2;
 }
 
 message QuorumSignatureShare {

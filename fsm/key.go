@@ -28,24 +28,25 @@ var (
 )
 
 var (
-	accountPrefix          = []byte{1}  // store key prefix for accounts
-	poolPrefix             = []byte{2}  // store key prefix for pools
-	validatorPrefix        = []byte{3}  // store key prefix for validators
-	committeePrefix        = []byte{4}  // store key prefix for validators in committees
-	unstakePrefix          = []byte{5}  // store key prefix for validators currently unstaking
-	pausedPrefix           = []byte{6}  // store key prefix for validators currently paused
-	paramsPrefix           = []byte{7}  // store key prefix for governance parameters
-	nonSignerPrefix        = []byte{8}  // store key prefix for validators who have missed signing QCs
-	lastProposersPrefix    = []byte{9}  // store key prefix for the last proposers
-	supplyPrefix           = []byte{10} // store key prefix for the supply count
-	delegatePrefix         = []byte{11} // store key prefix for the validators who are delegating for committees
-	committeesDataPrefix   = []byte{12} // store key prefix for Quorum Certificate proposals before they are paid
-	orderBookPrefix        = []byte{13} // store key prefix for 'sell orders' before they are bid on
-	retiredCommitteePrefix = []byte{14} // store key prefix for 'retired' (dead) committees
-	dexPrefix              = []byte{15} // store key prefix for 'dex' functionality
-	activeCommitteePrefix  = []byte{16} // epoch-frozen consensus validator sets
-	lockedBatchSegment     = []byte{1}
-	nextBatchSement        = []byte{2}
+	accountPrefix            = []byte{1}  // store key prefix for accounts
+	poolPrefix               = []byte{2}  // store key prefix for pools
+	validatorPrefix          = []byte{3}  // store key prefix for validators
+	committeePrefix          = []byte{4}  // store key prefix for validators in committees
+	unstakePrefix            = []byte{5}  // store key prefix for validators currently unstaking
+	pausedPrefix             = []byte{6}  // store key prefix for validators currently paused
+	paramsPrefix             = []byte{7}  // store key prefix for governance parameters
+	nonSignerPrefix          = []byte{8}  // store key prefix for validators who have missed signing QCs
+	lastProposersPrefix      = []byte{9}  // store key prefix for the last proposers
+	supplyPrefix             = []byte{10} // store key prefix for the supply count
+	delegatePrefix           = []byte{11} // store key prefix for the validators who are delegating for committees
+	committeesDataPrefix     = []byte{12} // store key prefix for Quorum Certificate proposals before they are paid
+	orderBookPrefix          = []byte{13} // store key prefix for 'sell orders' before they are bid on
+	retiredCommitteePrefix   = []byte{14} // store key prefix for 'retired' (dead) committees
+	dexPrefix                = []byte{15} // store key prefix for 'dex' functionality
+	activeCommitteePrefix    = []byte{16} // epoch-frozen consensus validator sets
+	auxiliaryCandidatePrefix = []byte{17} // bounded optional-consensus candidates
+	lockedBatchSegment       = []byte{1}
+	nextBatchSement          = []byte{2}
 )
 
 /*
@@ -108,6 +109,7 @@ func KeyForActiveCommitteeEpoch() []byte {
 func KeyForPreparedCommitteeEpoch() []byte {
 	return lib.JoinLenPrefix(activeCommitteePrefix, []byte{3})
 }
+func AuxiliaryCandidatesKey() []byte { return lib.JoinLenPrefix(auxiliaryCandidatePrefix) }
 func KeyForAccount(addr crypto.AddressI) []byte {
 	return lib.JoinLenPrefix(accountPrefix, addr.Bytes())
 }

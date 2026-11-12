@@ -373,7 +373,7 @@ func (p *Plugin) handleConfigMessage(msg *PluginToFSM) ErrorI {
 // reserves the contiguous single-byte prefixes 1..CoreReservedPrefixMax (accounts, pools, validators,
 // committees, params, ...). Plugins share the FSM keyspace, so their OWN custom records MUST use key
 // prefixes OUTSIDE this range. Kept intentionally in sync with the prefixes defined in fsm/key.go.
-const CoreReservedPrefixMax = 16
+const CoreReservedPrefixMax = 17
 
 // assertNoReservedPrefixCollision panics if the plugin config declares a custom state prefix that
 // collides with a core-reserved prefix. A collision is a single-byte prefix in the range

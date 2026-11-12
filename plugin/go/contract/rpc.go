@@ -58,6 +58,8 @@ func (p *Plugin) StartRPCServer(ctx context.Context) {
 	mux.HandleFunc("GET /v1/takusen/epoch-clock", p.singletonHandler(KeyForEpochClock(), func() proto.Message { return new(EpochClock) }))
 	mux.HandleFunc("GET /v1/takusen/validators/next", p.nextValidatorSetHandler())
 	mux.HandleFunc("GET /v1/takusen/validator-rotations/{old}/{new}/queues-ready", p.rotationQueuesReadyHandler())
+	mux.HandleFunc("GET /v1/takusen/validator-handoffs/current/{domain}", p.validatorHandoffManifestHandler(false))
+	mux.HandleFunc("GET /v1/takusen/validator-handoffs/cancellation/{domain}", p.validatorHandoffManifestHandler(true))
 	mux.HandleFunc("GET /v1/takusen/stake-changes/{id}", p.hexRecordHandler(20, KeyForStakeChange, func() proto.Message { return new(StakeChange) }))
 	mux.HandleFunc("GET /v1/takusen/slashes/{id}", p.hexRecordHandler(32, KeyForSlashEvidence, func() proto.Message { return new(SlashEvidence) }))
 	mux.HandleFunc("GET /v1/takusen/producer-payouts/{id}", p.hexRecordHandler(20, KeyForProducerPayout, func() proto.Message { return new(ProducerPayout) }))
@@ -68,6 +70,7 @@ func (p *Plugin) StartRPCServer(ctx context.Context) {
 	mux.HandleFunc("GET /v1/takusen/bridge/burns/pending", p.listHandler(PendingBridgeBurnPrefix(), func() proto.Message { return new(ReplayMarker) }))
 	mux.HandleFunc("GET /v1/takusen/servicers", p.listHandler(ServicerPrefix(), func() proto.Message { return new(Servicer) }))
 	mux.HandleFunc("GET /v1/takusen/requests", p.listHandler(RequestPrefix(), func() proto.Message { return new(RequestRecord) }))
+	mux.HandleFunc("GET /v1/takusen/authorizations/pending", p.listHandler(PendingAuthorizationPrefix(), func() proto.Message { return new(PendingAuthorization) }))
 	mux.HandleFunc("GET /v1/takusen/assignments/{id}", p.assignmentListHandler())
 	mux.HandleFunc("GET /v1/takusen/settlement-requests", p.settlementRequestListHandler())
 	mux.HandleFunc("GET /v1/takusen/settlement-bundle", p.settlementBundleHandler())
@@ -86,6 +89,10 @@ func (p *Plugin) StartRPCServer(ctx context.Context) {
 	mux.HandleFunc("GET /v1/takusen/quorum-proofs/rotation/{domain}/{old}/{new}", p.rotationProofHandler())
 	mux.HandleFunc("GET /v1/takusen/quorum-proofs/authority/{domain}/{set}", p.settlementDomainAuthorityProofHandler())
 	mux.HandleFunc("GET /v1/takusen/quorum-proofs", p.listHandler(QuorumProofPrefix(), func() proto.Message { return new(QuorumProof) }))
+	mux.HandleFunc("GET /v1/takusen/consensus-certificates", p.listHandler(ConsensusCertificatePrefix(), func() proto.Message { return new(ConsensusCertificate) }))
+	mux.HandleFunc("GET /v1/takusen/consensus-certificates/{kind}/{key}", p.latestConsensusCertificateHandler())
+	mux.HandleFunc("GET /v1/takusen/consensus-certificates/{kind}/{key}/{digest}", p.consensusCertificateHandler())
+	mux.HandleFunc("GET /v1/takusen/native-authorization-intents/{kind}/{domain}", p.nativeAuthorizationIntentHandler())
 	handler := p.secureRPCHandler(mux)
 	listener, err := net.Listen("tcp", addr)
 	if err != nil {
@@ -108,6 +115,129 @@ func (p *Plugin) StartRPCServer(ctx context.Context) {
 	log.Printf("Takusen plugin RPC server (%s) listening on %s", PluginBuild, addr)
 	if err = server.Serve(listener); err != nil && err != http.ErrServerClosed {
 		log.Printf("Takusen plugin RPC server error: %v", err)
+	}
+}
+
+func (p *Plugin) nativeAuthorizationIntentHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		kind := r.PathValue("kind")
+		domain, err := decodePathHex(r.PathValue("domain"), 32)
+		if (kind != "settlement-domain-retirement-readiness" && kind != "settlement-domain-retirement-cancellation-readiness") || err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid native authorization intent"})
+			return
+		}
+		p.recordHandler(func(string) []byte { return KeyForNativeAuthorizationIntent(kind, domain) }, func() proto.Message { return new(QuorumProof) })(w, r)
+	}
+}
+
+func (p *Plugin) latestConsensusCertificateHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		kind := r.PathValue("kind")
+		key, keyErr := hex.DecodeString(strings.TrimPrefix(r.PathValue("key"), "0x"))
+		if kind == "" || len(kind) > 64 || keyErr != nil || len(key) == 0 || len(key) > 128 {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid consensus certificate identity"})
+			return
+		}
+		height, ok := queryHeight(w, r)
+		if !ok {
+			return
+		}
+		entries, err := p.rpcRangePage(w, r, height, ConsensusCertificateIdentityPrefix(kind, key))
+		if err != nil {
+			writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
+			return
+		}
+		var latest *ConsensusCertificate
+		for _, entry := range entries {
+			candidate := new(ConsensusCertificate)
+			if decodeErr := Unmarshal(entry.Value, candidate); decodeErr != nil {
+				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": decodeErr.Error()})
+				return
+			}
+			if latest == nil || candidate.CompletedHeight > latest.CompletedHeight {
+				latest = candidate
+			}
+		}
+		if latest == nil {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "consensus certificate not found"})
+			return
+		}
+		writeJSON(w, http.StatusOK, latest)
+	}
+}
+
+func (p *Plugin) consensusCertificateHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		kind := r.PathValue("kind")
+		key, keyErr := hex.DecodeString(strings.TrimPrefix(r.PathValue("key"), "0x"))
+		digest, digestErr := decodePathHex(r.PathValue("digest"), 32)
+		if kind == "" || len(kind) > 64 || keyErr != nil || len(key) == 0 || len(key) > 128 || digestErr != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid consensus certificate identity"})
+			return
+		}
+		p.recordHandler(func(string) []byte { return KeyForConsensusCertificate(kind, key, digest) }, func() proto.Message { return new(ConsensusCertificate) })(w, r)
+	}
+}
+
+func (p *Plugin) validatorHandoffManifestHandler(cancellation bool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		domainID, err := decodePathHex(r.PathValue("domain"), 32)
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "settlement domain must be 32-byte hexadecimal"})
+			return
+		}
+		height, ok := queryHeight(w, r)
+		if !ok {
+			return
+		}
+		key := KeyForValidatorHandoffManifest()
+		if cancellation {
+			key = KeyForValidatorHandoffCancellationManifest()
+		}
+		state, queryErr := p.QueryState(height, &PluginStateReadRequest{Keys: []*PluginKeyRead{{QueryId: 1, Key: key}}})
+		if queryErr != nil || len(state.Results) != 1 || len(state.Results[0].Entries) != 1 {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "validator handoff manifest is unavailable"})
+			return
+		}
+		if cancellation {
+			manifest := new(ValidatorHandoffCancellationManifest)
+			if Unmarshal(state.Results[0].Entries[0].Value, manifest) != nil {
+				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "validator cancellation manifest is invalid"})
+				return
+			}
+			leaves := make([][]byte, len(manifest.Domains))
+			position := -1
+			for index, domain := range manifest.Domains {
+				leaves[index] = domain.LeafHash
+				if bytes.Equal(domain.SettlementDomainId, domainID) {
+					position = index
+				}
+			}
+			if position < 0 {
+				writeJSON(w, http.StatusNotFound, map[string]string{"error": "settlement domain is absent from the cancellation manifest"})
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]any{"manifest": manifest, "domain": manifest.Domains[position], "leaf_index": position, "merkle_proof": handoffMerkleProof(leaves, position)})
+			return
+		}
+		manifest := new(ValidatorHandoffManifest)
+		if Unmarshal(state.Results[0].Entries[0].Value, manifest) != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "validator handoff manifest is invalid"})
+			return
+		}
+		leaves := make([][]byte, len(manifest.Domains))
+		position := -1
+		for index, domain := range manifest.Domains {
+			leaves[index] = domain.LeafHash
+			if bytes.Equal(domain.SettlementDomainId, domainID) {
+				position = index
+			}
+		}
+		if position < 0 {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "settlement domain is absent from the handoff manifest"})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"manifest": manifest, "domain": manifest.Domains[position], "leaf_index": position, "merkle_proof": handoffMerkleProof(leaves, position)})
 	}
 }
 
@@ -202,7 +332,7 @@ func (p *Plugin) rotationQueuesReadyHandler() http.HandlerFunc {
 				}
 			}
 		}
-		renewalPending := !ready && handoffRepairWindowOpen(clock)
+		renewalPending := !ready && clock.ValidatorHandoffCancelling
 		writeJSON(w, http.StatusOK, map[string]any{
 			"ready": ready, "renewal_pending": renewalPending, "handoff_generation": generation,
 			"handoff_timestamp": clock.ValidatorHandoffTimestamp, "handoff_attempt": clock.ValidatorHandoffAttempt,

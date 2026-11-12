@@ -53,7 +53,7 @@ func (c *Contract) endBlock(request *PluginEndRequest) *PluginEndResponse {
 		string(KeyForProducerIdentity(request.ProposerAddress)): &ProducerIdentity{OwnerAddress: append([]byte(nil), request.ProposerAddress...)},
 	}
 	if request.Height != clock.EndHeight {
-		return &PluginEndResponse{Error: c.write(records)}
+		return c.withNativeAuxiliaryCandidates(request.Height, params, &PluginEndResponse{Error: c.write(records)})
 	}
 	var deletes [][]byte
 	rotationRequired := clock.ValidatorHandoffPrepared
@@ -97,11 +97,17 @@ func (c *Contract) endBlock(request *PluginEndRequest) *PluginEndResponse {
 				return &PluginEndResponse{Error: startErr}
 			}
 			deletes = append(deletes, attemptDeletes...)
+			manifest, manifestErr := c.buildValidatorHandoffManifest(clock, params, request.Height, request.NextValidatorSet)
+			if manifestErr != nil {
+				return &PluginEndResponse{Error: manifestErr}
+			}
+			records[string(KeyForValidatorHandoffManifest())] = manifest
+			records[string(KeyForValidatorHandoffManifestRoot(manifest.Root))] = manifest
 			if clock.EndHeight == math.MaxUint64 {
 				return &PluginEndResponse{Error: ErrState("epoch handoff wait overflow")}
 			}
 			clock.EndHeight++
-			return &PluginEndResponse{ValidatorSetEpochPrepare: true, Error: c.writeChanges(records, deletes)}
+			return c.withNativeAuxiliaryCandidates(request.Height, params, &PluginEndResponse{ValidatorSetEpochPrepare: true, Error: c.writeChanges(records, deletes)}, handoffAuxiliaryCandidate(manifest))
 		}
 	}
 	if rotationRequired {
@@ -112,20 +118,60 @@ func (c *Contract) endBlock(request *PluginEndRequest) *PluginEndResponse {
 		if readyErr != nil {
 			return &PluginEndResponse{Error: readyErr}
 		}
-		if !ready || clock.ConsensusTimeSeconds < clock.ValidatorHandoffTimestamp {
-			if !ready && handoffRepairWindowOpen(clock) {
-				// Advance the global attempt for the exact frozen N+1 roster. Before
-				// the immutable EVM cutoff the outgoing committee may renew metadata;
-				// afterward only the already-pending incoming committee may repair it.
-				deletes, startErr := startValidatorHandoffAttempt(clock)
+		if clock.ValidatorHandoffCancelling {
+			cancelled, cancelErr := c.validatorHandoffCancellationReady(clock)
+			if cancelErr != nil {
+				return &PluginEndResponse{Error: cancelErr}
+			}
+			if cancelled && clock.ConsensusTimeSeconds < clock.ValidatorHandoffTimestamp {
+				attemptDeletes, startErr := startValidatorHandoffAttempt(clock)
 				if startErr != nil {
 					return &PluginEndResponse{Error: startErr}
 				}
+				deletes = append(deletes, attemptDeletes...)
+				clock.ValidatorHandoffCancelling = false
 				if clock.EndHeight == math.MaxUint64 {
 					return &PluginEndResponse{Error: ErrState("epoch handoff retry overflow")}
 				}
+				manifest, manifestErr := c.buildValidatorHandoffManifest(clock, params, request.Height, nil)
+				if manifestErr != nil {
+					return &PluginEndResponse{Error: manifestErr}
+				}
+				records[string(KeyForValidatorHandoffManifest())] = manifest
+				records[string(KeyForValidatorHandoffManifestRoot(manifest.Root))] = manifest
 				clock.EndHeight++
-				return &PluginEndResponse{Error: c.writeChanges(records, deletes)}
+				return c.withNativeAuxiliaryCandidates(request.Height, params, &PluginEndResponse{Error: c.writeChanges(records, deletes)}, handoffAuxiliaryCandidate(manifest))
+			}
+			if clock.EndHeight == math.MaxUint64 {
+				return &PluginEndResponse{Error: ErrState("epoch handoff cancellation wait overflow")}
+			}
+			clock.EndHeight++
+			priority, priorityErr := c.currentHandoffAuxiliaryCandidate(clock)
+			if priorityErr != nil {
+				return &PluginEndResponse{Error: priorityErr}
+			}
+			return c.withNativeAuxiliaryCandidates(request.Height, params, &PluginEndResponse{Error: c.write(records)}, priority)
+		}
+		if !ready || clock.ConsensusTimeSeconds < clock.ValidatorHandoffTimestamp {
+			if !ready && handoffCancellationWindowOpen(clock) {
+				handoff := new(ValidatorHandoffManifest)
+				if found, readErr := c.read(KeyForValidatorHandoffManifest(), handoff); readErr != nil {
+					return &PluginEndResponse{Error: readErr}
+				} else if !found {
+					return &PluginEndResponse{Error: ErrState("validator handoff manifest is unavailable")}
+				}
+				manifest, manifestErr := buildValidatorHandoffCancellationManifest(handoff, request.Height)
+				if manifestErr != nil {
+					return &PluginEndResponse{Error: manifestErr}
+				}
+				clock.ValidatorHandoffCancelling = true
+				records[string(KeyForValidatorHandoffCancellationManifest())] = manifest
+				records[string(KeyForValidatorHandoffCancellationManifestRoot(manifest.Root))] = manifest
+				if clock.EndHeight == math.MaxUint64 {
+					return &PluginEndResponse{Error: ErrState("epoch handoff cancellation wait overflow")}
+				}
+				clock.EndHeight++
+				return c.withNativeAuxiliaryCandidates(request.Height, params, &PluginEndResponse{Error: c.write(records)}, handoffCancellationAuxiliaryCandidate(manifest))
 			}
 			if clock.EndHeight == math.MaxUint64 {
 				return &PluginEndResponse{Error: ErrState("epoch handoff wait overflow")}
@@ -133,7 +179,11 @@ func (c *Contract) endBlock(request *PluginEndRequest) *PluginEndResponse {
 			// Fail closed while retaining the old committee. The precommitted next
 			// snapshot and late stake changes remain untouched.
 			clock.EndHeight++
-			return &PluginEndResponse{Error: c.write(records)}
+			priority, priorityErr := c.currentHandoffAuxiliaryCandidate(clock)
+			if priorityErr != nil {
+				return &PluginEndResponse{Error: priorityErr}
+			}
+			return c.withNativeAuxiliaryCandidates(request.Height, params, &PluginEndResponse{Error: c.write(records)}, priority)
 		}
 	}
 	stakeDeletes, applyErr := c.applyEpochStakeChanges(epoch, params, records)
@@ -153,7 +203,7 @@ func (c *Contract) endBlock(request *PluginEndRequest) *PluginEndResponse {
 		// Bound end-block consensus work. Persist this chunk and extend the same
 		// epoch by one block; the next boundary continues the pending index.
 		clock.EndHeight++
-		return &PluginEndResponse{Error: c.writeChanges(records, deletes)}
+		return c.withNativeAuxiliaryCandidates(request.Height, params, &PluginEndResponse{Error: c.writeChanges(records, deletes)})
 	}
 	if applyErr = c.finalizeEpoch(clock, request.ProposerAddress, producer, params, records); applyErr != nil {
 		return &PluginEndResponse{Error: applyErr}
@@ -177,8 +227,56 @@ func (c *Contract) endBlock(request *PluginEndRequest) *PluginEndResponse {
 	clock.ValidatorHandoffDomainSetHash = nil
 	clock.ValidatorHandoffOutgoingAuthorityCutoff = 0
 	clock.ValidatorHandoffNativeChainId = 0
+	clock.ValidatorHandoffCancelling = false
+	deletes = append(deletes, KeyForValidatorHandoffManifest())
+	deletes = append(deletes, KeyForValidatorHandoffCancellationManifest())
 	clock.EndHeight = clock.StartHeight + params.EpochBlocks - 1
-	return &PluginEndResponse{ValidatorSetEpochEnd: true, Error: c.writeChanges(records, deletes)}
+	return c.withNativeAuxiliaryCandidates(request.Height, params, &PluginEndResponse{ValidatorSetEpochEnd: true, Error: c.writeChanges(records, deletes)})
+}
+
+func (c *Contract) withNativeAuxiliaryCandidates(height uint64, params *ProtocolParams, response *PluginEndResponse, priority ...*AuxiliaryCandidate) *PluginEndResponse {
+	if response.Error != nil {
+		return response
+	}
+	candidates, err := c.nativeAuxiliaryCandidates(height, params, priority...)
+	if err != nil {
+		response.Error = err
+		return response
+	}
+	response.AuxiliaryCandidates = candidates
+	response.ReplaceAuxiliaryCandidates = true
+	return response
+}
+
+func (c *Contract) currentHandoffAuxiliaryCandidate(clock *EpochClock) (*AuxiliaryCandidate, *PluginError) {
+	if clock.ValidatorHandoffCancelling {
+		manifest := new(ValidatorHandoffCancellationManifest)
+		if found, err := c.read(KeyForValidatorHandoffCancellationManifest(), manifest); err != nil {
+			return nil, err
+		} else if !found {
+			return nil, ErrState("validator handoff cancellation manifest is unavailable")
+		}
+		return handoffCancellationAuxiliaryCandidate(manifest), nil
+	}
+	manifest := new(ValidatorHandoffManifest)
+	if found, err := c.read(KeyForValidatorHandoffManifest(), manifest); err != nil {
+		return nil, err
+	} else if !found {
+		return nil, ErrState("validator handoff manifest is unavailable")
+	}
+	return handoffAuxiliaryCandidate(manifest), nil
+}
+
+func handoffAuxiliaryCandidate(manifest *ValidatorHandoffManifest) *AuxiliaryCandidate {
+	key := append(uint64Bytes(manifest.OldValidatorSetId), uint64Bytes(manifest.NewValidatorSetId)...)
+	key = append(key, uint64Bytes(manifest.Attempt)...)
+	return &AuxiliaryCandidate{Kind: "validator-handoff", Key: key, Digest: append([]byte(nil), manifest.Root...), Payload: append([]byte(nil), manifest.Generation...)}
+}
+
+func handoffCancellationAuxiliaryCandidate(manifest *ValidatorHandoffCancellationManifest) *AuxiliaryCandidate {
+	key := append(uint64Bytes(manifest.OldValidatorSetId), uint64Bytes(manifest.NewValidatorSetId)...)
+	key = append(key, manifest.HandoffGeneration...)
+	return &AuxiliaryCandidate{Kind: "validator-handoff-cancellation", Key: key, Digest: append([]byte(nil), manifest.Root...), Payload: append([]byte(nil), manifest.HandoffGeneration...)}
 }
 
 func (c *Contract) validatorHandoffReady(clock *EpochClock) (bool, *PluginError) {
@@ -206,6 +304,32 @@ func (c *Contract) validatorHandoffReady(clock *EpochClock) (bool, *PluginError)
 			!bytes.Equal(proof.HandoffGeneration, expectedGeneration) || proof.HandoffTimestamp != clock.ValidatorHandoffTimestamp ||
 			!bytes.Equal(proof.SettlementDomainId, domainID) {
 			return false, ErrState("validator rotation schedule index references an invalid proof")
+		}
+	}
+	return true, nil
+}
+
+func (c *Contract) validatorHandoffCancellationReady(clock *EpochClock) (bool, *PluginError) {
+	expectedGeneration := validatorHandoffGeneration(clock)
+	for _, domainID := range clock.ValidatorHandoffDomains {
+		marker := new(ReplayMarker)
+		found, err := c.read(KeyForRotationResolutionIndex(domainID, clock.ValidatorSetId, clock.ValidatorSetId+1), marker)
+		if err != nil {
+			return false, err
+		}
+		if !found {
+			return false, nil
+		}
+		proof := new(QuorumProof)
+		found, err = c.read(KeyForQuorumProof(marker.Id), proof)
+		if err != nil {
+			return false, err
+		}
+		if !found || (proof.ProofKind != "validator-set-rotation-cancelled" && proof.ProofKind != "validator-set-rotation-absent") ||
+			proof.ValidatorSetId != clock.ValidatorSetId || proof.NewValidatorSetId != clock.ValidatorSetId+1 ||
+			!bytes.Equal(proof.SettlementDomainId, domainID) || !bytes.Equal(proof.HandoffGeneration, expectedGeneration) ||
+			proof.HandoffTimestamp != clock.ValidatorHandoffTimestamp {
+			return false, ErrState("validator handoff resolution index references an invalid proof")
 		}
 	}
 	return true, nil
@@ -330,13 +454,6 @@ func (c *Contract) currentEpochClockFromState() (*EpochClock, *PluginError) {
 	return c.currentEpochClock(params)
 }
 
-func handoffRepairWindowOpen(clock *EpochClock) bool {
-	if clock.ValidatorHandoffTimestamp == 0 || clock.ConsensusTimeSeconds >= clock.ValidatorHandoffTimestamp {
-		return clock.ValidatorHandoffTimestamp != 0
-	}
-	return clock.ValidatorHandoffTimestamp-clock.ConsensusTimeSeconds <= validatorHandoffAbortLeadSeconds
-}
-
 func handoffCancellationWindowOpen(clock *EpochClock) bool {
 	return clock.ValidatorHandoffTimestamp > clock.ConsensusTimeSeconds &&
 		clock.ValidatorHandoffTimestamp-clock.ConsensusTimeSeconds <= validatorHandoffAbortLeadSeconds
@@ -350,11 +467,7 @@ func startValidatorHandoffAttempt(clock *EpochClock) ([][]byte, *PluginError) {
 	}
 	clock.ValidatorHandoffAttempt++
 	clock.ValidatorHandoffTimestamp = clock.ConsensusTimeSeconds + clock.ValidatorHandoffNoticeSeconds
-	if clock.ValidatorHandoffAttempt == 1 {
-		clock.ValidatorHandoffOutgoingAuthorityCutoff = clock.ValidatorHandoffTimestamp
-	} else if clock.ValidatorHandoffOutgoingAuthorityCutoff == 0 {
-		return nil, ErrState("validator handoff cutoff is unavailable")
-	}
+	clock.ValidatorHandoffOutgoingAuthorityCutoff = clock.ValidatorHandoffTimestamp
 	deletes := make([][]byte, 0, len(clock.ValidatorHandoffDomains)*4)
 	for _, domainID := range clock.ValidatorHandoffDomains {
 		deletes = append(deletes,
@@ -603,6 +716,10 @@ func (c *Contract) finalizeEpoch(clock *EpochClock, currentAddress []byte, curre
 }
 
 func (c *Contract) deliverObserveEpochMint(height uint64, message *MessageObserveEpochMint) *PluginDeliverResponse {
+	return c.deliverObserveEpochMintCertified(height, message, false)
+}
+
+func (c *Contract) deliverObserveEpochMintCertified(height uint64, message *MessageObserveEpochMint, certified bool) *PluginDeliverResponse {
 	authorization := new(EpochAuthorization)
 	if found, err := c.read(KeyForEpochAuthorization(message.Epoch), authorization); err != nil {
 		return &PluginDeliverResponse{Error: err}
@@ -617,16 +734,21 @@ func (c *Contract) deliverObserveEpochMint(height uint64, message *MessageObserv
 	if setErr != nil {
 		return &PluginDeliverResponse{Error: setErr}
 	}
-	if message.ValidatorSetId != currentSetID {
+	if !certified && message.ValidatorSetId != currentSetID {
 		return &PluginDeliverResponse{Error: ErrUnauthorized("epoch mint does not use the current validator set")}
 	}
 	subject := hashFields([]byte("takusen:epoch-mint"), uint64Bytes(message.Epoch), message.CanonicalChainTxHash, uint64Bytes(message.ValidatorSetId))
 	claim := hashFields([]byte("epoch-mint"), uint64Bytes(message.Epoch))
-	observation, reached, observeErr := c.observe(observationEpochMint, subject, claim, message.ObserverAddress, height)
-	if observeErr != nil {
-		return &PluginDeliverResponse{Error: observeErr}
+	reached := certified
+	records := make(map[string]proto.Message)
+	if !certified {
+		observation, observed, observeErr := c.observe(observationEpochMint, subject, claim, message.ObserverAddress, height)
+		if observeErr != nil {
+			return &PluginDeliverResponse{Error: observeErr}
+		}
+		reached = observed
+		records = observationRecords(observationEpochMint, subject, claim, message.ObserverAddress, observation)
 	}
-	records := observationRecords(observationEpochMint, subject, claim, message.ObserverAddress, observation)
 	if reached {
 		authorization.Status = "minted"
 		authorization.CanonicalChainMintTxHash = append([]byte(nil), message.CanonicalChainTxHash...)

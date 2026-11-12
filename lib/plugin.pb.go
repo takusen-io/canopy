@@ -762,9 +762,10 @@ type PluginBeginRequest struct {
 	ValidatorSet []byte `protobuf:"bytes,3,opt,name=validator_set,json=validatorSet,proto3" json:"validator_set,omitempty"`
 	// next_validator_set is the core-frozen next committee once the handoff
 	// cutoff has been reached; empty before preparation.
-	NextValidatorSet []byte `protobuf:"bytes,4,opt,name=next_validator_set,json=nextValidatorSet,proto3" json:"next_validator_set,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	NextValidatorSet      []byte                  `protobuf:"bytes,4,opt,name=next_validator_set,json=nextValidatorSet,proto3" json:"next_validator_set,omitempty"`
+	AuxiliaryCertificates []*AuxiliaryCertificate `protobuf:"bytes,5,rep,name=auxiliary_certificates,json=auxiliaryCertificates,proto3" json:"auxiliary_certificates,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
 }
 
 func (x *PluginBeginRequest) Reset() {
@@ -821,6 +822,13 @@ func (x *PluginBeginRequest) GetValidatorSet() []byte {
 func (x *PluginBeginRequest) GetNextValidatorSet() []byte {
 	if x != nil {
 		return x.NextValidatorSet
+	}
+	return nil
+}
+
+func (x *PluginBeginRequest) GetAuxiliaryCertificates() []*AuxiliaryCertificate {
+	if x != nil {
+		return x.AuxiliaryCertificates
 	}
 	return nil
 }
@@ -1206,10 +1214,14 @@ type PluginEndResponse struct {
 	ValidatorSetEpochEnd bool `protobuf:"varint,2,opt,name=validator_set_epoch_end,json=validatorSetEpochEnd,proto3" json:"validatorSetEpochEnd"` // @gotags: json:"validatorSetEpochEnd"
 	// validator_set_epoch_prepare freezes the next core committee atomically at
 	// the nominal boundary while the current committee remains authoritative.
-	ValidatorSetEpochPrepare bool         `protobuf:"varint,3,opt,name=validator_set_epoch_prepare,json=validatorSetEpochPrepare,proto3" json:"validatorSetEpochPrepare"` // @gotags: json:"validatorSetEpochPrepare"
-	Error                    *PluginError `protobuf:"bytes,99,opt,name=error,proto3" json:"error,omitempty"`
-	unknownFields            protoimpl.UnknownFields
-	sizeCache                protoimpl.SizeCache
+	ValidatorSetEpochPrepare bool `protobuf:"varint,3,opt,name=validator_set_epoch_prepare,json=validatorSetEpochPrepare,proto3" json:"validatorSetEpochPrepare"` // @gotags: json:"validatorSetEpochPrepare"
+	// Deterministic Native facts offered for best-effort certification in
+	// subsequent consensus votes. Core bounds and mirrors this set in state.
+	AuxiliaryCandidates        []*AuxiliaryCandidate `protobuf:"bytes,4,rep,name=auxiliary_candidates,json=auxiliaryCandidates,proto3" json:"auxiliaryCandidates,omitempty"`                         // @gotags: json:"auxiliaryCandidates,omitempty"
+	ReplaceAuxiliaryCandidates bool                  `protobuf:"varint,5,opt,name=replace_auxiliary_candidates,json=replaceAuxiliaryCandidates,proto3" json:"replaceAuxiliaryCandidates"` // @gotags: json:"replaceAuxiliaryCandidates"
+	Error                      *PluginError          `protobuf:"bytes,99,opt,name=error,proto3" json:"error,omitempty"`
+	unknownFields              protoimpl.UnknownFields
+	sizeCache                  protoimpl.SizeCache
 }
 
 func (x *PluginEndResponse) Reset() {
@@ -1259,6 +1271,20 @@ func (x *PluginEndResponse) GetValidatorSetEpochEnd() bool {
 func (x *PluginEndResponse) GetValidatorSetEpochPrepare() bool {
 	if x != nil {
 		return x.ValidatorSetEpochPrepare
+	}
+	return false
+}
+
+func (x *PluginEndResponse) GetAuxiliaryCandidates() []*AuxiliaryCandidate {
+	if x != nil {
+		return x.AuxiliaryCandidates
+	}
+	return nil
+}
+
+func (x *PluginEndResponse) GetReplaceAuxiliaryCandidates() bool {
+	if x != nil {
+		return x.ReplaceAuxiliaryCandidates
 	}
 	return false
 }
@@ -2004,7 +2030,7 @@ var File_plugin_proto protoreflect.FileDescriptor
 
 const file_plugin_proto_rawDesc = "" +
 	"\n" +
-	"\fplugin.proto\x12\x05types\x1a\vevent.proto\x1a\btx.proto\"\xc4\x04\n" +
+	"\fplugin.proto\x12\x05types\x1a\vevent.proto\x1a\btx.proto\x1a\x11certificate.proto\"\xc4\x04\n" +
 	"\vFSMToPlugin\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x04R\x02id\x120\n" +
 	"\x06config\x18\x02 \x01(\v2\x16.types.PluginFSMConfigH\x00R\x06config\x127\n" +
@@ -2053,12 +2079,13 @@ const file_plugin_proto_rawDesc = "" +
 	"\x14PluginGenesisRequest\x12!\n" +
 	"\fgenesis_json\x18\x01 \x01(\fR\vgenesisJson\"A\n" +
 	"\x15PluginGenesisResponse\x12(\n" +
-	"\x05error\x18c \x01(\v2\x12.types.PluginErrorR\x05error\"\xaf\x01\n" +
+	"\x05error\x18c \x01(\v2\x12.types.PluginErrorR\x05error\"\x83\x02\n" +
 	"\x12PluginBeginRequest\x12\x16\n" +
 	"\x06height\x18\x01 \x01(\x04R\x06height\x12.\n" +
 	"\x13previous_block_hash\x18\x02 \x01(\fR\x11previousBlockHash\x12#\n" +
 	"\rvalidator_set\x18\x03 \x01(\fR\fvalidatorSet\x12,\n" +
-	"\x12next_validator_set\x18\x04 \x01(\fR\x10nextValidatorSet\"e\n" +
+	"\x12next_validator_set\x18\x04 \x01(\fR\x10nextValidatorSet\x12R\n" +
+	"\x16auxiliary_certificates\x18\x05 \x03(\v2\x1b.types.AuxiliaryCertificateR\x15auxiliaryCertificates\"e\n" +
 	"\x13PluginBeginResponse\x12$\n" +
 	"\x06events\x18\x01 \x03(\v2\f.types.EventR\x06events\x12(\n" +
 	"\x05error\x18c \x01(\v2\x12.types.PluginErrorR\x05error\"P\n" +
@@ -2083,11 +2110,13 @@ const file_plugin_proto_rawDesc = "" +
 	"\x10proposer_address\x18\x02 \x01(\fR\x0fproposerAddress\x12\x1f\n" +
 	"\vtime_micros\x18\x03 \x01(\x04R\n" +
 	"timeMicros\x12,\n" +
-	"\x12next_validator_set\x18\x04 \x01(\fR\x10nextValidatorSet\"\xd9\x01\n" +
+	"\x12next_validator_set\x18\x04 \x01(\fR\x10nextValidatorSet\"\xe9\x02\n" +
 	"\x11PluginEndResponse\x12$\n" +
 	"\x06events\x18\x01 \x03(\v2\f.types.EventR\x06events\x125\n" +
 	"\x17validator_set_epoch_end\x18\x02 \x01(\bR\x14validatorSetEpochEnd\x12=\n" +
-	"\x1bvalidator_set_epoch_prepare\x18\x03 \x01(\bR\x18validatorSetEpochPrepare\x12(\n" +
+	"\x1bvalidator_set_epoch_prepare\x18\x03 \x01(\bR\x18validatorSetEpochPrepare\x12L\n" +
+	"\x14auxiliary_candidates\x18\x04 \x03(\v2\x19.types.AuxiliaryCandidateR\x13auxiliaryCandidates\x12@\n" +
+	"\x1creplace_auxiliary_candidates\x18\x05 \x01(\bR\x1areplaceAuxiliaryCandidates\x12(\n" +
 	"\x05error\x18c \x01(\v2\x12.types.PluginErrorR\x05error\"K\n" +
 	"\vPluginError\x12\x12\n" +
 	"\x04code\x18\x01 \x01(\x04R\x04code\x12\x16\n" +
@@ -2173,8 +2202,10 @@ var file_plugin_proto_goTypes = []any{
 	(*PluginSetOp)(nil),              // 24: types.PluginSetOp
 	(*PluginDeleteOp)(nil),           // 25: types.PluginDeleteOp
 	(*PluginStateEntry)(nil),         // 26: types.PluginStateEntry
-	(*Event)(nil),                    // 27: types.Event
-	(*Transaction)(nil),              // 28: types.Transaction
+	(*AuxiliaryCertificate)(nil),     // 27: types.AuxiliaryCertificate
+	(*Event)(nil),                    // 28: types.Event
+	(*Transaction)(nil),              // 29: types.Transaction
+	(*AuxiliaryCandidate)(nil),       // 30: types.AuxiliaryCandidate
 }
 var file_plugin_proto_depIdxs = []int32{
 	3,  // 0: types.FSMToPlugin.config:type_name -> types.PluginFSMConfig
@@ -2198,31 +2229,33 @@ var file_plugin_proto_depIdxs = []int32{
 	15, // 18: types.PluginToFSM.query:type_name -> types.PluginQueryRequest
 	2,  // 19: types.PluginFSMConfig.config:type_name -> types.PluginConfig
 	14, // 20: types.PluginGenesisResponse.error:type_name -> types.PluginError
-	27, // 21: types.PluginBeginResponse.events:type_name -> types.Event
-	14, // 22: types.PluginBeginResponse.error:type_name -> types.PluginError
-	28, // 23: types.PluginCheckRequest.tx:type_name -> types.Transaction
-	14, // 24: types.PluginCheckResponse.error:type_name -> types.PluginError
-	28, // 25: types.PluginDeliverRequest.tx:type_name -> types.Transaction
-	27, // 26: types.PluginDeliverResponse.events:type_name -> types.Event
-	14, // 27: types.PluginDeliverResponse.error:type_name -> types.PluginError
-	27, // 28: types.PluginEndResponse.events:type_name -> types.Event
-	14, // 29: types.PluginEndResponse.error:type_name -> types.PluginError
-	17, // 30: types.PluginQueryRequest.read:type_name -> types.PluginStateReadRequest
-	20, // 31: types.PluginQueryResponse.read:type_name -> types.PluginStateReadResponse
-	14, // 32: types.PluginQueryResponse.error:type_name -> types.PluginError
-	18, // 33: types.PluginStateReadRequest.keys:type_name -> types.PluginKeyRead
-	19, // 34: types.PluginStateReadRequest.ranges:type_name -> types.PluginRangeRead
-	21, // 35: types.PluginStateReadResponse.results:type_name -> types.PluginReadResult
-	14, // 36: types.PluginStateReadResponse.error:type_name -> types.PluginError
-	26, // 37: types.PluginReadResult.entries:type_name -> types.PluginStateEntry
-	24, // 38: types.PluginStateWriteRequest.sets:type_name -> types.PluginSetOp
-	25, // 39: types.PluginStateWriteRequest.deletes:type_name -> types.PluginDeleteOp
-	14, // 40: types.PluginStateWriteResponse.error:type_name -> types.PluginError
-	41, // [41:41] is the sub-list for method output_type
-	41, // [41:41] is the sub-list for method input_type
-	41, // [41:41] is the sub-list for extension type_name
-	41, // [41:41] is the sub-list for extension extendee
-	0,  // [0:41] is the sub-list for field type_name
+	27, // 21: types.PluginBeginRequest.auxiliary_certificates:type_name -> types.AuxiliaryCertificate
+	28, // 22: types.PluginBeginResponse.events:type_name -> types.Event
+	14, // 23: types.PluginBeginResponse.error:type_name -> types.PluginError
+	29, // 24: types.PluginCheckRequest.tx:type_name -> types.Transaction
+	14, // 25: types.PluginCheckResponse.error:type_name -> types.PluginError
+	29, // 26: types.PluginDeliverRequest.tx:type_name -> types.Transaction
+	28, // 27: types.PluginDeliverResponse.events:type_name -> types.Event
+	14, // 28: types.PluginDeliverResponse.error:type_name -> types.PluginError
+	28, // 29: types.PluginEndResponse.events:type_name -> types.Event
+	30, // 30: types.PluginEndResponse.auxiliary_candidates:type_name -> types.AuxiliaryCandidate
+	14, // 31: types.PluginEndResponse.error:type_name -> types.PluginError
+	17, // 32: types.PluginQueryRequest.read:type_name -> types.PluginStateReadRequest
+	20, // 33: types.PluginQueryResponse.read:type_name -> types.PluginStateReadResponse
+	14, // 34: types.PluginQueryResponse.error:type_name -> types.PluginError
+	18, // 35: types.PluginStateReadRequest.keys:type_name -> types.PluginKeyRead
+	19, // 36: types.PluginStateReadRequest.ranges:type_name -> types.PluginRangeRead
+	21, // 37: types.PluginStateReadResponse.results:type_name -> types.PluginReadResult
+	14, // 38: types.PluginStateReadResponse.error:type_name -> types.PluginError
+	26, // 39: types.PluginReadResult.entries:type_name -> types.PluginStateEntry
+	24, // 40: types.PluginStateWriteRequest.sets:type_name -> types.PluginSetOp
+	25, // 41: types.PluginStateWriteRequest.deletes:type_name -> types.PluginDeleteOp
+	14, // 42: types.PluginStateWriteResponse.error:type_name -> types.PluginError
+	43, // [43:43] is the sub-list for method output_type
+	43, // [43:43] is the sub-list for method input_type
+	43, // [43:43] is the sub-list for extension type_name
+	43, // [43:43] is the sub-list for extension extendee
+	0,  // [0:43] is the sub-list for field type_name
 }
 
 func init() { file_plugin_proto_init() }
@@ -2232,6 +2265,7 @@ func file_plugin_proto_init() {
 	}
 	file_event_proto_init()
 	file_tx_proto_init()
+	file_certificate_proto_init()
 	file_plugin_proto_msgTypes[0].OneofWrappers = []any{
 		(*FSMToPlugin_Config)(nil),
 		(*FSMToPlugin_Genesis)(nil),

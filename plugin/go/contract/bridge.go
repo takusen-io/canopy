@@ -18,6 +18,10 @@ func bridgeLockSubject(message *MessageObserveBridgeLock) []byte {
 }
 
 func (c *Contract) deliverObserveBridgeLock(height uint64, message *MessageObserveBridgeLock) *PluginDeliverResponse {
+	return c.deliverObserveBridgeLockCertified(height, message, false)
+}
+
+func (c *Contract) deliverObserveBridgeLockCertified(height uint64, message *MessageObserveBridgeLock, certified bool) *PluginDeliverResponse {
 	if found, err := c.read(KeyForBridgeMint(message.CanonicalChainTxHash), new(BridgeMint)); err != nil {
 		return &PluginDeliverResponse{Error: err}
 	} else if found {
@@ -30,11 +34,16 @@ func (c *Contract) deliverObserveBridgeLock(height uint64, message *MessageObser
 	}
 	subject := bridgeLockSubject(message)
 	claim := hashFields([]byte("bridge-lock"), message.CanonicalChainTxHash, uint64Bytes(message.Nonce))
-	observation, reached, err := c.observe(observationBridgeLock, subject, claim, message.ObserverAddress, height)
-	if err != nil {
-		return &PluginDeliverResponse{Error: err}
+	reached := certified
+	records := make(map[string]proto.Message)
+	if !certified {
+		observation, observed, err := c.observe(observationBridgeLock, subject, claim, message.ObserverAddress, height)
+		if err != nil {
+			return &PluginDeliverResponse{Error: err}
+		}
+		reached = observed
+		records = observationRecords(observationBridgeLock, subject, claim, message.ObserverAddress, observation)
 	}
-	records := observationRecords(observationBridgeLock, subject, claim, message.ObserverAddress, observation)
 	if reached {
 		params, readErr := c.currentProtocolParams()
 		if readErr != nil {
@@ -134,6 +143,10 @@ func (c *Contract) deliverBurnBridge(height uint64, message *MessageBurnBridge) 
 }
 
 func (c *Contract) deliverObserveBridgeRelease(height uint64, message *MessageObserveBridgeRelease) *PluginDeliverResponse {
+	return c.deliverObserveBridgeReleaseCertified(height, message, false)
+}
+
+func (c *Contract) deliverObserveBridgeReleaseCertified(height uint64, message *MessageObserveBridgeRelease, certified bool) *PluginDeliverResponse {
 	burn := new(BridgeBurn)
 	if found, err := c.read(KeyForBridgeBurn(message.BurnId), burn); err != nil {
 		return &PluginDeliverResponse{Error: err}
@@ -148,7 +161,7 @@ func (c *Contract) deliverObserveBridgeRelease(height uint64, message *MessageOb
 	if setErr != nil {
 		return &PluginDeliverResponse{Error: setErr}
 	}
-	if burn.Nonce != message.Nonce || burn.Amount != message.Amount || currentSetID != message.ValidatorSetId ||
+	if burn.Nonce != message.Nonce || burn.Amount != message.Amount || (!certified && currentSetID != message.ValidatorSetId) ||
 		!bytes.Equal(burn.CanonicalChainRecipient, message.CanonicalChainRecipient) {
 		return &PluginDeliverResponse{Error: ErrInvalidTransaction("Base bridge release does not match the committed burn")}
 	}
@@ -157,11 +170,16 @@ func (c *Contract) deliverObserveBridgeRelease(height uint64, message *MessageOb
 		message.CanonicalChainRecipient, uint64Bytes(message.Amount), uint64Bytes(message.ValidatorSetId),
 	)
 	claim := hashFields([]byte("bridge-release"), message.BurnId)
-	observation, reached, err := c.observe(observationBridgeRelease, subject, claim, message.ObserverAddress, height)
-	if err != nil {
-		return &PluginDeliverResponse{Error: err}
+	reached := certified
+	records := make(map[string]proto.Message)
+	if !certified {
+		observation, observed, err := c.observe(observationBridgeRelease, subject, claim, message.ObserverAddress, height)
+		if err != nil {
+			return &PluginDeliverResponse{Error: err}
+		}
+		reached = observed
+		records = observationRecords(observationBridgeRelease, subject, claim, message.ObserverAddress, observation)
 	}
-	records := observationRecords(observationBridgeRelease, subject, claim, message.ObserverAddress, observation)
 	if reached {
 		burn.Status = "released"
 		burn.ReleaseValidatorSetId = message.ValidatorSetId

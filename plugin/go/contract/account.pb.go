@@ -1574,6 +1574,74 @@ func (x *ReservationRecord) GetSettlementDomainId() []byte {
 	return nil
 }
 
+type PendingAuthorization struct {
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	RequestId          string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	SettlementDomainId []byte                 `protobuf:"bytes,2,opt,name=settlement_domain_id,json=settlementDomainId,proto3" json:"settlement_domain_id,omitempty"`
+	Authorization      []byte                 `protobuf:"bytes,3,opt,name=authorization,proto3" json:"authorization,omitempty"`
+	QueuedHeight       uint64                 `protobuf:"varint,4,opt,name=queued_height,json=queuedHeight,proto3" json:"queued_height,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *PendingAuthorization) Reset() {
+	*x = PendingAuthorization{}
+	mi := &file_account_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PendingAuthorization) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PendingAuthorization) ProtoMessage() {}
+
+func (x *PendingAuthorization) ProtoReflect() protoreflect.Message {
+	mi := &file_account_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PendingAuthorization.ProtoReflect.Descriptor instead.
+func (*PendingAuthorization) Descriptor() ([]byte, []int) {
+	return file_account_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *PendingAuthorization) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *PendingAuthorization) GetSettlementDomainId() []byte {
+	if x != nil {
+		return x.SettlementDomainId
+	}
+	return nil
+}
+
+func (x *PendingAuthorization) GetAuthorization() []byte {
+	if x != nil {
+		return x.Authorization
+	}
+	return nil
+}
+
+func (x *PendingAuthorization) GetQueuedHeight() uint64 {
+	if x != nil {
+		return x.QueuedHeight
+	}
+	return 0
+}
+
 type SettlementDomain struct {
 	state                     protoimpl.MessageState `protogen:"open.v1"`
 	Id                        []byte                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -1596,7 +1664,7 @@ type SettlementDomain struct {
 
 func (x *SettlementDomain) Reset() {
 	*x = SettlementDomain{}
-	mi := &file_account_proto_msgTypes[14]
+	mi := &file_account_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1608,7 +1676,7 @@ func (x *SettlementDomain) String() string {
 func (*SettlementDomain) ProtoMessage() {}
 
 func (x *SettlementDomain) ProtoReflect() protoreflect.Message {
-	mi := &file_account_proto_msgTypes[14]
+	mi := &file_account_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1621,7 +1689,7 @@ func (x *SettlementDomain) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SettlementDomain.ProtoReflect.Descriptor instead.
 func (*SettlementDomain) Descriptor() ([]byte, []int) {
-	return file_account_proto_rawDescGZIP(), []int{14}
+	return file_account_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *SettlementDomain) GetId() []byte {
@@ -1734,7 +1802,7 @@ type ModelParams struct {
 
 func (x *ModelParams) Reset() {
 	*x = ModelParams{}
-	mi := &file_account_proto_msgTypes[15]
+	mi := &file_account_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1746,7 +1814,7 @@ func (x *ModelParams) String() string {
 func (*ModelParams) ProtoMessage() {}
 
 func (x *ModelParams) ProtoReflect() protoreflect.Message {
-	mi := &file_account_proto_msgTypes[15]
+	mi := &file_account_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1759,7 +1827,7 @@ func (x *ModelParams) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ModelParams.ProtoReflect.Descriptor instead.
 func (*ModelParams) Descriptor() ([]byte, []int) {
-	return file_account_proto_rawDescGZIP(), []int{15}
+	return file_account_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *ModelParams) GetModel() string {
@@ -1802,7 +1870,7 @@ type PCRPolicy struct {
 
 func (x *PCRPolicy) Reset() {
 	*x = PCRPolicy{}
-	mi := &file_account_proto_msgTypes[16]
+	mi := &file_account_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1814,7 +1882,7 @@ func (x *PCRPolicy) String() string {
 func (*PCRPolicy) ProtoMessage() {}
 
 func (x *PCRPolicy) ProtoReflect() protoreflect.Message {
-	mi := &file_account_proto_msgTypes[16]
+	mi := &file_account_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1827,7 +1895,7 @@ func (x *PCRPolicy) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PCRPolicy.ProtoReflect.Descriptor instead.
 func (*PCRPolicy) Descriptor() ([]byte, []int) {
-	return file_account_proto_rawDescGZIP(), []int{16}
+	return file_account_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *PCRPolicy) GetPcr0() []byte {
@@ -1902,7 +1970,7 @@ type ProtocolParams struct {
 
 func (x *ProtocolParams) Reset() {
 	*x = ProtocolParams{}
-	mi := &file_account_proto_msgTypes[17]
+	mi := &file_account_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1914,7 +1982,7 @@ func (x *ProtocolParams) String() string {
 func (*ProtocolParams) ProtoMessage() {}
 
 func (x *ProtocolParams) ProtoReflect() protoreflect.Message {
-	mi := &file_account_proto_msgTypes[17]
+	mi := &file_account_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1927,7 +1995,7 @@ func (x *ProtocolParams) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProtocolParams.ProtoReflect.Descriptor instead.
 func (*ProtocolParams) Descriptor() ([]byte, []int) {
-	return file_account_proto_rawDescGZIP(), []int{17}
+	return file_account_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *ProtocolParams) GetRevision() uint64 {
@@ -2161,7 +2229,7 @@ type StakeChange struct {
 
 func (x *StakeChange) Reset() {
 	*x = StakeChange{}
-	mi := &file_account_proto_msgTypes[18]
+	mi := &file_account_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2173,7 +2241,7 @@ func (x *StakeChange) String() string {
 func (*StakeChange) ProtoMessage() {}
 
 func (x *StakeChange) ProtoReflect() protoreflect.Message {
-	mi := &file_account_proto_msgTypes[18]
+	mi := &file_account_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2186,7 +2254,7 @@ func (x *StakeChange) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StakeChange.ProtoReflect.Descriptor instead.
 func (*StakeChange) Descriptor() ([]byte, []int) {
-	return file_account_proto_rawDescGZIP(), []int{18}
+	return file_account_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *StakeChange) GetOwnerAddress() []byte {
@@ -2244,7 +2312,7 @@ type UnbondingRecord struct {
 
 func (x *UnbondingRecord) Reset() {
 	*x = UnbondingRecord{}
-	mi := &file_account_proto_msgTypes[19]
+	mi := &file_account_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2256,7 +2324,7 @@ func (x *UnbondingRecord) String() string {
 func (*UnbondingRecord) ProtoMessage() {}
 
 func (x *UnbondingRecord) ProtoReflect() protoreflect.Message {
-	mi := &file_account_proto_msgTypes[19]
+	mi := &file_account_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2269,7 +2337,7 @@ func (x *UnbondingRecord) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UnbondingRecord.ProtoReflect.Descriptor instead.
 func (*UnbondingRecord) Descriptor() ([]byte, []int) {
-	return file_account_proto_rawDescGZIP(), []int{19}
+	return file_account_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *UnbondingRecord) GetOwnerAddress() []byte {
@@ -2322,7 +2390,7 @@ type SlashEvidence struct {
 
 func (x *SlashEvidence) Reset() {
 	*x = SlashEvidence{}
-	mi := &file_account_proto_msgTypes[20]
+	mi := &file_account_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2334,7 +2402,7 @@ func (x *SlashEvidence) String() string {
 func (*SlashEvidence) ProtoMessage() {}
 
 func (x *SlashEvidence) ProtoReflect() protoreflect.Message {
-	mi := &file_account_proto_msgTypes[20]
+	mi := &file_account_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2347,7 +2415,7 @@ func (x *SlashEvidence) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SlashEvidence.ProtoReflect.Descriptor instead.
 func (*SlashEvidence) Descriptor() ([]byte, []int) {
-	return file_account_proto_rawDescGZIP(), []int{20}
+	return file_account_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *SlashEvidence) GetEvidenceId() []byte {
@@ -2409,7 +2477,7 @@ type ProducerPayout struct {
 
 func (x *ProducerPayout) Reset() {
 	*x = ProducerPayout{}
-	mi := &file_account_proto_msgTypes[21]
+	mi := &file_account_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2421,7 +2489,7 @@ func (x *ProducerPayout) String() string {
 func (*ProducerPayout) ProtoMessage() {}
 
 func (x *ProducerPayout) ProtoReflect() protoreflect.Message {
-	mi := &file_account_proto_msgTypes[21]
+	mi := &file_account_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2434,7 +2502,7 @@ func (x *ProducerPayout) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProducerPayout.ProtoReflect.Descriptor instead.
 func (*ProducerPayout) Descriptor() ([]byte, []int) {
-	return file_account_proto_rawDescGZIP(), []int{21}
+	return file_account_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *ProducerPayout) GetOwnerAddress() []byte {
@@ -2462,7 +2530,7 @@ type ProducerRecord struct {
 
 func (x *ProducerRecord) Reset() {
 	*x = ProducerRecord{}
-	mi := &file_account_proto_msgTypes[22]
+	mi := &file_account_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2474,7 +2542,7 @@ func (x *ProducerRecord) String() string {
 func (*ProducerRecord) ProtoMessage() {}
 
 func (x *ProducerRecord) ProtoReflect() protoreflect.Message {
-	mi := &file_account_proto_msgTypes[22]
+	mi := &file_account_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2487,7 +2555,7 @@ func (x *ProducerRecord) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProducerRecord.ProtoReflect.Descriptor instead.
 func (*ProducerRecord) Descriptor() ([]byte, []int) {
-	return file_account_proto_rawDescGZIP(), []int{22}
+	return file_account_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *ProducerRecord) GetEpoch() uint64 {
@@ -2522,7 +2590,7 @@ type ProducerIdentity struct {
 
 func (x *ProducerIdentity) Reset() {
 	*x = ProducerIdentity{}
-	mi := &file_account_proto_msgTypes[23]
+	mi := &file_account_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2534,7 +2602,7 @@ func (x *ProducerIdentity) String() string {
 func (*ProducerIdentity) ProtoMessage() {}
 
 func (x *ProducerIdentity) ProtoReflect() protoreflect.Message {
-	mi := &file_account_proto_msgTypes[23]
+	mi := &file_account_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2547,7 +2615,7 @@ func (x *ProducerIdentity) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProducerIdentity.ProtoReflect.Descriptor instead.
 func (*ProducerIdentity) Descriptor() ([]byte, []int) {
-	return file_account_proto_rawDescGZIP(), []int{23}
+	return file_account_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *ProducerIdentity) GetOwnerAddress() []byte {
@@ -2570,7 +2638,7 @@ type RewardAllocation struct {
 
 func (x *RewardAllocation) Reset() {
 	*x = RewardAllocation{}
-	mi := &file_account_proto_msgTypes[24]
+	mi := &file_account_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2582,7 +2650,7 @@ func (x *RewardAllocation) String() string {
 func (*RewardAllocation) ProtoMessage() {}
 
 func (x *RewardAllocation) ProtoReflect() protoreflect.Message {
-	mi := &file_account_proto_msgTypes[24]
+	mi := &file_account_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2595,7 +2663,7 @@ func (x *RewardAllocation) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RewardAllocation.ProtoReflect.Descriptor instead.
 func (*RewardAllocation) Descriptor() ([]byte, []int) {
-	return file_account_proto_rawDescGZIP(), []int{24}
+	return file_account_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *RewardAllocation) GetProducerAddress() []byte {
@@ -2654,7 +2722,7 @@ type EpochAuthorization struct {
 
 func (x *EpochAuthorization) Reset() {
 	*x = EpochAuthorization{}
-	mi := &file_account_proto_msgTypes[25]
+	mi := &file_account_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2666,7 +2734,7 @@ func (x *EpochAuthorization) String() string {
 func (*EpochAuthorization) ProtoMessage() {}
 
 func (x *EpochAuthorization) ProtoReflect() protoreflect.Message {
-	mi := &file_account_proto_msgTypes[25]
+	mi := &file_account_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2679,7 +2747,7 @@ func (x *EpochAuthorization) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EpochAuthorization.ProtoReflect.Descriptor instead.
 func (*EpochAuthorization) Descriptor() ([]byte, []int) {
-	return file_account_proto_rawDescGZIP(), []int{25}
+	return file_account_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *EpochAuthorization) GetEpoch() uint64 {
@@ -2799,13 +2867,14 @@ type EpochClock struct {
 	ValidatorHandoffDomainSetHash           []byte   `protobuf:"bytes,14,opt,name=validator_handoff_domain_set_hash,json=validatorHandoffDomainSetHash,proto3" json:"validator_handoff_domain_set_hash,omitempty"`
 	ValidatorHandoffOutgoingAuthorityCutoff uint64   `protobuf:"varint,15,opt,name=validator_handoff_outgoing_authority_cutoff,json=validatorHandoffOutgoingAuthorityCutoff,proto3" json:"validator_handoff_outgoing_authority_cutoff,omitempty"`
 	ValidatorHandoffNativeChainId           uint64   `protobuf:"varint,16,opt,name=validator_handoff_native_chain_id,json=validatorHandoffNativeChainId,proto3" json:"validator_handoff_native_chain_id,omitempty"`
+	ValidatorHandoffCancelling              bool     `protobuf:"varint,17,opt,name=validator_handoff_cancelling,json=validatorHandoffCancelling,proto3" json:"validator_handoff_cancelling,omitempty"`
 	unknownFields                           protoimpl.UnknownFields
 	sizeCache                               protoimpl.SizeCache
 }
 
 func (x *EpochClock) Reset() {
 	*x = EpochClock{}
-	mi := &file_account_proto_msgTypes[26]
+	mi := &file_account_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2817,7 +2886,7 @@ func (x *EpochClock) String() string {
 func (*EpochClock) ProtoMessage() {}
 
 func (x *EpochClock) ProtoReflect() protoreflect.Message {
-	mi := &file_account_proto_msgTypes[26]
+	mi := &file_account_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2830,7 +2899,7 @@ func (x *EpochClock) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EpochClock.ProtoReflect.Descriptor instead.
 func (*EpochClock) Descriptor() ([]byte, []int) {
-	return file_account_proto_rawDescGZIP(), []int{26}
+	return file_account_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *EpochClock) GetCurrentEpoch() uint64 {
@@ -2938,6 +3007,13 @@ func (x *EpochClock) GetValidatorHandoffNativeChainId() uint64 {
 	return 0
 }
 
+func (x *EpochClock) GetValidatorHandoffCancelling() bool {
+	if x != nil {
+		return x.ValidatorHandoffCancelling
+	}
+	return false
+}
+
 type BridgeState struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	OutboundNonce uint64                 `protobuf:"varint,1,opt,name=outbound_nonce,json=outboundNonce,proto3" json:"outbound_nonce,omitempty"`
@@ -2949,7 +3025,7 @@ type BridgeState struct {
 
 func (x *BridgeState) Reset() {
 	*x = BridgeState{}
-	mi := &file_account_proto_msgTypes[27]
+	mi := &file_account_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2961,7 +3037,7 @@ func (x *BridgeState) String() string {
 func (*BridgeState) ProtoMessage() {}
 
 func (x *BridgeState) ProtoReflect() protoreflect.Message {
-	mi := &file_account_proto_msgTypes[27]
+	mi := &file_account_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2974,7 +3050,7 @@ func (x *BridgeState) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BridgeState.ProtoReflect.Descriptor instead.
 func (*BridgeState) Descriptor() ([]byte, []int) {
-	return file_account_proto_rawDescGZIP(), []int{27}
+	return file_account_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *BridgeState) GetOutboundNonce() uint64 {
@@ -3012,7 +3088,7 @@ type BridgeMint struct {
 
 func (x *BridgeMint) Reset() {
 	*x = BridgeMint{}
-	mi := &file_account_proto_msgTypes[28]
+	mi := &file_account_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3024,7 +3100,7 @@ func (x *BridgeMint) String() string {
 func (*BridgeMint) ProtoMessage() {}
 
 func (x *BridgeMint) ProtoReflect() protoreflect.Message {
-	mi := &file_account_proto_msgTypes[28]
+	mi := &file_account_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3037,7 +3113,7 @@ func (x *BridgeMint) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BridgeMint.ProtoReflect.Descriptor instead.
 func (*BridgeMint) Descriptor() ([]byte, []int) {
-	return file_account_proto_rawDescGZIP(), []int{28}
+	return file_account_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *BridgeMint) GetCanonicalChainTxHash() []byte {
@@ -3101,7 +3177,7 @@ type BridgeBurn struct {
 
 func (x *BridgeBurn) Reset() {
 	*x = BridgeBurn{}
-	mi := &file_account_proto_msgTypes[29]
+	mi := &file_account_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3113,7 +3189,7 @@ func (x *BridgeBurn) String() string {
 func (*BridgeBurn) ProtoMessage() {}
 
 func (x *BridgeBurn) ProtoReflect() protoreflect.Message {
-	mi := &file_account_proto_msgTypes[29]
+	mi := &file_account_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3126,7 +3202,7 @@ func (x *BridgeBurn) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BridgeBurn.ProtoReflect.Descriptor instead.
 func (*BridgeBurn) Descriptor() ([]byte, []int) {
-	return file_account_proto_rawDescGZIP(), []int{29}
+	return file_account_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *BridgeBurn) GetBurnId() []byte {
@@ -3215,7 +3291,7 @@ type ReplayMarker struct {
 
 func (x *ReplayMarker) Reset() {
 	*x = ReplayMarker{}
-	mi := &file_account_proto_msgTypes[30]
+	mi := &file_account_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3227,7 +3303,7 @@ func (x *ReplayMarker) String() string {
 func (*ReplayMarker) ProtoMessage() {}
 
 func (x *ReplayMarker) ProtoReflect() protoreflect.Message {
-	mi := &file_account_proto_msgTypes[30]
+	mi := &file_account_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3240,7 +3316,7 @@ func (x *ReplayMarker) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReplayMarker.ProtoReflect.Descriptor instead.
 func (*ReplayMarker) Descriptor() ([]byte, []int) {
-	return file_account_proto_rawDescGZIP(), []int{30}
+	return file_account_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *ReplayMarker) GetId() []byte {
@@ -3267,7 +3343,7 @@ type SettlementDomainLifecycleIntent struct {
 
 func (x *SettlementDomainLifecycleIntent) Reset() {
 	*x = SettlementDomainLifecycleIntent{}
-	mi := &file_account_proto_msgTypes[31]
+	mi := &file_account_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3279,7 +3355,7 @@ func (x *SettlementDomainLifecycleIntent) String() string {
 func (*SettlementDomainLifecycleIntent) ProtoMessage() {}
 
 func (x *SettlementDomainLifecycleIntent) ProtoReflect() protoreflect.Message {
-	mi := &file_account_proto_msgTypes[31]
+	mi := &file_account_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3292,7 +3368,7 @@ func (x *SettlementDomainLifecycleIntent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SettlementDomainLifecycleIntent.ProtoReflect.Descriptor instead.
 func (*SettlementDomainLifecycleIntent) Descriptor() ([]byte, []int) {
-	return file_account_proto_rawDescGZIP(), []int{31}
+	return file_account_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *SettlementDomainLifecycleIntent) GetId() []byte {
@@ -3360,13 +3436,14 @@ type QuorumProof struct {
 	ControlBlockNumber        uint64                 `protobuf:"varint,20,opt,name=control_block_number,json=controlBlockNumber,proto3" json:"control_block_number,omitempty"`
 	ControlBlockHash          []byte                 `protobuf:"bytes,21,opt,name=control_block_hash,json=controlBlockHash,proto3" json:"control_block_hash,omitempty"`
 	LifecycleIntentId         []byte                 `protobuf:"bytes,22,opt,name=lifecycle_intent_id,json=lifecycleIntentId,proto3" json:"lifecycle_intent_id,omitempty"`
+	OutgoingAuthorityCutoff   uint64                 `protobuf:"varint,23,opt,name=outgoing_authority_cutoff,json=outgoingAuthorityCutoff,proto3" json:"outgoing_authority_cutoff,omitempty"`
 	unknownFields             protoimpl.UnknownFields
 	sizeCache                 protoimpl.SizeCache
 }
 
 func (x *QuorumProof) Reset() {
 	*x = QuorumProof{}
-	mi := &file_account_proto_msgTypes[32]
+	mi := &file_account_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3378,7 +3455,7 @@ func (x *QuorumProof) String() string {
 func (*QuorumProof) ProtoMessage() {}
 
 func (x *QuorumProof) ProtoReflect() protoreflect.Message {
-	mi := &file_account_proto_msgTypes[32]
+	mi := &file_account_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3391,7 +3468,7 @@ func (x *QuorumProof) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use QuorumProof.ProtoReflect.Descriptor instead.
 func (*QuorumProof) Descriptor() ([]byte, []int) {
-	return file_account_proto_rawDescGZIP(), []int{32}
+	return file_account_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *QuorumProof) GetProofKind() string {
@@ -3513,6 +3590,640 @@ func (x *QuorumProof) GetLifecycleIntentId() []byte {
 	return nil
 }
 
+func (x *QuorumProof) GetOutgoingAuthorityCutoff() uint64 {
+	if x != nil {
+		return x.OutgoingAuthorityCutoff
+	}
+	return 0
+}
+
+// ConsensusCertificate is a bounded auxiliary fact certified as part of a
+// finalized Native quorum certificate. Auxiliary participation is optional
+// for ordinary block consensus; this record exists only after strictly more
+// than two-thirds of the frozen committee signed the exact digest.
+type ConsensusCertificate struct {
+	state                     protoimpl.MessageState `protogen:"open.v1"`
+	Kind                      string                 `protobuf:"bytes,1,opt,name=kind,proto3" json:"kind,omitempty"`
+	Key                       []byte                 `protobuf:"bytes,2,opt,name=key,proto3" json:"key,omitempty"`
+	Digest                    []byte                 `protobuf:"bytes,3,opt,name=digest,proto3" json:"digest,omitempty"`
+	Payload                   []byte                 `protobuf:"bytes,4,opt,name=payload,proto3" json:"payload,omitempty"`
+	ValidatorSetId            uint64                 `protobuf:"varint,5,opt,name=validator_set_id,json=validatorSetId,proto3" json:"validator_set_id,omitempty"`
+	ValidatorEpoch            uint64                 `protobuf:"varint,6,opt,name=validator_epoch,json=validatorEpoch,proto3" json:"validator_epoch,omitempty"`
+	SignerBitmap              []byte                 `protobuf:"bytes,7,opt,name=signer_bitmap,json=signerBitmap,proto3" json:"signer_bitmap,omitempty"`
+	AggregateSignature        []byte                 `protobuf:"bytes,8,opt,name=aggregate_signature,json=aggregateSignature,proto3" json:"aggregate_signature,omitempty"`
+	AggregateSignatureEip2537 []byte                 `protobuf:"bytes,9,opt,name=aggregate_signature_eip2537,json=aggregateSignatureEip2537,proto3" json:"aggregate_signature_eip2537,omitempty"`
+	SignedWeight              uint64                 `protobuf:"varint,10,opt,name=signed_weight,json=signedWeight,proto3" json:"signed_weight,omitempty"`
+	TotalWeight               uint64                 `protobuf:"varint,11,opt,name=total_weight,json=totalWeight,proto3" json:"total_weight,omitempty"`
+	CompletedHeight           uint64                 `protobuf:"varint,12,opt,name=completed_height,json=completedHeight,proto3" json:"completed_height,omitempty"`
+	unknownFields             protoimpl.UnknownFields
+	sizeCache                 protoimpl.SizeCache
+}
+
+func (x *ConsensusCertificate) Reset() {
+	*x = ConsensusCertificate{}
+	mi := &file_account_proto_msgTypes[34]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ConsensusCertificate) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ConsensusCertificate) ProtoMessage() {}
+
+func (x *ConsensusCertificate) ProtoReflect() protoreflect.Message {
+	mi := &file_account_proto_msgTypes[34]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ConsensusCertificate.ProtoReflect.Descriptor instead.
+func (*ConsensusCertificate) Descriptor() ([]byte, []int) {
+	return file_account_proto_rawDescGZIP(), []int{34}
+}
+
+func (x *ConsensusCertificate) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
+}
+
+func (x *ConsensusCertificate) GetKey() []byte {
+	if x != nil {
+		return x.Key
+	}
+	return nil
+}
+
+func (x *ConsensusCertificate) GetDigest() []byte {
+	if x != nil {
+		return x.Digest
+	}
+	return nil
+}
+
+func (x *ConsensusCertificate) GetPayload() []byte {
+	if x != nil {
+		return x.Payload
+	}
+	return nil
+}
+
+func (x *ConsensusCertificate) GetValidatorSetId() uint64 {
+	if x != nil {
+		return x.ValidatorSetId
+	}
+	return 0
+}
+
+func (x *ConsensusCertificate) GetValidatorEpoch() uint64 {
+	if x != nil {
+		return x.ValidatorEpoch
+	}
+	return 0
+}
+
+func (x *ConsensusCertificate) GetSignerBitmap() []byte {
+	if x != nil {
+		return x.SignerBitmap
+	}
+	return nil
+}
+
+func (x *ConsensusCertificate) GetAggregateSignature() []byte {
+	if x != nil {
+		return x.AggregateSignature
+	}
+	return nil
+}
+
+func (x *ConsensusCertificate) GetAggregateSignatureEip2537() []byte {
+	if x != nil {
+		return x.AggregateSignatureEip2537
+	}
+	return nil
+}
+
+func (x *ConsensusCertificate) GetSignedWeight() uint64 {
+	if x != nil {
+		return x.SignedWeight
+	}
+	return 0
+}
+
+func (x *ConsensusCertificate) GetTotalWeight() uint64 {
+	if x != nil {
+		return x.TotalWeight
+	}
+	return 0
+}
+
+func (x *ConsensusCertificate) GetCompletedHeight() uint64 {
+	if x != nil {
+		return x.CompletedHeight
+	}
+	return 0
+}
+
+// ValidatorHandoffDomainManifest is one settlement-domain leaf in the
+// consensus-created global handoff manifest. The leaf hash uses Solidity ABI
+// fixed-width encoding and the manifest root is a positional Keccak Merkle
+// tree over leaves sorted by settlement_domain_id.
+type ValidatorHandoffDomainManifest struct {
+	state                   protoimpl.MessageState `protogen:"open.v1"`
+	SettlementDomainId      []byte                 `protobuf:"bytes,1,opt,name=settlement_domain_id,json=settlementDomainId,proto3" json:"settlement_domain_id,omitempty"`
+	EvmChainId              uint64                 `protobuf:"varint,2,opt,name=evm_chain_id,json=evmChainId,proto3" json:"evm_chain_id,omitempty"`
+	VerifierAddress         []byte                 `protobuf:"bytes,3,opt,name=verifier_address,json=verifierAddress,proto3" json:"verifier_address,omitempty"`
+	RotationNonce           uint64                 `protobuf:"varint,4,opt,name=rotation_nonce,json=rotationNonce,proto3" json:"rotation_nonce,omitempty"`
+	ValidatorKeysHash       []byte                 `protobuf:"bytes,5,opt,name=validator_keys_hash,json=validatorKeysHash,proto3" json:"validator_keys_hash,omitempty"`
+	ValidatorWeightsHash    []byte                 `protobuf:"bytes,6,opt,name=validator_weights_hash,json=validatorWeightsHash,proto3" json:"validator_weights_hash,omitempty"`
+	LeafHash                []byte                 `protobuf:"bytes,7,opt,name=leaf_hash,json=leafHash,proto3" json:"leaf_hash,omitempty"`
+	PendingValidatorSetHash []byte                 `protobuf:"bytes,8,opt,name=pending_validator_set_hash,json=pendingValidatorSetHash,proto3" json:"pending_validator_set_hash,omitempty"`
+	unknownFields           protoimpl.UnknownFields
+	sizeCache               protoimpl.SizeCache
+}
+
+func (x *ValidatorHandoffDomainManifest) Reset() {
+	*x = ValidatorHandoffDomainManifest{}
+	mi := &file_account_proto_msgTypes[35]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ValidatorHandoffDomainManifest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ValidatorHandoffDomainManifest) ProtoMessage() {}
+
+func (x *ValidatorHandoffDomainManifest) ProtoReflect() protoreflect.Message {
+	mi := &file_account_proto_msgTypes[35]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ValidatorHandoffDomainManifest.ProtoReflect.Descriptor instead.
+func (*ValidatorHandoffDomainManifest) Descriptor() ([]byte, []int) {
+	return file_account_proto_rawDescGZIP(), []int{35}
+}
+
+func (x *ValidatorHandoffDomainManifest) GetSettlementDomainId() []byte {
+	if x != nil {
+		return x.SettlementDomainId
+	}
+	return nil
+}
+
+func (x *ValidatorHandoffDomainManifest) GetEvmChainId() uint64 {
+	if x != nil {
+		return x.EvmChainId
+	}
+	return 0
+}
+
+func (x *ValidatorHandoffDomainManifest) GetVerifierAddress() []byte {
+	if x != nil {
+		return x.VerifierAddress
+	}
+	return nil
+}
+
+func (x *ValidatorHandoffDomainManifest) GetRotationNonce() uint64 {
+	if x != nil {
+		return x.RotationNonce
+	}
+	return 0
+}
+
+func (x *ValidatorHandoffDomainManifest) GetValidatorKeysHash() []byte {
+	if x != nil {
+		return x.ValidatorKeysHash
+	}
+	return nil
+}
+
+func (x *ValidatorHandoffDomainManifest) GetValidatorWeightsHash() []byte {
+	if x != nil {
+		return x.ValidatorWeightsHash
+	}
+	return nil
+}
+
+func (x *ValidatorHandoffDomainManifest) GetLeafHash() []byte {
+	if x != nil {
+		return x.LeafHash
+	}
+	return nil
+}
+
+func (x *ValidatorHandoffDomainManifest) GetPendingValidatorSetHash() []byte {
+	if x != nil {
+		return x.PendingValidatorSetHash
+	}
+	return nil
+}
+
+// ValidatorHandoffManifest is atomically created at the nominal epoch
+// boundary (and deterministically renewed). Its root is certified by optional
+// next-height consensus vote attachments, never by plugin transactions.
+type ValidatorHandoffManifest struct {
+	state                   protoimpl.MessageState            `protogen:"open.v1"`
+	Root                    []byte                            `protobuf:"bytes,1,opt,name=root,proto3" json:"root,omitempty"`
+	CreatedHeight           uint64                            `protobuf:"varint,2,opt,name=created_height,json=createdHeight,proto3" json:"created_height,omitempty"`
+	NativeChainId           uint64                            `protobuf:"varint,3,opt,name=native_chain_id,json=nativeChainId,proto3" json:"native_chain_id,omitempty"`
+	Epoch                   uint64                            `protobuf:"varint,4,opt,name=epoch,proto3" json:"epoch,omitempty"`
+	OldValidatorSetId       uint64                            `protobuf:"varint,5,opt,name=old_validator_set_id,json=oldValidatorSetId,proto3" json:"old_validator_set_id,omitempty"`
+	NewValidatorSetId       uint64                            `protobuf:"varint,6,opt,name=new_validator_set_id,json=newValidatorSetId,proto3" json:"new_validator_set_id,omitempty"`
+	FrozenRosterHash        []byte                            `protobuf:"bytes,7,opt,name=frozen_roster_hash,json=frozenRosterHash,proto3" json:"frozen_roster_hash,omitempty"`
+	FrozenDomainSetHash     []byte                            `protobuf:"bytes,8,opt,name=frozen_domain_set_hash,json=frozenDomainSetHash,proto3" json:"frozen_domain_set_hash,omitempty"`
+	Attempt                 uint64                            `protobuf:"varint,9,opt,name=attempt,proto3" json:"attempt,omitempty"`
+	Generation              []byte                            `protobuf:"bytes,10,opt,name=generation,proto3" json:"generation,omitempty"`
+	HandoffTimestamp        uint64                            `protobuf:"varint,11,opt,name=handoff_timestamp,json=handoffTimestamp,proto3" json:"handoff_timestamp,omitempty"`
+	OutgoingAuthorityCutoff uint64                            `protobuf:"varint,12,opt,name=outgoing_authority_cutoff,json=outgoingAuthorityCutoff,proto3" json:"outgoing_authority_cutoff,omitempty"`
+	Domains                 []*ValidatorHandoffDomainManifest `protobuf:"bytes,13,rep,name=domains,proto3" json:"domains,omitempty"`
+	unknownFields           protoimpl.UnknownFields
+	sizeCache               protoimpl.SizeCache
+}
+
+func (x *ValidatorHandoffManifest) Reset() {
+	*x = ValidatorHandoffManifest{}
+	mi := &file_account_proto_msgTypes[36]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ValidatorHandoffManifest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ValidatorHandoffManifest) ProtoMessage() {}
+
+func (x *ValidatorHandoffManifest) ProtoReflect() protoreflect.Message {
+	mi := &file_account_proto_msgTypes[36]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ValidatorHandoffManifest.ProtoReflect.Descriptor instead.
+func (*ValidatorHandoffManifest) Descriptor() ([]byte, []int) {
+	return file_account_proto_rawDescGZIP(), []int{36}
+}
+
+func (x *ValidatorHandoffManifest) GetRoot() []byte {
+	if x != nil {
+		return x.Root
+	}
+	return nil
+}
+
+func (x *ValidatorHandoffManifest) GetCreatedHeight() uint64 {
+	if x != nil {
+		return x.CreatedHeight
+	}
+	return 0
+}
+
+func (x *ValidatorHandoffManifest) GetNativeChainId() uint64 {
+	if x != nil {
+		return x.NativeChainId
+	}
+	return 0
+}
+
+func (x *ValidatorHandoffManifest) GetEpoch() uint64 {
+	if x != nil {
+		return x.Epoch
+	}
+	return 0
+}
+
+func (x *ValidatorHandoffManifest) GetOldValidatorSetId() uint64 {
+	if x != nil {
+		return x.OldValidatorSetId
+	}
+	return 0
+}
+
+func (x *ValidatorHandoffManifest) GetNewValidatorSetId() uint64 {
+	if x != nil {
+		return x.NewValidatorSetId
+	}
+	return 0
+}
+
+func (x *ValidatorHandoffManifest) GetFrozenRosterHash() []byte {
+	if x != nil {
+		return x.FrozenRosterHash
+	}
+	return nil
+}
+
+func (x *ValidatorHandoffManifest) GetFrozenDomainSetHash() []byte {
+	if x != nil {
+		return x.FrozenDomainSetHash
+	}
+	return nil
+}
+
+func (x *ValidatorHandoffManifest) GetAttempt() uint64 {
+	if x != nil {
+		return x.Attempt
+	}
+	return 0
+}
+
+func (x *ValidatorHandoffManifest) GetGeneration() []byte {
+	if x != nil {
+		return x.Generation
+	}
+	return nil
+}
+
+func (x *ValidatorHandoffManifest) GetHandoffTimestamp() uint64 {
+	if x != nil {
+		return x.HandoffTimestamp
+	}
+	return 0
+}
+
+func (x *ValidatorHandoffManifest) GetOutgoingAuthorityCutoff() uint64 {
+	if x != nil {
+		return x.OutgoingAuthorityCutoff
+	}
+	return 0
+}
+
+func (x *ValidatorHandoffManifest) GetDomains() []*ValidatorHandoffDomainManifest {
+	if x != nil {
+		return x.Domains
+	}
+	return nil
+}
+
+type ValidatorHandoffCancellationDomainManifest struct {
+	state                   protoimpl.MessageState `protogen:"open.v1"`
+	SettlementDomainId      []byte                 `protobuf:"bytes,1,opt,name=settlement_domain_id,json=settlementDomainId,proto3" json:"settlement_domain_id,omitempty"`
+	EvmChainId              uint64                 `protobuf:"varint,2,opt,name=evm_chain_id,json=evmChainId,proto3" json:"evm_chain_id,omitempty"`
+	VerifierAddress         []byte                 `protobuf:"bytes,3,opt,name=verifier_address,json=verifierAddress,proto3" json:"verifier_address,omitempty"`
+	RotationNonce           uint64                 `protobuf:"varint,4,opt,name=rotation_nonce,json=rotationNonce,proto3" json:"rotation_nonce,omitempty"`
+	PendingValidatorSetHash []byte                 `protobuf:"bytes,5,opt,name=pending_validator_set_hash,json=pendingValidatorSetHash,proto3" json:"pending_validator_set_hash,omitempty"`
+	LeafHash                []byte                 `protobuf:"bytes,6,opt,name=leaf_hash,json=leafHash,proto3" json:"leaf_hash,omitempty"`
+	unknownFields           protoimpl.UnknownFields
+	sizeCache               protoimpl.SizeCache
+}
+
+func (x *ValidatorHandoffCancellationDomainManifest) Reset() {
+	*x = ValidatorHandoffCancellationDomainManifest{}
+	mi := &file_account_proto_msgTypes[37]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ValidatorHandoffCancellationDomainManifest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ValidatorHandoffCancellationDomainManifest) ProtoMessage() {}
+
+func (x *ValidatorHandoffCancellationDomainManifest) ProtoReflect() protoreflect.Message {
+	mi := &file_account_proto_msgTypes[37]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ValidatorHandoffCancellationDomainManifest.ProtoReflect.Descriptor instead.
+func (*ValidatorHandoffCancellationDomainManifest) Descriptor() ([]byte, []int) {
+	return file_account_proto_rawDescGZIP(), []int{37}
+}
+
+func (x *ValidatorHandoffCancellationDomainManifest) GetSettlementDomainId() []byte {
+	if x != nil {
+		return x.SettlementDomainId
+	}
+	return nil
+}
+
+func (x *ValidatorHandoffCancellationDomainManifest) GetEvmChainId() uint64 {
+	if x != nil {
+		return x.EvmChainId
+	}
+	return 0
+}
+
+func (x *ValidatorHandoffCancellationDomainManifest) GetVerifierAddress() []byte {
+	if x != nil {
+		return x.VerifierAddress
+	}
+	return nil
+}
+
+func (x *ValidatorHandoffCancellationDomainManifest) GetRotationNonce() uint64 {
+	if x != nil {
+		return x.RotationNonce
+	}
+	return 0
+}
+
+func (x *ValidatorHandoffCancellationDomainManifest) GetPendingValidatorSetHash() []byte {
+	if x != nil {
+		return x.PendingValidatorSetHash
+	}
+	return nil
+}
+
+func (x *ValidatorHandoffCancellationDomainManifest) GetLeafHash() []byte {
+	if x != nil {
+		return x.LeafHash
+	}
+	return nil
+}
+
+type ValidatorHandoffCancellationManifest struct {
+	state             protoimpl.MessageState                        `protogen:"open.v1"`
+	Root              []byte                                        `protobuf:"bytes,1,opt,name=root,proto3" json:"root,omitempty"`
+	CreatedHeight     uint64                                        `protobuf:"varint,2,opt,name=created_height,json=createdHeight,proto3" json:"created_height,omitempty"`
+	NativeChainId     uint64                                        `protobuf:"varint,3,opt,name=native_chain_id,json=nativeChainId,proto3" json:"native_chain_id,omitempty"`
+	Epoch             uint64                                        `protobuf:"varint,4,opt,name=epoch,proto3" json:"epoch,omitempty"`
+	OldValidatorSetId uint64                                        `protobuf:"varint,5,opt,name=old_validator_set_id,json=oldValidatorSetId,proto3" json:"old_validator_set_id,omitempty"`
+	NewValidatorSetId uint64                                        `protobuf:"varint,6,opt,name=new_validator_set_id,json=newValidatorSetId,proto3" json:"new_validator_set_id,omitempty"`
+	HandoffGeneration []byte                                        `protobuf:"bytes,7,opt,name=handoff_generation,json=handoffGeneration,proto3" json:"handoff_generation,omitempty"`
+	HandoffTimestamp  uint64                                        `protobuf:"varint,8,opt,name=handoff_timestamp,json=handoffTimestamp,proto3" json:"handoff_timestamp,omitempty"`
+	Domains           []*ValidatorHandoffCancellationDomainManifest `protobuf:"bytes,9,rep,name=domains,proto3" json:"domains,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *ValidatorHandoffCancellationManifest) Reset() {
+	*x = ValidatorHandoffCancellationManifest{}
+	mi := &file_account_proto_msgTypes[38]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ValidatorHandoffCancellationManifest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ValidatorHandoffCancellationManifest) ProtoMessage() {}
+
+func (x *ValidatorHandoffCancellationManifest) ProtoReflect() protoreflect.Message {
+	mi := &file_account_proto_msgTypes[38]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ValidatorHandoffCancellationManifest.ProtoReflect.Descriptor instead.
+func (*ValidatorHandoffCancellationManifest) Descriptor() ([]byte, []int) {
+	return file_account_proto_rawDescGZIP(), []int{38}
+}
+
+func (x *ValidatorHandoffCancellationManifest) GetRoot() []byte {
+	if x != nil {
+		return x.Root
+	}
+	return nil
+}
+
+func (x *ValidatorHandoffCancellationManifest) GetCreatedHeight() uint64 {
+	if x != nil {
+		return x.CreatedHeight
+	}
+	return 0
+}
+
+func (x *ValidatorHandoffCancellationManifest) GetNativeChainId() uint64 {
+	if x != nil {
+		return x.NativeChainId
+	}
+	return 0
+}
+
+func (x *ValidatorHandoffCancellationManifest) GetEpoch() uint64 {
+	if x != nil {
+		return x.Epoch
+	}
+	return 0
+}
+
+func (x *ValidatorHandoffCancellationManifest) GetOldValidatorSetId() uint64 {
+	if x != nil {
+		return x.OldValidatorSetId
+	}
+	return 0
+}
+
+func (x *ValidatorHandoffCancellationManifest) GetNewValidatorSetId() uint64 {
+	if x != nil {
+		return x.NewValidatorSetId
+	}
+	return 0
+}
+
+func (x *ValidatorHandoffCancellationManifest) GetHandoffGeneration() []byte {
+	if x != nil {
+		return x.HandoffGeneration
+	}
+	return nil
+}
+
+func (x *ValidatorHandoffCancellationManifest) GetHandoffTimestamp() uint64 {
+	if x != nil {
+		return x.HandoffTimestamp
+	}
+	return 0
+}
+
+func (x *ValidatorHandoffCancellationManifest) GetDomains() []*ValidatorHandoffCancellationDomainManifest {
+	if x != nil {
+		return x.Domains
+	}
+	return nil
+}
+
+type SettlementDomainRotationState struct {
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	SettlementDomainId []byte                 `protobuf:"bytes,1,opt,name=settlement_domain_id,json=settlementDomainId,proto3" json:"settlement_domain_id,omitempty"`
+	RotationNonce      uint64                 `protobuf:"varint,2,opt,name=rotation_nonce,json=rotationNonce,proto3" json:"rotation_nonce,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *SettlementDomainRotationState) Reset() {
+	*x = SettlementDomainRotationState{}
+	mi := &file_account_proto_msgTypes[39]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SettlementDomainRotationState) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SettlementDomainRotationState) ProtoMessage() {}
+
+func (x *SettlementDomainRotationState) ProtoReflect() protoreflect.Message {
+	mi := &file_account_proto_msgTypes[39]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SettlementDomainRotationState.ProtoReflect.Descriptor instead.
+func (*SettlementDomainRotationState) Descriptor() ([]byte, []int) {
+	return file_account_proto_rawDescGZIP(), []int{39}
+}
+
+func (x *SettlementDomainRotationState) GetSettlementDomainId() []byte {
+	if x != nil {
+		return x.SettlementDomainId
+	}
+	return nil
+}
+
+func (x *SettlementDomainRotationState) GetRotationNonce() uint64 {
+	if x != nil {
+		return x.RotationNonce
+	}
+	return 0
+}
+
 type QuorumSignatureShare struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
 	ProofId         []byte                 `protobuf:"bytes,1,opt,name=proof_id,json=proofId,proto3" json:"proof_id,omitempty"`
@@ -3525,7 +4236,7 @@ type QuorumSignatureShare struct {
 
 func (x *QuorumSignatureShare) Reset() {
 	*x = QuorumSignatureShare{}
-	mi := &file_account_proto_msgTypes[33]
+	mi := &file_account_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3537,7 +4248,7 @@ func (x *QuorumSignatureShare) String() string {
 func (*QuorumSignatureShare) ProtoMessage() {}
 
 func (x *QuorumSignatureShare) ProtoReflect() protoreflect.Message {
-	mi := &file_account_proto_msgTypes[33]
+	mi := &file_account_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3550,7 +4261,7 @@ func (x *QuorumSignatureShare) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use QuorumSignatureShare.ProtoReflect.Descriptor instead.
 func (*QuorumSignatureShare) Descriptor() ([]byte, []int) {
-	return file_account_proto_rawDescGZIP(), []int{33}
+	return file_account_proto_rawDescGZIP(), []int{40}
 }
 
 func (x *QuorumSignatureShare) GetProofId() []byte {
@@ -3755,7 +4466,13 @@ const file_account_proto_rawDesc = "" +
 	"\x16authorization_deadline\x18\f \x01(\x04R\x15authorizationDeadline\x12-\n" +
 	"\x12provisional_budget\x18\r \x01(\x04R\x11provisionalBudget\x120\n" +
 	"\x14settlement_domain_id\x18\x0e \x01(\fR\x12settlementDomainIdJ\x04\b\a\x10\bJ\x04\b\b\x10\tJ\x04\b\t\x10\n" +
-	"\"\xaf\x04\n" +
+	"\"\xb2\x01\n" +
+	"\x14PendingAuthorization\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId\x120\n" +
+	"\x14settlement_domain_id\x18\x02 \x01(\fR\x12settlementDomainId\x12$\n" +
+	"\rauthorization\x18\x03 \x01(\fR\rauthorization\x12#\n" +
+	"\rqueued_height\x18\x04 \x01(\x04R\fqueuedHeight\"\xaf\x04\n" +
 	"\x10SettlementDomain\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\fR\x02id\x12\x19\n" +
 	"\bchain_id\x18\x02 \x01(\x04R\achainId\x12#\n" +
@@ -3871,7 +4588,7 @@ const file_account_proto_rawDesc = "" +
 	" \x01(\fR\x14canonicalChainDigest\x12\x16\n" +
 	"\x06status\x18\v \x01(\tR\x06status\x12+\n" +
 	"\x11compounded_amount\x18\f \x01(\x04R\x10compoundedAmount\x12>\n" +
-	"\x1ccanonical_chain_mint_tx_hash\x18\r \x01(\fR\x18canonicalChainMintTxHash\"\xf0\x06\n" +
+	"\x1ccanonical_chain_mint_tx_hash\x18\r \x01(\fR\x18canonicalChainMintTxHash\"\xb2\a\n" +
 	"\n" +
 	"EpochClock\x12#\n" +
 	"\rcurrent_epoch\x18\x01 \x01(\x04R\fcurrentEpoch\x12!\n" +
@@ -3890,7 +4607,8 @@ const file_account_proto_rawDesc = "" +
 	"\x1dvalidator_handoff_roster_hash\x18\r \x01(\fR\x1avalidatorHandoffRosterHash\x12H\n" +
 	"!validator_handoff_domain_set_hash\x18\x0e \x01(\fR\x1dvalidatorHandoffDomainSetHash\x12\\\n" +
 	"+validator_handoff_outgoing_authority_cutoff\x18\x0f \x01(\x04R'validatorHandoffOutgoingAuthorityCutoff\x12H\n" +
-	"!validator_handoff_native_chain_id\x18\x10 \x01(\x04R\x1dvalidatorHandoffNativeChainIdJ\x04\b\x06\x10\a\"{\n" +
+	"!validator_handoff_native_chain_id\x18\x10 \x01(\x04R\x1dvalidatorHandoffNativeChainId\x12@\n" +
+	"\x1cvalidator_handoff_cancelling\x18\x11 \x01(\bR\x1avalidatorHandoffCancellingJ\x04\b\x06\x10\a\"{\n" +
 	"\vBridgeState\x12%\n" +
 	"\x0eoutbound_nonce\x18\x01 \x01(\x04R\routboundNonce\x12\x1d\n" +
 	"\n" +
@@ -3926,7 +4644,7 @@ const file_account_proto_rawDesc = "" +
 	"\x17deactivation_generation\x18\x03 \x01(\fR\x16deactivationGeneration\x12\x16\n" +
 	"\x06action\x18\x04 \x01(\tR\x06action\x12\x14\n" +
 	"\x05nonce\x18\x05 \x01(\x04R\x05nonce\x12(\n" +
-	"\x10expires_at_epoch\x18\x06 \x01(\x04R\x0eexpiresAtEpoch\"\xf5\x05\n" +
+	"\x10expires_at_epoch\x18\x06 \x01(\x04R\x0eexpiresAtEpoch\"\xb1\x06\n" +
 	"\vQuorumProof\x12\x1d\n" +
 	"\n" +
 	"proof_kind\x18\x01 \x01(\tR\tproofKind\x12\x19\n" +
@@ -3946,8 +4664,71 @@ const file_account_proto_rawDesc = "" +
 	"\x11handoff_timestamp\x18\x13 \x01(\x04R\x10handoffTimestamp\x120\n" +
 	"\x14control_block_number\x18\x14 \x01(\x04R\x12controlBlockNumber\x12,\n" +
 	"\x12control_block_hash\x18\x15 \x01(\fR\x10controlBlockHash\x12.\n" +
-	"\x13lifecycle_intent_id\x18\x16 \x01(\fR\x11lifecycleIntentIdJ\x04\b\x04\x10\x05J\x04\b\x06\x10\aJ\x04\b\a\x10\bJ\x04\b\t\x10\n" +
-	"J\x04\b\x0f\x10\x10\"\xa3\x01\n" +
+	"\x13lifecycle_intent_id\x18\x16 \x01(\fR\x11lifecycleIntentId\x12:\n" +
+	"\x19outgoing_authority_cutoff\x18\x17 \x01(\x04R\x17outgoingAuthorityCutoffJ\x04\b\x04\x10\x05J\x04\b\x06\x10\aJ\x04\b\a\x10\bJ\x04\b\t\x10\n" +
+	"J\x04\b\x0f\x10\x10\"\xca\x03\n" +
+	"\x14ConsensusCertificate\x12\x12\n" +
+	"\x04kind\x18\x01 \x01(\tR\x04kind\x12\x10\n" +
+	"\x03key\x18\x02 \x01(\fR\x03key\x12\x16\n" +
+	"\x06digest\x18\x03 \x01(\fR\x06digest\x12\x18\n" +
+	"\apayload\x18\x04 \x01(\fR\apayload\x12(\n" +
+	"\x10validator_set_id\x18\x05 \x01(\x04R\x0evalidatorSetId\x12'\n" +
+	"\x0fvalidator_epoch\x18\x06 \x01(\x04R\x0evalidatorEpoch\x12#\n" +
+	"\rsigner_bitmap\x18\a \x01(\fR\fsignerBitmap\x12/\n" +
+	"\x13aggregate_signature\x18\b \x01(\fR\x12aggregateSignature\x12>\n" +
+	"\x1baggregate_signature_eip2537\x18\t \x01(\fR\x19aggregateSignatureEip2537\x12#\n" +
+	"\rsigned_weight\x18\n" +
+	" \x01(\x04R\fsignedWeight\x12!\n" +
+	"\ftotal_weight\x18\v \x01(\x04R\vtotalWeight\x12)\n" +
+	"\x10completed_height\x18\f \x01(\x04R\x0fcompletedHeight\"\x86\x03\n" +
+	"\x1eValidatorHandoffDomainManifest\x120\n" +
+	"\x14settlement_domain_id\x18\x01 \x01(\fR\x12settlementDomainId\x12 \n" +
+	"\fevm_chain_id\x18\x02 \x01(\x04R\n" +
+	"evmChainId\x12)\n" +
+	"\x10verifier_address\x18\x03 \x01(\fR\x0fverifierAddress\x12%\n" +
+	"\x0erotation_nonce\x18\x04 \x01(\x04R\rrotationNonce\x12.\n" +
+	"\x13validator_keys_hash\x18\x05 \x01(\fR\x11validatorKeysHash\x124\n" +
+	"\x16validator_weights_hash\x18\x06 \x01(\fR\x14validatorWeightsHash\x12\x1b\n" +
+	"\tleaf_hash\x18\a \x01(\fR\bleafHash\x12;\n" +
+	"\x1apending_validator_set_hash\x18\b \x01(\fR\x17pendingValidatorSetHash\"\xbc\x04\n" +
+	"\x18ValidatorHandoffManifest\x12\x12\n" +
+	"\x04root\x18\x01 \x01(\fR\x04root\x12%\n" +
+	"\x0ecreated_height\x18\x02 \x01(\x04R\rcreatedHeight\x12&\n" +
+	"\x0fnative_chain_id\x18\x03 \x01(\x04R\rnativeChainId\x12\x14\n" +
+	"\x05epoch\x18\x04 \x01(\x04R\x05epoch\x12/\n" +
+	"\x14old_validator_set_id\x18\x05 \x01(\x04R\x11oldValidatorSetId\x12/\n" +
+	"\x14new_validator_set_id\x18\x06 \x01(\x04R\x11newValidatorSetId\x12,\n" +
+	"\x12frozen_roster_hash\x18\a \x01(\fR\x10frozenRosterHash\x123\n" +
+	"\x16frozen_domain_set_hash\x18\b \x01(\fR\x13frozenDomainSetHash\x12\x18\n" +
+	"\aattempt\x18\t \x01(\x04R\aattempt\x12\x1e\n" +
+	"\n" +
+	"generation\x18\n" +
+	" \x01(\fR\n" +
+	"generation\x12+\n" +
+	"\x11handoff_timestamp\x18\v \x01(\x04R\x10handoffTimestamp\x12:\n" +
+	"\x19outgoing_authority_cutoff\x18\f \x01(\x04R\x17outgoingAuthorityCutoff\x12?\n" +
+	"\adomains\x18\r \x03(\v2%.types.ValidatorHandoffDomainManifestR\adomains\"\xac\x02\n" +
+	"*ValidatorHandoffCancellationDomainManifest\x120\n" +
+	"\x14settlement_domain_id\x18\x01 \x01(\fR\x12settlementDomainId\x12 \n" +
+	"\fevm_chain_id\x18\x02 \x01(\x04R\n" +
+	"evmChainId\x12)\n" +
+	"\x10verifier_address\x18\x03 \x01(\fR\x0fverifierAddress\x12%\n" +
+	"\x0erotation_nonce\x18\x04 \x01(\x04R\rrotationNonce\x12;\n" +
+	"\x1apending_validator_set_hash\x18\x05 \x01(\fR\x17pendingValidatorSetHash\x12\x1b\n" +
+	"\tleaf_hash\x18\x06 \x01(\fR\bleafHash\"\xaa\x03\n" +
+	"$ValidatorHandoffCancellationManifest\x12\x12\n" +
+	"\x04root\x18\x01 \x01(\fR\x04root\x12%\n" +
+	"\x0ecreated_height\x18\x02 \x01(\x04R\rcreatedHeight\x12&\n" +
+	"\x0fnative_chain_id\x18\x03 \x01(\x04R\rnativeChainId\x12\x14\n" +
+	"\x05epoch\x18\x04 \x01(\x04R\x05epoch\x12/\n" +
+	"\x14old_validator_set_id\x18\x05 \x01(\x04R\x11oldValidatorSetId\x12/\n" +
+	"\x14new_validator_set_id\x18\x06 \x01(\x04R\x11newValidatorSetId\x12-\n" +
+	"\x12handoff_generation\x18\a \x01(\fR\x11handoffGeneration\x12+\n" +
+	"\x11handoff_timestamp\x18\b \x01(\x04R\x10handoffTimestamp\x12K\n" +
+	"\adomains\x18\t \x03(\v21.types.ValidatorHandoffCancellationDomainManifestR\adomains\"x\n" +
+	"\x1dSettlementDomainRotationState\x120\n" +
+	"\x14settlement_domain_id\x18\x01 \x01(\fR\x12settlementDomainId\x12%\n" +
+	"\x0erotation_nonce\x18\x02 \x01(\x04R\rrotationNonce\"\xa3\x01\n" +
 	"\x14QuorumSignatureShare\x12\x19\n" +
 	"\bproof_id\x18\x01 \x01(\fR\aproofId\x12)\n" +
 	"\x10observer_address\x18\x02 \x01(\fR\x0fobserverAddress\x12\x1c\n" +
@@ -3966,55 +4747,64 @@ func file_account_proto_rawDescGZIP() []byte {
 	return file_account_proto_rawDescData
 }
 
-var file_account_proto_msgTypes = make([]protoimpl.MessageInfo, 34)
+var file_account_proto_msgTypes = make([]protoimpl.MessageInfo, 41)
 var file_account_proto_goTypes = []any{
-	(*Account)(nil),                         // 0: types.Account
-	(*Pool)(nil),                            // 1: types.Pool
-	(*Validator)(nil),                       // 2: types.Validator
-	(*EnclaveKey)(nil),                      // 3: types.EnclaveKey
-	(*SettlementPayout)(nil),                // 4: types.SettlementPayout
-	(*Servicer)(nil),                        // 5: types.Servicer
-	(*Assignment)(nil),                      // 6: types.Assignment
-	(*RequestRecord)(nil),                   // 7: types.RequestRecord
-	(*ExecutionRecord)(nil),                 // 8: types.ExecutionRecord
-	(*Observation)(nil),                     // 9: types.Observation
-	(*BlockAnchor)(nil),                     // 10: types.BlockAnchor
-	(*DepositRecord)(nil),                   // 11: types.DepositRecord
-	(*CreditAccount)(nil),                   // 12: types.CreditAccount
-	(*ReservationRecord)(nil),               // 13: types.ReservationRecord
-	(*SettlementDomain)(nil),                // 14: types.SettlementDomain
-	(*ModelParams)(nil),                     // 15: types.ModelParams
-	(*PCRPolicy)(nil),                       // 16: types.PCRPolicy
-	(*ProtocolParams)(nil),                  // 17: types.ProtocolParams
-	(*StakeChange)(nil),                     // 18: types.StakeChange
-	(*UnbondingRecord)(nil),                 // 19: types.UnbondingRecord
-	(*SlashEvidence)(nil),                   // 20: types.SlashEvidence
-	(*ProducerPayout)(nil),                  // 21: types.ProducerPayout
-	(*ProducerRecord)(nil),                  // 22: types.ProducerRecord
-	(*ProducerIdentity)(nil),                // 23: types.ProducerIdentity
-	(*RewardAllocation)(nil),                // 24: types.RewardAllocation
-	(*EpochAuthorization)(nil),              // 25: types.EpochAuthorization
-	(*EpochClock)(nil),                      // 26: types.EpochClock
-	(*BridgeState)(nil),                     // 27: types.BridgeState
-	(*BridgeMint)(nil),                      // 28: types.BridgeMint
-	(*BridgeBurn)(nil),                      // 29: types.BridgeBurn
-	(*ReplayMarker)(nil),                    // 30: types.ReplayMarker
-	(*SettlementDomainLifecycleIntent)(nil), // 31: types.SettlementDomainLifecycleIntent
-	(*QuorumProof)(nil),                     // 32: types.QuorumProof
-	(*QuorumSignatureShare)(nil),            // 33: types.QuorumSignatureShare
+	(*Account)(nil),                                    // 0: types.Account
+	(*Pool)(nil),                                       // 1: types.Pool
+	(*Validator)(nil),                                  // 2: types.Validator
+	(*EnclaveKey)(nil),                                 // 3: types.EnclaveKey
+	(*SettlementPayout)(nil),                           // 4: types.SettlementPayout
+	(*Servicer)(nil),                                   // 5: types.Servicer
+	(*Assignment)(nil),                                 // 6: types.Assignment
+	(*RequestRecord)(nil),                              // 7: types.RequestRecord
+	(*ExecutionRecord)(nil),                            // 8: types.ExecutionRecord
+	(*Observation)(nil),                                // 9: types.Observation
+	(*BlockAnchor)(nil),                                // 10: types.BlockAnchor
+	(*DepositRecord)(nil),                              // 11: types.DepositRecord
+	(*CreditAccount)(nil),                              // 12: types.CreditAccount
+	(*ReservationRecord)(nil),                          // 13: types.ReservationRecord
+	(*PendingAuthorization)(nil),                       // 14: types.PendingAuthorization
+	(*SettlementDomain)(nil),                           // 15: types.SettlementDomain
+	(*ModelParams)(nil),                                // 16: types.ModelParams
+	(*PCRPolicy)(nil),                                  // 17: types.PCRPolicy
+	(*ProtocolParams)(nil),                             // 18: types.ProtocolParams
+	(*StakeChange)(nil),                                // 19: types.StakeChange
+	(*UnbondingRecord)(nil),                            // 20: types.UnbondingRecord
+	(*SlashEvidence)(nil),                              // 21: types.SlashEvidence
+	(*ProducerPayout)(nil),                             // 22: types.ProducerPayout
+	(*ProducerRecord)(nil),                             // 23: types.ProducerRecord
+	(*ProducerIdentity)(nil),                           // 24: types.ProducerIdentity
+	(*RewardAllocation)(nil),                           // 25: types.RewardAllocation
+	(*EpochAuthorization)(nil),                         // 26: types.EpochAuthorization
+	(*EpochClock)(nil),                                 // 27: types.EpochClock
+	(*BridgeState)(nil),                                // 28: types.BridgeState
+	(*BridgeMint)(nil),                                 // 29: types.BridgeMint
+	(*BridgeBurn)(nil),                                 // 30: types.BridgeBurn
+	(*ReplayMarker)(nil),                               // 31: types.ReplayMarker
+	(*SettlementDomainLifecycleIntent)(nil),            // 32: types.SettlementDomainLifecycleIntent
+	(*QuorumProof)(nil),                                // 33: types.QuorumProof
+	(*ConsensusCertificate)(nil),                       // 34: types.ConsensusCertificate
+	(*ValidatorHandoffDomainManifest)(nil),             // 35: types.ValidatorHandoffDomainManifest
+	(*ValidatorHandoffManifest)(nil),                   // 36: types.ValidatorHandoffManifest
+	(*ValidatorHandoffCancellationDomainManifest)(nil), // 37: types.ValidatorHandoffCancellationDomainManifest
+	(*ValidatorHandoffCancellationManifest)(nil),       // 38: types.ValidatorHandoffCancellationManifest
+	(*SettlementDomainRotationState)(nil),              // 39: types.SettlementDomainRotationState
+	(*QuorumSignatureShare)(nil),                       // 40: types.QuorumSignatureShare
 }
 var file_account_proto_depIdxs = []int32{
 	4,  // 0: types.Servicer.payouts:type_name -> types.SettlementPayout
 	6,  // 1: types.RequestRecord.assignments:type_name -> types.Assignment
-	15, // 2: types.ProtocolParams.models:type_name -> types.ModelParams
-	16, // 3: types.ProtocolParams.approved_pcrs:type_name -> types.PCRPolicy
-	14, // 4: types.ProtocolParams.settlement_domains:type_name -> types.SettlementDomain
-	24, // 5: types.EpochAuthorization.allocations:type_name -> types.RewardAllocation
-	6,  // [6:6] is the sub-list for method output_type
-	6,  // [6:6] is the sub-list for method input_type
-	6,  // [6:6] is the sub-list for extension type_name
-	6,  // [6:6] is the sub-list for extension extendee
-	0,  // [0:6] is the sub-list for field type_name
+	16, // 2: types.ProtocolParams.models:type_name -> types.ModelParams
+	17, // 3: types.ProtocolParams.approved_pcrs:type_name -> types.PCRPolicy
+	15, // 4: types.ProtocolParams.settlement_domains:type_name -> types.SettlementDomain
+	25, // 5: types.EpochAuthorization.allocations:type_name -> types.RewardAllocation
+	35, // 6: types.ValidatorHandoffManifest.domains:type_name -> types.ValidatorHandoffDomainManifest
+	37, // 7: types.ValidatorHandoffCancellationManifest.domains:type_name -> types.ValidatorHandoffCancellationDomainManifest
+	8,  // [8:8] is the sub-list for method output_type
+	8,  // [8:8] is the sub-list for method input_type
+	8,  // [8:8] is the sub-list for extension type_name
+	8,  // [8:8] is the sub-list for extension extendee
+	0,  // [0:8] is the sub-list for field type_name
 }
 
 func init() { file_account_proto_init() }
@@ -4028,7 +4818,7 @@ func file_account_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_account_proto_rawDesc), len(file_account_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   34,
+			NumMessages:   41,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

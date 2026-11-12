@@ -23,9 +23,7 @@ var allowedProofKinds = map[string]bool{
 	"request-finalization":                      true,
 	"bridge-release":                            true,
 	"epoch-rewards":                             true,
-	"validator-set-rotation":                    true,
 	"validator-set-rotation-queued":             true,
-	"validator-set-rotation-cancellation":       true,
 	"validator-set-rotation-cancelled":          true,
 	"validator-set-rotation-absent":             true,
 	"settlement-domain-authority":               true,
@@ -73,12 +71,11 @@ func (c *Contract) deliverSubmitQuorumSignature(height uint64, message *MessageS
 	if cryptoErr != nil || bdnScheme().Verify(publicKey, message.Message, message.Signature) != nil {
 		return &PluginDeliverResponse{Error: ErrCrypto("invalid validator BDN signature share")}
 	}
-	if (baseKind == "validator-set-rotation" || baseKind == "validator-set-rotation-queued") && len(message.SettlementDomainId) != 32 {
+	if baseKind == "validator-set-rotation-queued" && len(message.SettlementDomainId) != 32 {
 		return &PluginDeliverResponse{Error: ErrInvalidTransaction("validator-set proof is missing its settlement domain")}
 	}
 	var handoffClock *EpochClock
-	if baseKind == "validator-set-rotation" || baseKind == "validator-set-rotation-queued" ||
-		baseKind == "validator-set-rotation-cancellation" || baseKind == "validator-set-rotation-cancelled" ||
+	if baseKind == "validator-set-rotation-queued" || baseKind == "validator-set-rotation-cancelled" ||
 		baseKind == "validator-set-rotation-absent" {
 		clock, clockErr := c.currentEpochClockFromState()
 		if clockErr != nil {
@@ -100,23 +97,12 @@ func (c *Contract) deliverSubmitQuorumSignature(height uint64, message *MessageS
 			return &PluginDeliverResponse{Error: ErrConflict("validator handoff domain already has a finalized resolution")}
 		}
 	}
-	if baseKind == "validator-set-rotation" &&
-		(message.NewValidatorSetId != message.ValidatorSetId+1 || message.RotationNonce == 0 ||
-			len(message.ValidatorKeys) < 2 || len(message.ValidatorKeys) != len(message.ValidatorWeights) ||
-			len(message.HandoffGeneration) != 32 || message.HandoffTimestamp == 0) {
-		return &PluginDeliverResponse{Error: ErrInvalidTransaction("invalid validator-set rotation metadata")}
-	}
-	if baseKind == "validator-set-rotation-cancellation" &&
-		(message.NewValidatorSetId != message.ValidatorSetId+1 || message.RotationNonce == 0 || len(message.SettlementDomainId) != 32 ||
-			len(message.HandoffGeneration) != 32 || message.HandoffTimestamp == 0) {
-		return &PluginDeliverResponse{Error: ErrInvalidTransaction("invalid validator-set rotation cancellation metadata")}
-	}
-	if baseKind == "validator-set-rotation-cancellation" || baseKind == "validator-set-rotation-absent" {
+	if baseKind == "validator-set-rotation-absent" {
 		ready, readyErr := c.validatorHandoffReady(handoffClock)
 		if readyErr != nil {
 			return &PluginDeliverResponse{Error: readyErr}
 		}
-		if ready || !handoffCancellationWindowOpen(handoffClock) {
+		if ready || !handoffClock.ValidatorHandoffCancelling {
 			return &PluginDeliverResponse{Error: ErrUnauthorized("validator rotation resolution is not authorized by native abort consensus")}
 		}
 	}
@@ -124,6 +110,9 @@ func (c *Contract) deliverSubmitQuorumSignature(height uint64, message *MessageS
 		(message.NewValidatorSetId != message.ValidatorSetId+1 || message.RotationNonce == 0 || len(message.SettlementDomainId) != 32 ||
 			len(message.HandoffGeneration) != 32 || message.HandoffTimestamp == 0) {
 		return &PluginDeliverResponse{Error: ErrInvalidTransaction("invalid finalized validator-set cancellation metadata")}
+	}
+	if baseKind == "validator-set-rotation-cancelled" && !handoffClock.ValidatorHandoffCancelling {
+		return &PluginDeliverResponse{Error: ErrUnauthorized("validator rotation cancellation is not authorized by native abort consensus")}
 	}
 	if baseKind == "validator-set-rotation-absent" &&
 		(message.NewValidatorSetId != message.ValidatorSetId+1 || message.RotationNonce == 0 || len(message.SettlementDomainId) != 32 ||
@@ -259,26 +248,9 @@ func (c *Contract) deliverSubmitQuorumSignature(height uint64, message *MessageS
 			len(message.HandoffGeneration) != 32 || message.HandoffTimestamp == 0) {
 		return &PluginDeliverResponse{Error: ErrInvalidTransaction("invalid queued validator-set rotation metadata")}
 	}
-	if baseKind == "validator-set-rotation" {
-		params, paramsErr := c.currentProtocolParams()
-		if paramsErr != nil {
-			return &PluginDeliverResponse{Error: paramsErr}
-		}
-		setID, setErr := c.currentValidatorSetID(params)
-		if setErr != nil {
-			return &PluginDeliverResponse{Error: setErr}
-		}
-		if message.ValidatorSetId != setID {
-			return &PluginDeliverResponse{Error: ErrUnauthorized("rotation does not use the active validator set")}
-		}
-		if rotationErr := c.validatePreparedRotation(message, params); rotationErr != nil {
-			return &PluginDeliverResponse{Error: rotationErr}
-		}
-	}
-
 	var rotationClaimKey []byte
 	var rotationClaim *Observation
-	if baseKind == "validator-set-rotation" || baseKind == "validator-set-rotation-queued" {
+	if baseKind == "validator-set-rotation-queued" {
 		claim := hashFields(
 			[]byte("takusen:validator-set-rotation-claim"), []byte(baseKind),
 			message.SettlementDomainId,
@@ -355,14 +327,8 @@ func (c *Contract) deliverSubmitQuorumSignature(height uint64, message *MessageS
 			return &PluginDeliverResponse{Error: ErrCrypto(proofErr.Error())}
 		}
 		records[string(KeyForQuorumProof(message.ProofId))] = proof
-		if baseKind == "validator-set-rotation" {
-			records[string(KeyForRotationProofIndex(message.SettlementDomainId, message.ValidatorSetId, message.NewValidatorSetId))] = &ReplayMarker{Id: append([]byte(nil), message.ProofId...)}
-		}
 		if baseKind == "validator-set-rotation-queued" {
 			records[string(KeyForQueuedRotationIndex(message.SettlementDomainId, message.ValidatorSetId, message.NewValidatorSetId))] = &ReplayMarker{Id: append([]byte(nil), message.ProofId...)}
-		}
-		if baseKind == "validator-set-rotation-cancellation" {
-			records[string(KeyForRotationCancellationIndex(message.SettlementDomainId, message.ValidatorSetId, message.NewValidatorSetId))] = &ReplayMarker{Id: append([]byte(nil), message.ProofId...)}
 		}
 		if baseKind == "validator-set-rotation-absent" {
 			records[string(KeyForRotationResolutionIndex(message.SettlementDomainId, message.ValidatorSetId, message.NewValidatorSetId))] = &ReplayMarker{Id: append([]byte(nil), message.ProofId...)}
@@ -385,44 +351,9 @@ func (c *Contract) deliverSubmitQuorumSignature(height uint64, message *MessageS
 		if baseKind == "settlement-domain-retirement-cancelled" || baseKind == "settlement-domain-retired" || baseKind == "settlement-domain-abandonment" {
 			deletes = append(deletes, KeyForSettlementDomainLifecycleIntent(message.SettlementDomainId))
 		}
-		if baseKind == "validator-set-rotation-cancellation" || baseKind == "validator-set-rotation-cancelled" {
-			indexKey := KeyForRotationProofIndex(message.SettlementDomainId, message.ValidatorSetId, message.NewValidatorSetId)
-			marker := new(ReplayMarker)
-			if found, readErr := c.read(indexKey, marker); readErr != nil {
-				return &PluginDeliverResponse{Error: readErr}
-			} else if !found {
-				return &PluginDeliverResponse{Error: ErrNotFound("validator rotation proof index is absent")}
-			}
-			queued := new(QuorumProof)
-			if found, readErr := c.read(KeyForQuorumProof(marker.Id), queued); readErr != nil {
-				return &PluginDeliverResponse{Error: readErr}
-			} else if !found || queued.ProofKind != "validator-set-rotation" || queued.ValidatorSetId != message.ValidatorSetId ||
-				queued.NewValidatorSetId != message.NewValidatorSetId || queued.RotationNonce != message.RotationNonce ||
-				!bytes.Equal(queued.SettlementDomainId, message.SettlementDomainId) {
-				return &PluginDeliverResponse{Error: ErrConflict("rotation cancellation does not match the indexed generation")}
-			}
-			if !bytes.Equal(queued.HandoffGeneration, message.HandoffGeneration) || queued.HandoffTimestamp != message.HandoffTimestamp {
-				return &PluginDeliverResponse{Error: ErrConflict("rotation cancellation targets a different handoff attempt")}
-			}
-			if baseKind == "validator-set-rotation-cancelled" {
-				cancellationKey := KeyForRotationCancellationIndex(message.SettlementDomainId, message.ValidatorSetId, message.NewValidatorSetId)
-				intentMarker := new(ReplayMarker)
-				if found, readErr := c.read(cancellationKey, intentMarker); readErr != nil {
-					return &PluginDeliverResponse{Error: readErr}
-				} else if !found {
-					return &PluginDeliverResponse{Error: ErrNotFound("validator rotation cancellation was not authorized")}
-				}
-				intent := new(QuorumProof)
-				if found, readErr := c.read(KeyForQuorumProof(intentMarker.Id), intent); readErr != nil {
-					return &PluginDeliverResponse{Error: readErr}
-				} else if !found || intent.ProofKind != "validator-set-rotation-cancellation" ||
-					intent.RotationNonce != message.RotationNonce || !bytes.Equal(intent.HandoffGeneration, message.HandoffGeneration) ||
-					intent.HandoffTimestamp != message.HandoffTimestamp {
-					return &PluginDeliverResponse{Error: ErrConflict("finalized cancellation does not match its native authorization")}
-				}
-				deletes = append(deletes, KeyForQueuedRotationIndex(message.SettlementDomainId, message.ValidatorSetId, message.NewValidatorSetId), cancellationKey)
-				records[string(KeyForRotationResolutionIndex(message.SettlementDomainId, message.ValidatorSetId, message.NewValidatorSetId))] = &ReplayMarker{Id: append([]byte(nil), message.ProofId...)}
-			}
+		if baseKind == "validator-set-rotation-cancelled" {
+			deletes = append(deletes, KeyForQueuedRotationIndex(message.SettlementDomainId, message.ValidatorSetId, message.NewValidatorSetId))
+			records[string(KeyForRotationResolutionIndex(message.SettlementDomainId, message.ValidatorSetId, message.NewValidatorSetId))] = &ReplayMarker{Id: append([]byte(nil), message.ProofId...)}
 		}
 		if writeErr := c.writeChanges(records, deletes); writeErr != nil {
 			return &PluginDeliverResponse{Error: writeErr}
@@ -492,82 +423,6 @@ func buildQuorumProof(height uint64, message *MessageSubmitQuorumSignature, vali
 		ControlBlockHash:   append([]byte(nil), message.ControlBlockHash...),
 		LifecycleIntentId:  append([]byte(nil), message.LifecycleIntentId...),
 	}, nil
-}
-
-func (c *Contract) validatePreparedRotation(message *MessageSubmitQuorumSignature, params *ProtocolParams) *PluginError {
-	clock, err := c.currentEpochClock(params)
-	if err != nil {
-		return err
-	}
-	if clock.CurrentEpoch == ^uint64(0) {
-		return ErrState("validator epoch overflow")
-	}
-	if !clock.ValidatorHandoffPrepared || clock.ValidatorHandoffTimestamp == 0 ||
-		message.HandoffTimestamp != clock.ValidatorHandoffTimestamp ||
-		!bytes.Equal(message.HandoffGeneration, validatorHandoffGeneration(clock)) {
-		return ErrInvalidTransaction("rotation does not match the prepared global handoff")
-	}
-	entries, err := c.rangeRead(EpochValidatorPrefix(clock.CurrentEpoch + 1))
-	if err != nil {
-		return err
-	}
-	validators := make([]*Validator, 0, len(entries))
-	var total uint64
-	for _, entry := range entries {
-		validator := new(Validator)
-		if decodeErr := Unmarshal(entry.Value, validator); decodeErr != nil {
-			return decodeErr
-		}
-		if !validAddress(validator.Address) || len(validator.PublicKey) == 0 || validator.StakedAmount == 0 {
-			return ErrState("prepared validator snapshot contains an invalid member")
-		}
-		if ^uint64(0)-total < validator.StakedAmount {
-			return ErrState("prepared validator stake overflow")
-		}
-		total += validator.StakedAmount
-		validators = append(validators, validator)
-	}
-	if len(validators) < 2 || total == 0 || len(validators) != len(message.ValidatorKeys) {
-		return ErrInvalidTransaction("rotation does not match the prepared validator set")
-	}
-	sort.Slice(validators, func(i, j int) bool { return bytes.Compare(validators[i].PublicKey, validators[j].PublicKey) < 0 })
-	points := make([]kyber.Point, len(validators))
-	for index, validator := range validators {
-		point, pointErr := bdnPublicKey(validator.PublicKey)
-		if pointErr != nil {
-			return ErrCrypto("prepared validator public key is invalid")
-		}
-		points[index] = point
-	}
-	mask, maskErr := sign.NewMask(drandbls.NewBLS12381Suite(), points, nil)
-	if maskErr != nil {
-		return ErrCrypto("prepared validator mask is invalid")
-	}
-	scheme := bdnScheme()
-	for index, validator := range validators {
-		if mask.SetBit(index, true) != nil {
-			return ErrCrypto("prepared validator mask is invalid")
-		}
-		weighted, aggregateErr := scheme.AggregatePublicKeys(mask)
-		if aggregateErr != nil {
-			return ErrCrypto("prepared validator key aggregation failed")
-		}
-		compressed, marshalErr := weighted.MarshalBinary()
-		if marshalErr != nil {
-			return ErrCrypto("prepared validator key encoding failed")
-		}
-		if mask.SetMask(make([]byte, len(mask.Mask()))) != nil {
-			return ErrCrypto("prepared validator mask reset failed")
-		}
-		uncompressed, conversionErr := g1CompressedToEIP2537(compressed)
-		if conversionErr != nil {
-			return ErrCrypto("prepared validator key conversion failed")
-		}
-		if !bytes.Equal(uncompressed, message.ValidatorKeys[index]) || validator.StakedAmount != message.ValidatorWeights[index] {
-			return ErrInvalidTransaction("rotation does not match the prepared validator set")
-		}
-	}
-	return nil
 }
 
 func bdnScheme() *bdn.Scheme { return bdn.NewSchemeOnG2(drandbls.NewBLS12381Suite()) }

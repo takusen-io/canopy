@@ -716,6 +716,18 @@ func (s *StateMachine) Copy() (*StateMachine, lib.ErrorI) {
 // Set() upserts a key-value pair under a key
 func (s *StateMachine) Set(k, v []byte) (err lib.ErrorI) { return s.Store().Set(k, v) }
 
+func (s *StateMachine) AuxiliaryCandidates() []*lib.AuxiliaryCandidate {
+	encoded, err := s.Get(AuxiliaryCandidatesKey())
+	if err != nil || len(encoded) == 0 {
+		return nil
+	}
+	wrapper := new(lib.AuxiliaryCandidates)
+	if lib.Unmarshal(encoded, wrapper) != nil || len(wrapper.Candidates) > 32 {
+		return nil
+	}
+	return wrapper.Candidates
+}
+
 // Get() retrieves a key-value pair under a key
 // NOTE: returns (nil, nil) if no value is found for that key
 func (s *StateMachine) Get(key []byte) (bz []byte, err lib.ErrorI) { return s.Store().Get(key) }
@@ -985,22 +997,23 @@ var pluginWritableCorePrefixes = map[byte]struct{}{
 
 // corePrefixNames maps every reserved single-byte core store prefix to a human-readable name.
 var corePrefixNames = map[byte]string{
-	accountPrefix[0]:          "accounts",
-	poolPrefix[0]:             "pools",
-	validatorPrefix[0]:        "validators",
-	committeePrefix[0]:        "committees",
-	unstakePrefix[0]:          "unstaking",
-	pausedPrefix[0]:           "paused",
-	paramsPrefix[0]:           "params",
-	nonSignerPrefix[0]:        "non-signers",
-	lastProposersPrefix[0]:    "last-proposers",
-	supplyPrefix[0]:           "supply",
-	delegatePrefix[0]:         "delegations",
-	committeesDataPrefix[0]:   "committees-data",
-	orderBookPrefix[0]:        "order-book",
-	retiredCommitteePrefix[0]: "retired-committees",
-	dexPrefix[0]:              "dex",
-	activeCommitteePrefix[0]:  "active-committees",
+	accountPrefix[0]:            "accounts",
+	poolPrefix[0]:               "pools",
+	validatorPrefix[0]:          "validators",
+	committeePrefix[0]:          "committees",
+	unstakePrefix[0]:            "unstaking",
+	pausedPrefix[0]:             "paused",
+	paramsPrefix[0]:             "params",
+	nonSignerPrefix[0]:          "non-signers",
+	lastProposersPrefix[0]:      "last-proposers",
+	supplyPrefix[0]:             "supply",
+	delegatePrefix[0]:           "delegations",
+	committeesDataPrefix[0]:     "committees-data",
+	orderBookPrefix[0]:          "order-book",
+	retiredCommitteePrefix[0]:   "retired-committees",
+	dexPrefix[0]:                "dex",
+	activeCommitteePrefix[0]:    "active-committees",
+	auxiliaryCandidatePrefix[0]: "auxiliary-candidates",
 }
 
 // assertPluginKeyWritable panics if a plugin write targets a reserved core prefix it must not touch.

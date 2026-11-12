@@ -50,6 +50,12 @@ var (
 	activeServicerIndexPrefix         = []byte{133}
 	pendingEpochAuthorizationPrefix   = []byte{135}
 	pendingBridgeBurnPrefix           = []byte{136}
+	handoffManifestPrefix             = []byte{137}
+	domainRotationStatePrefix         = []byte{138}
+	handoffCancellationManifestPrefix = []byte{139}
+	consensusCertificatePrefix        = []byte{140}
+	nativeAuthorizationIntentPrefix   = []byte{141}
+	pendingAuthorizationPrefix        = []byte{142}
 )
 
 func EnclavePrefix() []byte        { return JoinLenPrefix(enclavePrefix) }
@@ -62,11 +68,19 @@ func AssignmentIndexPrefix(owner []byte) []byte {
 func EpochValidatorPrefix(epoch uint64) []byte {
 	return JoinLenPrefix(epochValidatorPrefix, uint64Bytes(epoch))
 }
-func SettlementIndexPrefix() []byte { return JoinLenPrefix(settlementIndexPrefix) }
-func QuorumProofPrefix() []byte     { return JoinLenPrefix(quorumProofPrefix) }
-func DepositPrefix() []byte         { return JoinLenPrefix(depositPrefix) }
-func CreditPrefix() []byte          { return JoinLenPrefix(creditPrefix) }
-func ReservationPrefix() []byte     { return JoinLenPrefix(reservationPrefix) }
+func SettlementIndexPrefix() []byte      { return JoinLenPrefix(settlementIndexPrefix) }
+func QuorumProofPrefix() []byte          { return JoinLenPrefix(quorumProofPrefix) }
+func ConsensusCertificatePrefix() []byte { return JoinLenPrefix(consensusCertificatePrefix) }
+func KeyForNativeAuthorizationIntent(kind string, domainID []byte) []byte {
+	return JoinLenPrefix(nativeAuthorizationIntentPrefix, []byte(kind), domainID)
+}
+func PendingAuthorizationPrefix() []byte { return JoinLenPrefix(pendingAuthorizationPrefix) }
+func KeyForPendingAuthorization(requestID string) []byte {
+	return JoinLenPrefix(pendingAuthorizationPrefix, []byte(requestID))
+}
+func DepositPrefix() []byte     { return JoinLenPrefix(depositPrefix) }
+func CreditPrefix() []byte      { return JoinLenPrefix(creditPrefix) }
+func ReservationPrefix() []byte { return JoinLenPrefix(reservationPrefix) }
 func ProvisionalReservationPrefix(domainID, requester []byte) []byte {
 	return JoinLenPrefix(provisionalReservationIndexPrefix, domainID, requester)
 }
@@ -82,6 +96,19 @@ func PendingEpochAuthorizationPrefix() []byte { return JoinLenPrefix(pendingEpoc
 func BridgeMintPrefix() []byte                { return JoinLenPrefix(bridgeMintPrefix) }
 func BridgeBurnPrefix() []byte                { return JoinLenPrefix(bridgeBurnPrefix) }
 func PendingBridgeBurnPrefix() []byte         { return JoinLenPrefix(pendingBridgeBurnPrefix) }
+func KeyForValidatorHandoffManifest() []byte  { return JoinLenPrefix(handoffManifestPrefix) }
+func KeyForValidatorHandoffManifestRoot(root []byte) []byte {
+	return JoinLenPrefix(handoffManifestPrefix, root)
+}
+func KeyForDomainRotationState(domainID []byte) []byte {
+	return JoinLenPrefix(domainRotationStatePrefix, domainID)
+}
+func KeyForValidatorHandoffCancellationManifest() []byte {
+	return JoinLenPrefix(handoffCancellationManifestPrefix)
+}
+func KeyForValidatorHandoffCancellationManifestRoot(root []byte) []byte {
+	return JoinLenPrefix(handoffCancellationManifestPrefix, root)
+}
 
 func KeyForAccount(address []byte) []byte   { return JoinLenPrefix(accountPrefix, address) }
 func KeyForValidator(address []byte) []byte { return JoinLenPrefix(validatorPrefix, address) }
@@ -118,6 +145,12 @@ func KeyForObservationClaim(kind byte, validatorSetID, epoch uint64, claimHash, 
 func KeyForBlockAnchor() []byte { return JoinLenPrefix(blockAnchorPrefix) }
 func KeyForQuorumProof(proofID []byte) []byte {
 	return JoinLenPrefix(quorumProofPrefix, proofID)
+}
+func KeyForConsensusCertificate(kind string, key, digest []byte) []byte {
+	return JoinLenPrefix(consensusCertificatePrefix, []byte(kind), key, digest)
+}
+func ConsensusCertificateIdentityPrefix(kind string, key []byte) []byte {
+	return JoinLenPrefix(consensusCertificatePrefix, []byte(kind), key)
 }
 func KeyForRotationProofIndex(domainID []byte, oldSetID, newSetID uint64) []byte {
 	return JoinLenPrefix(rotationProofIndexPrefix, []byte("proof"), domainID, uint64Bytes(oldSetID), uint64Bytes(newSetID))

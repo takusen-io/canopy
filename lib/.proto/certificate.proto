@@ -41,7 +41,24 @@ message QuorumCertificate {
   // (aggregate) signature: the compact signature created by combining multiple individual signatures from replica
   // validators. This signature serves as a justification that a super-majority quorum signed off on the certificate
   AggregateSignature signature = 7; // aggregate signature from the current proposer message
+  // Auxiliary certificates are independently aggregated best-effort vote
+  // extensions. They never participate in ordinary block validity.
+  repeated AuxiliaryCertificate auxiliary_certificates = 8; // @gotags: json:"auxiliaryCertificates,omitempty"
 }
+
+message AuxiliaryCandidate {
+  string kind = 1;
+  bytes key = 2;
+  bytes digest = 3;
+  bytes payload = 4;
+}
+
+message AuxiliaryCertificate {
+  AuxiliaryCandidate candidate = 1;
+  AggregateSignature signature = 2;
+}
+
+message AuxiliaryCandidates { repeated AuxiliaryCandidate candidates = 1; }
 
 // CertificateResult contains the outcome of a certificate produced by a quorum in consensus
 message CertificateResult {

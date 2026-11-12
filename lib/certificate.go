@@ -236,12 +236,14 @@ func (x *QuorumCertificate) SignBytes() (signBytes []byte) {
 	}
 	// create temp variables to save values
 	results, block, aggregateSignature := x.Results, x.Block, x.Signature
+	auxiliaryCertificates := x.AuxiliaryCertificates
 	// remove the values from the struct
-	x.Results, x.Block, x.Signature = nil, nil, nil
+	x.Results, x.Block, x.Signature, x.AuxiliaryCertificates = nil, nil, nil, nil
 	// convert the structure into the sign bytes
 	signBytes, _ = Marshal(x)
 	// add back the removed values
 	x.Results, x.Block, x.Signature = results, block, aggregateSignature
+	x.AuxiliaryCertificates = auxiliaryCertificates
 	// exit with the bytes
 	return
 }

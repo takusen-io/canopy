@@ -15,8 +15,18 @@ import (
 	"strings"
 	"testing"
 
+	drandbls "github.com/drand/kyber-bls12381"
 	"google.golang.org/protobuf/proto"
 )
+
+func testBDNPublicKey(value int64) []byte {
+	suite := drandbls.NewBLS12381Suite()
+	encoded, err := suite.G1().Point().Mul(suite.G1().Scalar().SetInt64(value), nil).MarshalBinary()
+	if err != nil {
+		panic(err)
+	}
+	return encoded
+}
 
 func seedQueuedRotation(t *testing.T, store *memoryStateStore, params *ProtocolParams, oldSetID uint64) {
 	t.Helper()
@@ -61,7 +71,7 @@ func epochEndRequestWithWeights(height, unixSeconds uint64, proposer []byte, wei
 	_ = binary.Write(&encoded, binary.BigEndian, uint32(len(weights)))
 	for index, weight := range weights {
 		address := bytes.Repeat([]byte{byte(index + 1)}, addressSize)
-		publicKey := bytes.Repeat([]byte{byte(0x41 + index)}, 48)
+		publicKey := testBDNPublicKey(int64(index + 1))
 		encoded.Write(address)
 		_ = binary.Write(&encoded, binary.BigEndian, uint16(len(publicKey)))
 		encoded.Write(publicKey)
@@ -92,8 +102,8 @@ func newMemoryContract(t *testing.T) (*Contract, *memoryStateStore, []byte, []by
 	store := &memoryStateStore{values: make(map[string][]byte)}
 	contract := &Contract{Config: Config{ChainId: 1}, plugin: store}
 	first, second := bytes.Repeat([]byte{1}, 20), bytes.Repeat([]byte{2}, 20)
-	firstValidator := &Validator{Address: first, PublicKey: bytes.Repeat([]byte{0x41}, 48), StakedAmount: 100, Committees: []uint64{1}}
-	secondValidator := &Validator{Address: second, PublicKey: bytes.Repeat([]byte{0x42}, 48), StakedAmount: 100, Committees: []uint64{1}}
+	firstValidator := &Validator{Address: first, PublicKey: testBDNPublicKey(1), StakedAmount: 100, Committees: []uint64{1}}
+	secondValidator := &Validator{Address: second, PublicKey: testBDNPublicKey(2), StakedAmount: 100, Committees: []uint64{1}}
 	store.put(t, KeyForValidator(first), firstValidator)
 	store.put(t, KeyForValidator(second), secondValidator)
 	store.put(t, KeyForEpochValidator(1, first), firstValidator)
@@ -1037,7 +1047,7 @@ func TestEpochEndSignalsCoreValidatorSetActivation(t *testing.T) {
 	}
 	response = contract.endBlock(epochEndRequest(10, proposer))
 	if response.Error != nil || !response.ValidatorSetEpochPrepare {
-		t.Fatalf("epoch boundary preparation response = %#v", response)
+		t.Fatalf("epoch boundary preparation response = %#v error=%v", response, response.Error)
 	}
 	seedQueuedRotation(t, store, params, 1)
 	response = contract.endBlock(epochEndRequest(11, proposer))
@@ -1551,7 +1561,7 @@ func TestGovernanceCanDiscardNeverActiveStagedDomain(t *testing.T) {
 	}
 }
 
-func TestMissedPreCutoffWindowCreatesIncomingRepairAttempt(t *testing.T) {
+func TestAbortRequiresFinalizedCancellationBeforeNewAttempt(t *testing.T) {
 	contract, store, proposer, _ := newMemoryContract(t)
 	params := defaultProtocolParams()
 	params.Revision, params.EpochBlocks, params.ValidatorSetId = 1, 10, 1
@@ -1564,21 +1574,17 @@ func TestMissedPreCutoffWindowCreatesIncomingRepairAttempt(t *testing.T) {
 	if found, err := contract.read(KeyForEpochClock(), clock); err != nil || !found || clock.ValidatorHandoffAttempt != 1 || clock.ValidatorHandoffTimestamp != 12_400 {
 		t.Fatalf("first attempt missing: found=%v err=%v clock=%#v", found, err, clock)
 	}
-	firstGeneration := validatorHandoffGeneration(clock)
 	if response := contract.endBlock(epochEndRequestAt(11, 11_200, proposer)); response.Error != nil || response.ValidatorSetEpochEnd {
-		t.Fatalf("abort-window renewal failed: %#v", response)
+		t.Fatalf("abort-window cancellation preparation failed: %#v", response)
 	}
-	if found, err := contract.read(KeyForEpochClock(), clock); err != nil || !found || clock.ValidatorHandoffAttempt != 2 || clock.ValidatorHandoffTimestamp != 13_600 {
-		t.Fatalf("abort window did not create a fresh in-place attempt: found=%v err=%v clock=%#v", found, err, clock)
+	if found, err := contract.read(KeyForEpochClock(), clock); err != nil || !found || clock.ValidatorHandoffAttempt != 1 || !clock.ValidatorHandoffCancelling {
+		t.Fatalf("abort window did not preserve attempt one while cancellation finalizes: found=%v err=%v clock=%#v", found, err, clock)
 	}
-	if bytes.Equal(firstGeneration, validatorHandoffGeneration(clock)) {
-		t.Fatal("renewal did not derive a new generation from the incremented attempt")
+	if response := contract.endBlock(epochEndRequestAt(12, 12_400, proposer)); response.Error != nil || response.ValidatorSetEpochEnd {
+		t.Fatalf("unresolved cancellation wait failed: %#v", response)
 	}
-	if response := contract.endBlock(epochEndRequestAt(12, 13_600, proposer)); response.Error != nil || response.ValidatorSetEpochEnd {
-		t.Fatalf("post-cutoff repair attempt failed: %#v", response)
-	}
-	if found, err := contract.read(KeyForEpochClock(), clock); err != nil || !found || clock.ValidatorHandoffAttempt != 3 || clock.ValidatorHandoffTimestamp != 16_000 {
-		t.Fatalf("cutoff did not create a fresh incoming-authority repair generation: found=%v err=%v clock=%#v", found, err, clock)
+	if found, err := contract.read(KeyForEpochClock(), clock); err != nil || !found || clock.ValidatorHandoffAttempt != 1 {
+		t.Fatalf("unresolved cancellation incorrectly created a new attempt: found=%v err=%v clock=%#v", found, err, clock)
 	}
 }
 

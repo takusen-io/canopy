@@ -44,6 +44,8 @@ type Controller struct {
 	checkpoints map[uint64]map[uint64]lib.HexBytes // cached checkpoints loaded from file
 	isSyncing   *atomic.Bool                       // is the chain currently being downloaded from peers
 	log         lib.LoggerI                        // object for logging
+	auxiliaryMu sync.RWMutex
+	auxiliaryCandidates map[string]*lib.AuxiliaryCandidate
 	*sync.Mutex                                    // mutex for thread safety
 }
 
@@ -70,6 +72,7 @@ func New(fsm *fsm.StateMachine, c lib.Config, valKey crypto.PrivateKeyI, metrics
 		P2P:        p2p.New(valKey, maxMembersPerCommittee, metrics, c, l),
 		isSyncing:  &atomic.Bool{},
 		log:        l,
+		auxiliaryCandidates: make(map[string]*lib.AuxiliaryCandidate),
 		Mutex:      &sync.Mutex{},
 	}
 	// load checkpoints from file (if provided)

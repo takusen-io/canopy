@@ -57,9 +57,12 @@ type QuorumCertificate struct {
 	ProposerKey []byte `protobuf:"bytes,6,opt,name=proposer_key,json=proposerKey,proto3" json:"proposerKey"` // @gotags: json:"proposerKey"
 	// (aggregate) signature: the compact signature created by combining multiple individual signatures from replica
 	// validators. This signature serves as a justification that a super-majority quorum signed off on the certificate
-	Signature     *AggregateSignature `protobuf:"bytes,7,opt,name=signature,proto3" json:"signature,omitempty"` // aggregate signature from the current proposer message
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Signature *AggregateSignature `protobuf:"bytes,7,opt,name=signature,proto3" json:"signature,omitempty"` // aggregate signature from the current proposer message
+	// Auxiliary certificates are independently aggregated best-effort vote
+	// extensions. They never participate in ordinary block validity.
+	AuxiliaryCertificates []*AuxiliaryCertificate `protobuf:"bytes,8,rep,name=auxiliary_certificates,json=auxiliaryCertificates,proto3" json:"auxiliaryCertificates,omitempty"` // @gotags: json:"auxiliaryCertificates,omitempty"
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
 }
 
 func (x *QuorumCertificate) Reset() {
@@ -141,6 +144,177 @@ func (x *QuorumCertificate) GetSignature() *AggregateSignature {
 	return nil
 }
 
+func (x *QuorumCertificate) GetAuxiliaryCertificates() []*AuxiliaryCertificate {
+	if x != nil {
+		return x.AuxiliaryCertificates
+	}
+	return nil
+}
+
+type AuxiliaryCandidate struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Kind          string                 `protobuf:"bytes,1,opt,name=kind,proto3" json:"kind,omitempty"`
+	Key           []byte                 `protobuf:"bytes,2,opt,name=key,proto3" json:"key,omitempty"`
+	Digest        []byte                 `protobuf:"bytes,3,opt,name=digest,proto3" json:"digest,omitempty"`
+	Payload       []byte                 `protobuf:"bytes,4,opt,name=payload,proto3" json:"payload,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AuxiliaryCandidate) Reset() {
+	*x = AuxiliaryCandidate{}
+	mi := &file_certificate_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AuxiliaryCandidate) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AuxiliaryCandidate) ProtoMessage() {}
+
+func (x *AuxiliaryCandidate) ProtoReflect() protoreflect.Message {
+	mi := &file_certificate_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AuxiliaryCandidate.ProtoReflect.Descriptor instead.
+func (*AuxiliaryCandidate) Descriptor() ([]byte, []int) {
+	return file_certificate_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *AuxiliaryCandidate) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
+}
+
+func (x *AuxiliaryCandidate) GetKey() []byte {
+	if x != nil {
+		return x.Key
+	}
+	return nil
+}
+
+func (x *AuxiliaryCandidate) GetDigest() []byte {
+	if x != nil {
+		return x.Digest
+	}
+	return nil
+}
+
+func (x *AuxiliaryCandidate) GetPayload() []byte {
+	if x != nil {
+		return x.Payload
+	}
+	return nil
+}
+
+type AuxiliaryCertificate struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Candidate     *AuxiliaryCandidate    `protobuf:"bytes,1,opt,name=candidate,proto3" json:"candidate,omitempty"`
+	Signature     *AggregateSignature    `protobuf:"bytes,2,opt,name=signature,proto3" json:"signature,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AuxiliaryCertificate) Reset() {
+	*x = AuxiliaryCertificate{}
+	mi := &file_certificate_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AuxiliaryCertificate) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AuxiliaryCertificate) ProtoMessage() {}
+
+func (x *AuxiliaryCertificate) ProtoReflect() protoreflect.Message {
+	mi := &file_certificate_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AuxiliaryCertificate.ProtoReflect.Descriptor instead.
+func (*AuxiliaryCertificate) Descriptor() ([]byte, []int) {
+	return file_certificate_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *AuxiliaryCertificate) GetCandidate() *AuxiliaryCandidate {
+	if x != nil {
+		return x.Candidate
+	}
+	return nil
+}
+
+func (x *AuxiliaryCertificate) GetSignature() *AggregateSignature {
+	if x != nil {
+		return x.Signature
+	}
+	return nil
+}
+
+type AuxiliaryCandidates struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Candidates    []*AuxiliaryCandidate  `protobuf:"bytes,1,rep,name=candidates,proto3" json:"candidates,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AuxiliaryCandidates) Reset() {
+	*x = AuxiliaryCandidates{}
+	mi := &file_certificate_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AuxiliaryCandidates) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AuxiliaryCandidates) ProtoMessage() {}
+
+func (x *AuxiliaryCandidates) ProtoReflect() protoreflect.Message {
+	mi := &file_certificate_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AuxiliaryCandidates.ProtoReflect.Descriptor instead.
+func (*AuxiliaryCandidates) Descriptor() ([]byte, []int) {
+	return file_certificate_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *AuxiliaryCandidates) GetCandidates() []*AuxiliaryCandidate {
+	if x != nil {
+		return x.Candidates
+	}
+	return nil
+}
+
 // CertificateResult contains the outcome of a certificate produced by a quorum in consensus
 type CertificateResult struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -168,7 +342,7 @@ type CertificateResult struct {
 
 func (x *CertificateResult) Reset() {
 	*x = CertificateResult{}
-	mi := &file_certificate_proto_msgTypes[1]
+	mi := &file_certificate_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -180,7 +354,7 @@ func (x *CertificateResult) String() string {
 func (*CertificateResult) ProtoMessage() {}
 
 func (x *CertificateResult) ProtoReflect() protoreflect.Message {
-	mi := &file_certificate_proto_msgTypes[1]
+	mi := &file_certificate_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -193,7 +367,7 @@ func (x *CertificateResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CertificateResult.ProtoReflect.Descriptor instead.
 func (*CertificateResult) Descriptor() ([]byte, []int) {
-	return file_certificate_proto_rawDescGZIP(), []int{1}
+	return file_certificate_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *CertificateResult) GetRewardRecipients() *RewardRecipients {
@@ -259,7 +433,7 @@ type RewardRecipients struct {
 
 func (x *RewardRecipients) Reset() {
 	*x = RewardRecipients{}
-	mi := &file_certificate_proto_msgTypes[2]
+	mi := &file_certificate_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -271,7 +445,7 @@ func (x *RewardRecipients) String() string {
 func (*RewardRecipients) ProtoMessage() {}
 
 func (x *RewardRecipients) ProtoReflect() protoreflect.Message {
-	mi := &file_certificate_proto_msgTypes[2]
+	mi := &file_certificate_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -284,7 +458,7 @@ func (x *RewardRecipients) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RewardRecipients.ProtoReflect.Descriptor instead.
 func (*RewardRecipients) Descriptor() ([]byte, []int) {
-	return file_certificate_proto_rawDescGZIP(), []int{2}
+	return file_certificate_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *RewardRecipients) GetPaymentPercents() []*PaymentPercents {
@@ -313,7 +487,7 @@ type SlashRecipients struct {
 
 func (x *SlashRecipients) Reset() {
 	*x = SlashRecipients{}
-	mi := &file_certificate_proto_msgTypes[3]
+	mi := &file_certificate_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -325,7 +499,7 @@ func (x *SlashRecipients) String() string {
 func (*SlashRecipients) ProtoMessage() {}
 
 func (x *SlashRecipients) ProtoReflect() protoreflect.Message {
-	mi := &file_certificate_proto_msgTypes[3]
+	mi := &file_certificate_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -338,7 +512,7 @@ func (x *SlashRecipients) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SlashRecipients.ProtoReflect.Descriptor instead.
 func (*SlashRecipients) Descriptor() ([]byte, []int) {
-	return file_certificate_proto_rawDescGZIP(), []int{3}
+	return file_certificate_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *SlashRecipients) GetDoubleSigners() []*DoubleSigner {
@@ -368,7 +542,7 @@ type Orders struct {
 
 func (x *Orders) Reset() {
 	*x = Orders{}
-	mi := &file_certificate_proto_msgTypes[4]
+	mi := &file_certificate_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -380,7 +554,7 @@ func (x *Orders) String() string {
 func (*Orders) ProtoMessage() {}
 
 func (x *Orders) ProtoReflect() protoreflect.Message {
-	mi := &file_certificate_proto_msgTypes[4]
+	mi := &file_certificate_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -393,7 +567,7 @@ func (x *Orders) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Orders.ProtoReflect.Descriptor instead.
 func (*Orders) Descriptor() ([]byte, []int) {
-	return file_certificate_proto_rawDescGZIP(), []int{4}
+	return file_certificate_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *Orders) GetLockOrders() []*LockOrder {
@@ -437,7 +611,7 @@ type LockOrder struct {
 
 func (x *LockOrder) Reset() {
 	*x = LockOrder{}
-	mi := &file_certificate_proto_msgTypes[5]
+	mi := &file_certificate_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -449,7 +623,7 @@ func (x *LockOrder) String() string {
 func (*LockOrder) ProtoMessage() {}
 
 func (x *LockOrder) ProtoReflect() protoreflect.Message {
-	mi := &file_certificate_proto_msgTypes[5]
+	mi := &file_certificate_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -462,7 +636,7 @@ func (x *LockOrder) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LockOrder.ProtoReflect.Descriptor instead.
 func (*LockOrder) Descriptor() ([]byte, []int) {
-	return file_certificate_proto_rawDescGZIP(), []int{5}
+	return file_certificate_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *LockOrder) GetOrderId() []byte {
@@ -515,7 +689,7 @@ type CloseOrder struct {
 
 func (x *CloseOrder) Reset() {
 	*x = CloseOrder{}
-	mi := &file_certificate_proto_msgTypes[6]
+	mi := &file_certificate_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -527,7 +701,7 @@ func (x *CloseOrder) String() string {
 func (*CloseOrder) ProtoMessage() {}
 
 func (x *CloseOrder) ProtoReflect() protoreflect.Message {
-	mi := &file_certificate_proto_msgTypes[6]
+	mi := &file_certificate_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -540,7 +714,7 @@ func (x *CloseOrder) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CloseOrder.ProtoReflect.Descriptor instead.
 func (*CloseOrder) Descriptor() ([]byte, []int) {
-	return file_certificate_proto_rawDescGZIP(), []int{6}
+	return file_certificate_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *CloseOrder) GetOrderId() []byte {
@@ -579,7 +753,7 @@ type Checkpoint struct {
 
 func (x *Checkpoint) Reset() {
 	*x = Checkpoint{}
-	mi := &file_certificate_proto_msgTypes[7]
+	mi := &file_certificate_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -591,7 +765,7 @@ func (x *Checkpoint) String() string {
 func (*Checkpoint) ProtoMessage() {}
 
 func (x *Checkpoint) ProtoReflect() protoreflect.Message {
-	mi := &file_certificate_proto_msgTypes[7]
+	mi := &file_certificate_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -604,7 +778,7 @@ func (x *Checkpoint) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Checkpoint.ProtoReflect.Descriptor instead.
 func (*Checkpoint) Descriptor() ([]byte, []int) {
-	return file_certificate_proto_rawDescGZIP(), []int{7}
+	return file_certificate_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *Checkpoint) GetHeight() uint64 {
@@ -638,7 +812,7 @@ type PaymentPercents struct {
 
 func (x *PaymentPercents) Reset() {
 	*x = PaymentPercents{}
-	mi := &file_certificate_proto_msgTypes[8]
+	mi := &file_certificate_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -650,7 +824,7 @@ func (x *PaymentPercents) String() string {
 func (*PaymentPercents) ProtoMessage() {}
 
 func (x *PaymentPercents) ProtoReflect() protoreflect.Message {
-	mi := &file_certificate_proto_msgTypes[8]
+	mi := &file_certificate_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -663,7 +837,7 @@ func (x *PaymentPercents) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PaymentPercents.ProtoReflect.Descriptor instead.
 func (*PaymentPercents) Descriptor() ([]byte, []int) {
-	return file_certificate_proto_rawDescGZIP(), []int{8}
+	return file_certificate_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *PaymentPercents) GetAddress() []byte {
@@ -703,7 +877,7 @@ type DoubleSigner struct {
 
 func (x *DoubleSigner) Reset() {
 	*x = DoubleSigner{}
-	mi := &file_certificate_proto_msgTypes[9]
+	mi := &file_certificate_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -715,7 +889,7 @@ func (x *DoubleSigner) String() string {
 func (*DoubleSigner) ProtoMessage() {}
 
 func (x *DoubleSigner) ProtoReflect() protoreflect.Message {
-	mi := &file_certificate_proto_msgTypes[9]
+	mi := &file_certificate_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -728,7 +902,7 @@ func (x *DoubleSigner) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DoubleSigner.ProtoReflect.Descriptor instead.
 func (*DoubleSigner) Descriptor() ([]byte, []int) {
-	return file_certificate_proto_rawDescGZIP(), []int{9}
+	return file_certificate_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *DoubleSigner) GetId() []byte {
@@ -755,7 +929,7 @@ type CommitteesData struct {
 
 func (x *CommitteesData) Reset() {
 	*x = CommitteesData{}
-	mi := &file_certificate_proto_msgTypes[10]
+	mi := &file_certificate_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -767,7 +941,7 @@ func (x *CommitteesData) String() string {
 func (*CommitteesData) ProtoMessage() {}
 
 func (x *CommitteesData) ProtoReflect() protoreflect.Message {
-	mi := &file_certificate_proto_msgTypes[10]
+	mi := &file_certificate_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -780,7 +954,7 @@ func (x *CommitteesData) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CommitteesData.ProtoReflect.Descriptor instead.
 func (*CommitteesData) Descriptor() ([]byte, []int) {
-	return file_certificate_proto_rawDescGZIP(), []int{10}
+	return file_certificate_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *CommitteesData) GetList() []*CommitteeData {
@@ -813,7 +987,7 @@ type CommitteeData struct {
 
 func (x *CommitteeData) Reset() {
 	*x = CommitteeData{}
-	mi := &file_certificate_proto_msgTypes[11]
+	mi := &file_certificate_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -825,7 +999,7 @@ func (x *CommitteeData) String() string {
 func (*CommitteeData) ProtoMessage() {}
 
 func (x *CommitteeData) ProtoReflect() protoreflect.Message {
-	mi := &file_certificate_proto_msgTypes[11]
+	mi := &file_certificate_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -838,7 +1012,7 @@ func (x *CommitteeData) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CommitteeData.ProtoReflect.Descriptor instead.
 func (*CommitteeData) Descriptor() ([]byte, []int) {
-	return file_certificate_proto_rawDescGZIP(), []int{11}
+	return file_certificate_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *CommitteeData) GetChainId() uint64 {
@@ -880,7 +1054,7 @@ var File_certificate_proto protoreflect.FileDescriptor
 
 const file_certificate_proto_rawDesc = "" +
 	"\n" +
-	"\x11certificate.proto\x12\x05types\x1a\x0fconsensus.proto\x1a\tdex.proto\"\xa0\x02\n" +
+	"\x11certificate.proto\x12\x05types\x1a\x0fconsensus.proto\x1a\tdex.proto\"\xf4\x02\n" +
 	"\x11QuorumCertificate\x12#\n" +
 	"\x06header\x18\x01 \x01(\v2\v.types.ViewR\x06header\x122\n" +
 	"\aresults\x18\x02 \x01(\v2\x18.types.CertificateResultR\aresults\x12!\n" +
@@ -889,7 +1063,20 @@ const file_certificate_proto_rawDesc = "" +
 	"\n" +
 	"block_hash\x18\x05 \x01(\fR\tblockHash\x12!\n" +
 	"\fproposer_key\x18\x06 \x01(\fR\vproposerKey\x127\n" +
-	"\tsignature\x18\a \x01(\v2\x19.types.AggregateSignatureR\tsignature\"\xf5\x02\n" +
+	"\tsignature\x18\a \x01(\v2\x19.types.AggregateSignatureR\tsignature\x12R\n" +
+	"\x16auxiliary_certificates\x18\b \x03(\v2\x1b.types.AuxiliaryCertificateR\x15auxiliaryCertificates\"l\n" +
+	"\x12AuxiliaryCandidate\x12\x12\n" +
+	"\x04kind\x18\x01 \x01(\tR\x04kind\x12\x10\n" +
+	"\x03key\x18\x02 \x01(\fR\x03key\x12\x16\n" +
+	"\x06digest\x18\x03 \x01(\fR\x06digest\x12\x18\n" +
+	"\apayload\x18\x04 \x01(\fR\apayload\"\x88\x01\n" +
+	"\x14AuxiliaryCertificate\x127\n" +
+	"\tcandidate\x18\x01 \x01(\v2\x19.types.AuxiliaryCandidateR\tcandidate\x127\n" +
+	"\tsignature\x18\x02 \x01(\v2\x19.types.AggregateSignatureR\tsignature\"P\n" +
+	"\x13AuxiliaryCandidates\x129\n" +
+	"\n" +
+	"candidates\x18\x01 \x03(\v2\x19.types.AuxiliaryCandidateR\n" +
+	"candidates\"\xf5\x02\n" +
 	"\x11CertificateResult\x12D\n" +
 	"\x11reward_recipients\x18\x01 \x01(\v2\x17.types.RewardRecipientsR\x10rewardRecipients\x12A\n" +
 	"\x10slash_recipients\x18\x02 \x01(\v2\x16.types.SlashRecipientsR\x0fslashRecipients\x12%\n" +
@@ -955,44 +1142,51 @@ func file_certificate_proto_rawDescGZIP() []byte {
 	return file_certificate_proto_rawDescData
 }
 
-var file_certificate_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
+var file_certificate_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
 var file_certificate_proto_goTypes = []any{
-	(*QuorumCertificate)(nil),  // 0: types.QuorumCertificate
-	(*CertificateResult)(nil),  // 1: types.CertificateResult
-	(*RewardRecipients)(nil),   // 2: types.RewardRecipients
-	(*SlashRecipients)(nil),    // 3: types.SlashRecipients
-	(*Orders)(nil),             // 4: types.Orders
-	(*LockOrder)(nil),          // 5: types.LockOrder
-	(*CloseOrder)(nil),         // 6: types.CloseOrder
-	(*Checkpoint)(nil),         // 7: types.Checkpoint
-	(*PaymentPercents)(nil),    // 8: types.PaymentPercents
-	(*DoubleSigner)(nil),       // 9: types.DoubleSigner
-	(*CommitteesData)(nil),     // 10: types.CommitteesData
-	(*CommitteeData)(nil),      // 11: types.CommitteeData
-	(*View)(nil),               // 12: types.View
-	(*AggregateSignature)(nil), // 13: types.AggregateSignature
-	(*DexBatch)(nil),           // 14: types.DexBatch
+	(*QuorumCertificate)(nil),    // 0: types.QuorumCertificate
+	(*AuxiliaryCandidate)(nil),   // 1: types.AuxiliaryCandidate
+	(*AuxiliaryCertificate)(nil), // 2: types.AuxiliaryCertificate
+	(*AuxiliaryCandidates)(nil),  // 3: types.AuxiliaryCandidates
+	(*CertificateResult)(nil),    // 4: types.CertificateResult
+	(*RewardRecipients)(nil),     // 5: types.RewardRecipients
+	(*SlashRecipients)(nil),      // 6: types.SlashRecipients
+	(*Orders)(nil),               // 7: types.Orders
+	(*LockOrder)(nil),            // 8: types.LockOrder
+	(*CloseOrder)(nil),           // 9: types.CloseOrder
+	(*Checkpoint)(nil),           // 10: types.Checkpoint
+	(*PaymentPercents)(nil),      // 11: types.PaymentPercents
+	(*DoubleSigner)(nil),         // 12: types.DoubleSigner
+	(*CommitteesData)(nil),       // 13: types.CommitteesData
+	(*CommitteeData)(nil),        // 14: types.CommitteeData
+	(*View)(nil),                 // 15: types.View
+	(*AggregateSignature)(nil),   // 16: types.AggregateSignature
+	(*DexBatch)(nil),             // 17: types.DexBatch
 }
 var file_certificate_proto_depIdxs = []int32{
-	12, // 0: types.QuorumCertificate.header:type_name -> types.View
-	1,  // 1: types.QuorumCertificate.results:type_name -> types.CertificateResult
-	13, // 2: types.QuorumCertificate.signature:type_name -> types.AggregateSignature
-	2,  // 3: types.CertificateResult.reward_recipients:type_name -> types.RewardRecipients
-	3,  // 4: types.CertificateResult.slash_recipients:type_name -> types.SlashRecipients
-	4,  // 5: types.CertificateResult.orders:type_name -> types.Orders
-	7,  // 6: types.CertificateResult.checkpoint:type_name -> types.Checkpoint
-	14, // 7: types.CertificateResult.dex_batch:type_name -> types.DexBatch
-	14, // 8: types.CertificateResult.root_dex_batch:type_name -> types.DexBatch
-	8,  // 9: types.RewardRecipients.payment_percents:type_name -> types.PaymentPercents
-	9,  // 10: types.SlashRecipients.double_signers:type_name -> types.DoubleSigner
-	5,  // 11: types.Orders.lock_orders:type_name -> types.LockOrder
-	11, // 12: types.CommitteesData.list:type_name -> types.CommitteeData
-	8,  // 13: types.CommitteeData.payment_percents:type_name -> types.PaymentPercents
-	14, // [14:14] is the sub-list for method output_type
-	14, // [14:14] is the sub-list for method input_type
-	14, // [14:14] is the sub-list for extension type_name
-	14, // [14:14] is the sub-list for extension extendee
-	0,  // [0:14] is the sub-list for field type_name
+	15, // 0: types.QuorumCertificate.header:type_name -> types.View
+	4,  // 1: types.QuorumCertificate.results:type_name -> types.CertificateResult
+	16, // 2: types.QuorumCertificate.signature:type_name -> types.AggregateSignature
+	2,  // 3: types.QuorumCertificate.auxiliary_certificates:type_name -> types.AuxiliaryCertificate
+	1,  // 4: types.AuxiliaryCertificate.candidate:type_name -> types.AuxiliaryCandidate
+	16, // 5: types.AuxiliaryCertificate.signature:type_name -> types.AggregateSignature
+	1,  // 6: types.AuxiliaryCandidates.candidates:type_name -> types.AuxiliaryCandidate
+	5,  // 7: types.CertificateResult.reward_recipients:type_name -> types.RewardRecipients
+	6,  // 8: types.CertificateResult.slash_recipients:type_name -> types.SlashRecipients
+	7,  // 9: types.CertificateResult.orders:type_name -> types.Orders
+	10, // 10: types.CertificateResult.checkpoint:type_name -> types.Checkpoint
+	17, // 11: types.CertificateResult.dex_batch:type_name -> types.DexBatch
+	17, // 12: types.CertificateResult.root_dex_batch:type_name -> types.DexBatch
+	11, // 13: types.RewardRecipients.payment_percents:type_name -> types.PaymentPercents
+	12, // 14: types.SlashRecipients.double_signers:type_name -> types.DoubleSigner
+	8,  // 15: types.Orders.lock_orders:type_name -> types.LockOrder
+	14, // 16: types.CommitteesData.list:type_name -> types.CommitteeData
+	11, // 17: types.CommitteeData.payment_percents:type_name -> types.PaymentPercents
+	18, // [18:18] is the sub-list for method output_type
+	18, // [18:18] is the sub-list for method input_type
+	18, // [18:18] is the sub-list for extension type_name
+	18, // [18:18] is the sub-list for extension extendee
+	0,  // [0:18] is the sub-list for field type_name
 }
 
 func init() { file_certificate_proto_init() }
@@ -1008,7 +1202,7 @@ func file_certificate_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_certificate_proto_rawDesc), len(file_certificate_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   12,
+			NumMessages:   15,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

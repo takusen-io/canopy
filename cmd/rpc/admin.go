@@ -3,7 +3,9 @@ package rpc
 import (
 	"bytes"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/exec"
@@ -22,6 +24,25 @@ import (
 	"github.com/shirou/gopsutil/net"
 	"github.com/shirou/gopsutil/process"
 )
+
+// AuxiliaryCandidate accepts a watcher-produced fact on the validator-only
+// admin interface. It enters the local best-effort vote-extension pool and is
+// never executed directly or interpreted as governance approval.
+func (s *Server) AuxiliaryCandidate(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
+	defer r.Body.Close()
+	candidate := new(lib.AuxiliaryCandidate)
+	decoder := json.NewDecoder(io.LimitReader(r.Body, 20<<10))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(candidate); err != nil {
+		write(w, err, http.StatusBadRequest)
+		return
+	}
+	if err := s.controller.SubmitAuxiliaryCandidate(candidate); err != nil {
+		write(w, err, http.StatusConflict)
+		return
+	}
+	write(w, map[string]bool{"accepted": true}, http.StatusAccepted)
+}
 
 // Keystore responds with the local keystore
 func (s *Server) Keystore(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {

@@ -745,9 +745,10 @@ type PluginBeginRequest struct {
 	ValidatorSet []byte `protobuf:"bytes,3,opt,name=validator_set,json=validatorSet,proto3" json:"validator_set,omitempty"`
 	// next_validator_set is the core-frozen next committee once the handoff
 	// cutoff has been reached; empty before preparation.
-	NextValidatorSet []byte `protobuf:"bytes,4,opt,name=next_validator_set,json=nextValidatorSet,proto3" json:"next_validator_set,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	NextValidatorSet      []byte                  `protobuf:"bytes,4,opt,name=next_validator_set,json=nextValidatorSet,proto3" json:"next_validator_set,omitempty"`
+	AuxiliaryCertificates []*AuxiliaryCertificate `protobuf:"bytes,5,rep,name=auxiliary_certificates,json=auxiliaryCertificates,proto3" json:"auxiliary_certificates,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
 }
 
 func (x *PluginBeginRequest) Reset() {
@@ -808,6 +809,185 @@ func (x *PluginBeginRequest) GetNextValidatorSet() []byte {
 	return nil
 }
 
+func (x *PluginBeginRequest) GetAuxiliaryCertificates() []*AuxiliaryCertificate {
+	if x != nil {
+		return x.AuxiliaryCertificates
+	}
+	return nil
+}
+
+type AuxiliaryCandidate struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Kind          string                 `protobuf:"bytes,1,opt,name=kind,proto3" json:"kind,omitempty"`
+	Key           []byte                 `protobuf:"bytes,2,opt,name=key,proto3" json:"key,omitempty"`
+	Digest        []byte                 `protobuf:"bytes,3,opt,name=digest,proto3" json:"digest,omitempty"`
+	Payload       []byte                 `protobuf:"bytes,4,opt,name=payload,proto3" json:"payload,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AuxiliaryCandidate) Reset() {
+	*x = AuxiliaryCandidate{}
+	mi := &file_plugin_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AuxiliaryCandidate) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AuxiliaryCandidate) ProtoMessage() {}
+
+func (x *AuxiliaryCandidate) ProtoReflect() protoreflect.Message {
+	mi := &file_plugin_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AuxiliaryCandidate.ProtoReflect.Descriptor instead.
+func (*AuxiliaryCandidate) Descriptor() ([]byte, []int) {
+	return file_plugin_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *AuxiliaryCandidate) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
+}
+
+func (x *AuxiliaryCandidate) GetKey() []byte {
+	if x != nil {
+		return x.Key
+	}
+	return nil
+}
+
+func (x *AuxiliaryCandidate) GetDigest() []byte {
+	if x != nil {
+		return x.Digest
+	}
+	return nil
+}
+
+func (x *AuxiliaryCandidate) GetPayload() []byte {
+	if x != nil {
+		return x.Payload
+	}
+	return nil
+}
+
+type AuxiliaryAggregateSignature struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Signature     []byte                 `protobuf:"bytes,1,opt,name=signature,proto3" json:"signature,omitempty"`
+	Bitmap        []byte                 `protobuf:"bytes,2,opt,name=bitmap,proto3" json:"bitmap,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AuxiliaryAggregateSignature) Reset() {
+	*x = AuxiliaryAggregateSignature{}
+	mi := &file_plugin_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AuxiliaryAggregateSignature) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AuxiliaryAggregateSignature) ProtoMessage() {}
+
+func (x *AuxiliaryAggregateSignature) ProtoReflect() protoreflect.Message {
+	mi := &file_plugin_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AuxiliaryAggregateSignature.ProtoReflect.Descriptor instead.
+func (*AuxiliaryAggregateSignature) Descriptor() ([]byte, []int) {
+	return file_plugin_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *AuxiliaryAggregateSignature) GetSignature() []byte {
+	if x != nil {
+		return x.Signature
+	}
+	return nil
+}
+
+func (x *AuxiliaryAggregateSignature) GetBitmap() []byte {
+	if x != nil {
+		return x.Bitmap
+	}
+	return nil
+}
+
+type AuxiliaryCertificate struct {
+	state         protoimpl.MessageState       `protogen:"open.v1"`
+	Candidate     *AuxiliaryCandidate          `protobuf:"bytes,1,opt,name=candidate,proto3" json:"candidate,omitempty"`
+	Signature     *AuxiliaryAggregateSignature `protobuf:"bytes,2,opt,name=signature,proto3" json:"signature,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AuxiliaryCertificate) Reset() {
+	*x = AuxiliaryCertificate{}
+	mi := &file_plugin_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AuxiliaryCertificate) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AuxiliaryCertificate) ProtoMessage() {}
+
+func (x *AuxiliaryCertificate) ProtoReflect() protoreflect.Message {
+	mi := &file_plugin_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AuxiliaryCertificate.ProtoReflect.Descriptor instead.
+func (*AuxiliaryCertificate) Descriptor() ([]byte, []int) {
+	return file_plugin_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *AuxiliaryCertificate) GetCandidate() *AuxiliaryCandidate {
+	if x != nil {
+		return x.Candidate
+	}
+	return nil
+}
+
+func (x *AuxiliaryCertificate) GetSignature() *AuxiliaryAggregateSignature {
+	if x != nil {
+		return x.Signature
+	}
+	return nil
+}
+
 // PluginBeginResponse acknowledges begin block execution
 type PluginBeginResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -819,7 +999,7 @@ type PluginBeginResponse struct {
 
 func (x *PluginBeginResponse) Reset() {
 	*x = PluginBeginResponse{}
-	mi := &file_plugin_proto_msgTypes[7]
+	mi := &file_plugin_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -831,7 +1011,7 @@ func (x *PluginBeginResponse) String() string {
 func (*PluginBeginResponse) ProtoMessage() {}
 
 func (x *PluginBeginResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plugin_proto_msgTypes[7]
+	mi := &file_plugin_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -844,7 +1024,7 @@ func (x *PluginBeginResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PluginBeginResponse.ProtoReflect.Descriptor instead.
 func (*PluginBeginResponse) Descriptor() ([]byte, []int) {
-	return file_plugin_proto_rawDescGZIP(), []int{7}
+	return file_plugin_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *PluginBeginResponse) GetEvents() []*Event {
@@ -872,7 +1052,7 @@ type PluginCheckRequest struct {
 
 func (x *PluginCheckRequest) Reset() {
 	*x = PluginCheckRequest{}
-	mi := &file_plugin_proto_msgTypes[8]
+	mi := &file_plugin_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -884,7 +1064,7 @@ func (x *PluginCheckRequest) String() string {
 func (*PluginCheckRequest) ProtoMessage() {}
 
 func (x *PluginCheckRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plugin_proto_msgTypes[8]
+	mi := &file_plugin_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -897,7 +1077,7 @@ func (x *PluginCheckRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PluginCheckRequest.ProtoReflect.Descriptor instead.
 func (*PluginCheckRequest) Descriptor() ([]byte, []int) {
-	return file_plugin_proto_rawDescGZIP(), []int{8}
+	return file_plugin_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *PluginCheckRequest) GetTx() *Transaction {
@@ -929,7 +1109,7 @@ type PluginCheckResponse struct {
 
 func (x *PluginCheckResponse) Reset() {
 	*x = PluginCheckResponse{}
-	mi := &file_plugin_proto_msgTypes[9]
+	mi := &file_plugin_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -941,7 +1121,7 @@ func (x *PluginCheckResponse) String() string {
 func (*PluginCheckResponse) ProtoMessage() {}
 
 func (x *PluginCheckResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plugin_proto_msgTypes[9]
+	mi := &file_plugin_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -954,7 +1134,7 @@ func (x *PluginCheckResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PluginCheckResponse.ProtoReflect.Descriptor instead.
 func (*PluginCheckResponse) Descriptor() ([]byte, []int) {
-	return file_plugin_proto_rawDescGZIP(), []int{9}
+	return file_plugin_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *PluginCheckResponse) GetAuthorizedSigners() [][]byte {
@@ -993,7 +1173,7 @@ type PluginDeliverRequest struct {
 
 func (x *PluginDeliverRequest) Reset() {
 	*x = PluginDeliverRequest{}
-	mi := &file_plugin_proto_msgTypes[10]
+	mi := &file_plugin_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1005,7 +1185,7 @@ func (x *PluginDeliverRequest) String() string {
 func (*PluginDeliverRequest) ProtoMessage() {}
 
 func (x *PluginDeliverRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plugin_proto_msgTypes[10]
+	mi := &file_plugin_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1018,7 +1198,7 @@ func (x *PluginDeliverRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PluginDeliverRequest.ProtoReflect.Descriptor instead.
 func (*PluginDeliverRequest) Descriptor() ([]byte, []int) {
-	return file_plugin_proto_rawDescGZIP(), []int{10}
+	return file_plugin_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *PluginDeliverRequest) GetTx() *Transaction {
@@ -1067,7 +1247,7 @@ type PluginDeliverResponse struct {
 
 func (x *PluginDeliverResponse) Reset() {
 	*x = PluginDeliverResponse{}
-	mi := &file_plugin_proto_msgTypes[11]
+	mi := &file_plugin_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1079,7 +1259,7 @@ func (x *PluginDeliverResponse) String() string {
 func (*PluginDeliverResponse) ProtoMessage() {}
 
 func (x *PluginDeliverResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plugin_proto_msgTypes[11]
+	mi := &file_plugin_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1092,7 +1272,7 @@ func (x *PluginDeliverResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PluginDeliverResponse.ProtoReflect.Descriptor instead.
 func (*PluginDeliverResponse) Descriptor() ([]byte, []int) {
-	return file_plugin_proto_rawDescGZIP(), []int{11}
+	return file_plugin_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *PluginDeliverResponse) GetEvents() []*Event {
@@ -1124,7 +1304,7 @@ type PluginEndRequest struct {
 
 func (x *PluginEndRequest) Reset() {
 	*x = PluginEndRequest{}
-	mi := &file_plugin_proto_msgTypes[12]
+	mi := &file_plugin_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1136,7 +1316,7 @@ func (x *PluginEndRequest) String() string {
 func (*PluginEndRequest) ProtoMessage() {}
 
 func (x *PluginEndRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plugin_proto_msgTypes[12]
+	mi := &file_plugin_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1149,7 +1329,7 @@ func (x *PluginEndRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PluginEndRequest.ProtoReflect.Descriptor instead.
 func (*PluginEndRequest) Descriptor() ([]byte, []int) {
-	return file_plugin_proto_rawDescGZIP(), []int{12}
+	return file_plugin_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *PluginEndRequest) GetHeight() uint64 {
@@ -1188,15 +1368,17 @@ type PluginEndResponse struct {
 	ValidatorSetEpochEnd bool `protobuf:"varint,2,opt,name=validator_set_epoch_end,json=validatorSetEpochEnd,proto3" json:"validatorSetEpochEnd"` // @gotags: json:"validatorSetEpochEnd"
 	// validator_set_epoch_prepare freezes the next core committee atomically at
 	// the nominal boundary while the current committee remains authoritative.
-	ValidatorSetEpochPrepare bool         `protobuf:"varint,3,opt,name=validator_set_epoch_prepare,json=validatorSetEpochPrepare,proto3" json:"validatorSetEpochPrepare"` // @gotags: json:"validatorSetEpochPrepare"
-	Error                    *PluginError `protobuf:"bytes,99,opt,name=error,proto3" json:"error,omitempty"`
-	unknownFields            protoimpl.UnknownFields
-	sizeCache                protoimpl.SizeCache
+	ValidatorSetEpochPrepare   bool                  `protobuf:"varint,3,opt,name=validator_set_epoch_prepare,json=validatorSetEpochPrepare,proto3" json:"validatorSetEpochPrepare"`      // @gotags: json:"validatorSetEpochPrepare"
+	AuxiliaryCandidates        []*AuxiliaryCandidate `protobuf:"bytes,4,rep,name=auxiliary_candidates,json=auxiliaryCandidates,proto3" json:"auxiliaryCandidates,omitempty"`              // @gotags: json:"auxiliaryCandidates,omitempty"
+	ReplaceAuxiliaryCandidates bool                  `protobuf:"varint,5,opt,name=replace_auxiliary_candidates,json=replaceAuxiliaryCandidates,proto3" json:"replaceAuxiliaryCandidates"` // @gotags: json:"replaceAuxiliaryCandidates"
+	Error                      *PluginError          `protobuf:"bytes,99,opt,name=error,proto3" json:"error,omitempty"`
+	unknownFields              protoimpl.UnknownFields
+	sizeCache                  protoimpl.SizeCache
 }
 
 func (x *PluginEndResponse) Reset() {
 	*x = PluginEndResponse{}
-	mi := &file_plugin_proto_msgTypes[13]
+	mi := &file_plugin_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1208,7 +1390,7 @@ func (x *PluginEndResponse) String() string {
 func (*PluginEndResponse) ProtoMessage() {}
 
 func (x *PluginEndResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plugin_proto_msgTypes[13]
+	mi := &file_plugin_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1221,7 +1403,7 @@ func (x *PluginEndResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PluginEndResponse.ProtoReflect.Descriptor instead.
 func (*PluginEndResponse) Descriptor() ([]byte, []int) {
-	return file_plugin_proto_rawDescGZIP(), []int{13}
+	return file_plugin_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *PluginEndResponse) GetEvents() []*Event {
@@ -1245,6 +1427,20 @@ func (x *PluginEndResponse) GetValidatorSetEpochPrepare() bool {
 	return false
 }
 
+func (x *PluginEndResponse) GetAuxiliaryCandidates() []*AuxiliaryCandidate {
+	if x != nil {
+		return x.AuxiliaryCandidates
+	}
+	return nil
+}
+
+func (x *PluginEndResponse) GetReplaceAuxiliaryCandidates() bool {
+	if x != nil {
+		return x.ReplaceAuxiliaryCandidates
+	}
+	return false
+}
+
 func (x *PluginEndResponse) GetError() *PluginError {
 	if x != nil {
 		return x.Error
@@ -1264,7 +1460,7 @@ type PluginError struct {
 
 func (x *PluginError) Reset() {
 	*x = PluginError{}
-	mi := &file_plugin_proto_msgTypes[14]
+	mi := &file_plugin_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1276,7 +1472,7 @@ func (x *PluginError) String() string {
 func (*PluginError) ProtoMessage() {}
 
 func (x *PluginError) ProtoReflect() protoreflect.Message {
-	mi := &file_plugin_proto_msgTypes[14]
+	mi := &file_plugin_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1289,7 +1485,7 @@ func (x *PluginError) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PluginError.ProtoReflect.Descriptor instead.
 func (*PluginError) Descriptor() ([]byte, []int) {
-	return file_plugin_proto_rawDescGZIP(), []int{14}
+	return file_plugin_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *PluginError) GetCode() uint64 {
@@ -1326,7 +1522,7 @@ type PluginQueryRequest struct {
 
 func (x *PluginQueryRequest) Reset() {
 	*x = PluginQueryRequest{}
-	mi := &file_plugin_proto_msgTypes[15]
+	mi := &file_plugin_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1338,7 +1534,7 @@ func (x *PluginQueryRequest) String() string {
 func (*PluginQueryRequest) ProtoMessage() {}
 
 func (x *PluginQueryRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plugin_proto_msgTypes[15]
+	mi := &file_plugin_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1351,7 +1547,7 @@ func (x *PluginQueryRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PluginQueryRequest.ProtoReflect.Descriptor instead.
 func (*PluginQueryRequest) Descriptor() ([]byte, []int) {
-	return file_plugin_proto_rawDescGZIP(), []int{15}
+	return file_plugin_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *PluginQueryRequest) GetHeight() uint64 {
@@ -1381,7 +1577,7 @@ type PluginQueryResponse struct {
 
 func (x *PluginQueryResponse) Reset() {
 	*x = PluginQueryResponse{}
-	mi := &file_plugin_proto_msgTypes[16]
+	mi := &file_plugin_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1393,7 +1589,7 @@ func (x *PluginQueryResponse) String() string {
 func (*PluginQueryResponse) ProtoMessage() {}
 
 func (x *PluginQueryResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plugin_proto_msgTypes[16]
+	mi := &file_plugin_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1406,7 +1602,7 @@ func (x *PluginQueryResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PluginQueryResponse.ProtoReflect.Descriptor instead.
 func (*PluginQueryResponse) Descriptor() ([]byte, []int) {
-	return file_plugin_proto_rawDescGZIP(), []int{16}
+	return file_plugin_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *PluginQueryResponse) GetRead() *PluginStateReadResponse {
@@ -1436,7 +1632,7 @@ type PluginStateReadRequest struct {
 
 func (x *PluginStateReadRequest) Reset() {
 	*x = PluginStateReadRequest{}
-	mi := &file_plugin_proto_msgTypes[17]
+	mi := &file_plugin_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1448,7 +1644,7 @@ func (x *PluginStateReadRequest) String() string {
 func (*PluginStateReadRequest) ProtoMessage() {}
 
 func (x *PluginStateReadRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plugin_proto_msgTypes[17]
+	mi := &file_plugin_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1461,7 +1657,7 @@ func (x *PluginStateReadRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PluginStateReadRequest.ProtoReflect.Descriptor instead.
 func (*PluginStateReadRequest) Descriptor() ([]byte, []int) {
-	return file_plugin_proto_rawDescGZIP(), []int{17}
+	return file_plugin_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *PluginStateReadRequest) GetKeys() []*PluginKeyRead {
@@ -1491,7 +1687,7 @@ type PluginKeyRead struct {
 
 func (x *PluginKeyRead) Reset() {
 	*x = PluginKeyRead{}
-	mi := &file_plugin_proto_msgTypes[18]
+	mi := &file_plugin_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1503,7 +1699,7 @@ func (x *PluginKeyRead) String() string {
 func (*PluginKeyRead) ProtoMessage() {}
 
 func (x *PluginKeyRead) ProtoReflect() protoreflect.Message {
-	mi := &file_plugin_proto_msgTypes[18]
+	mi := &file_plugin_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1516,7 +1712,7 @@ func (x *PluginKeyRead) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PluginKeyRead.ProtoReflect.Descriptor instead.
 func (*PluginKeyRead) Descriptor() ([]byte, []int) {
-	return file_plugin_proto_rawDescGZIP(), []int{18}
+	return file_plugin_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *PluginKeyRead) GetQueryId() uint64 {
@@ -1553,7 +1749,7 @@ type PluginRangeRead struct {
 
 func (x *PluginRangeRead) Reset() {
 	*x = PluginRangeRead{}
-	mi := &file_plugin_proto_msgTypes[19]
+	mi := &file_plugin_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1565,7 +1761,7 @@ func (x *PluginRangeRead) String() string {
 func (*PluginRangeRead) ProtoMessage() {}
 
 func (x *PluginRangeRead) ProtoReflect() protoreflect.Message {
-	mi := &file_plugin_proto_msgTypes[19]
+	mi := &file_plugin_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1578,7 +1774,7 @@ func (x *PluginRangeRead) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PluginRangeRead.ProtoReflect.Descriptor instead.
 func (*PluginRangeRead) Descriptor() ([]byte, []int) {
-	return file_plugin_proto_rawDescGZIP(), []int{19}
+	return file_plugin_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *PluginRangeRead) GetQueryId() uint64 {
@@ -1629,7 +1825,7 @@ type PluginStateReadResponse struct {
 
 func (x *PluginStateReadResponse) Reset() {
 	*x = PluginStateReadResponse{}
-	mi := &file_plugin_proto_msgTypes[20]
+	mi := &file_plugin_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1641,7 +1837,7 @@ func (x *PluginStateReadResponse) String() string {
 func (*PluginStateReadResponse) ProtoMessage() {}
 
 func (x *PluginStateReadResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plugin_proto_msgTypes[20]
+	mi := &file_plugin_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1654,7 +1850,7 @@ func (x *PluginStateReadResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PluginStateReadResponse.ProtoReflect.Descriptor instead.
 func (*PluginStateReadResponse) Descriptor() ([]byte, []int) {
-	return file_plugin_proto_rawDescGZIP(), []int{20}
+	return file_plugin_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *PluginStateReadResponse) GetResults() []*PluginReadResult {
@@ -1684,7 +1880,7 @@ type PluginReadResult struct {
 
 func (x *PluginReadResult) Reset() {
 	*x = PluginReadResult{}
-	mi := &file_plugin_proto_msgTypes[21]
+	mi := &file_plugin_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1696,7 +1892,7 @@ func (x *PluginReadResult) String() string {
 func (*PluginReadResult) ProtoMessage() {}
 
 func (x *PluginReadResult) ProtoReflect() protoreflect.Message {
-	mi := &file_plugin_proto_msgTypes[21]
+	mi := &file_plugin_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1709,7 +1905,7 @@ func (x *PluginReadResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PluginReadResult.ProtoReflect.Descriptor instead.
 func (*PluginReadResult) Descriptor() ([]byte, []int) {
-	return file_plugin_proto_rawDescGZIP(), []int{21}
+	return file_plugin_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *PluginReadResult) GetQueryId() uint64 {
@@ -1739,7 +1935,7 @@ type PluginStateWriteRequest struct {
 
 func (x *PluginStateWriteRequest) Reset() {
 	*x = PluginStateWriteRequest{}
-	mi := &file_plugin_proto_msgTypes[22]
+	mi := &file_plugin_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1751,7 +1947,7 @@ func (x *PluginStateWriteRequest) String() string {
 func (*PluginStateWriteRequest) ProtoMessage() {}
 
 func (x *PluginStateWriteRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plugin_proto_msgTypes[22]
+	mi := &file_plugin_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1764,7 +1960,7 @@ func (x *PluginStateWriteRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PluginStateWriteRequest.ProtoReflect.Descriptor instead.
 func (*PluginStateWriteRequest) Descriptor() ([]byte, []int) {
-	return file_plugin_proto_rawDescGZIP(), []int{22}
+	return file_plugin_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *PluginStateWriteRequest) GetSets() []*PluginSetOp {
@@ -1792,7 +1988,7 @@ type PluginStateWriteResponse struct {
 
 func (x *PluginStateWriteResponse) Reset() {
 	*x = PluginStateWriteResponse{}
-	mi := &file_plugin_proto_msgTypes[23]
+	mi := &file_plugin_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1804,7 +2000,7 @@ func (x *PluginStateWriteResponse) String() string {
 func (*PluginStateWriteResponse) ProtoMessage() {}
 
 func (x *PluginStateWriteResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plugin_proto_msgTypes[23]
+	mi := &file_plugin_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1817,7 +2013,7 @@ func (x *PluginStateWriteResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PluginStateWriteResponse.ProtoReflect.Descriptor instead.
 func (*PluginStateWriteResponse) Descriptor() ([]byte, []int) {
-	return file_plugin_proto_rawDescGZIP(), []int{23}
+	return file_plugin_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *PluginStateWriteResponse) GetError() *PluginError {
@@ -1840,7 +2036,7 @@ type PluginSetOp struct {
 
 func (x *PluginSetOp) Reset() {
 	*x = PluginSetOp{}
-	mi := &file_plugin_proto_msgTypes[24]
+	mi := &file_plugin_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1852,7 +2048,7 @@ func (x *PluginSetOp) String() string {
 func (*PluginSetOp) ProtoMessage() {}
 
 func (x *PluginSetOp) ProtoReflect() protoreflect.Message {
-	mi := &file_plugin_proto_msgTypes[24]
+	mi := &file_plugin_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1865,7 +2061,7 @@ func (x *PluginSetOp) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PluginSetOp.ProtoReflect.Descriptor instead.
 func (*PluginSetOp) Descriptor() ([]byte, []int) {
-	return file_plugin_proto_rawDescGZIP(), []int{24}
+	return file_plugin_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *PluginSetOp) GetKey() []byte {
@@ -1893,7 +2089,7 @@ type PluginDeleteOp struct {
 
 func (x *PluginDeleteOp) Reset() {
 	*x = PluginDeleteOp{}
-	mi := &file_plugin_proto_msgTypes[25]
+	mi := &file_plugin_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1905,7 +2101,7 @@ func (x *PluginDeleteOp) String() string {
 func (*PluginDeleteOp) ProtoMessage() {}
 
 func (x *PluginDeleteOp) ProtoReflect() protoreflect.Message {
-	mi := &file_plugin_proto_msgTypes[25]
+	mi := &file_plugin_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1918,7 +2114,7 @@ func (x *PluginDeleteOp) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PluginDeleteOp.ProtoReflect.Descriptor instead.
 func (*PluginDeleteOp) Descriptor() ([]byte, []int) {
-	return file_plugin_proto_rawDescGZIP(), []int{25}
+	return file_plugin_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *PluginDeleteOp) GetKey() []byte {
@@ -1941,7 +2137,7 @@ type PluginStateEntry struct {
 
 func (x *PluginStateEntry) Reset() {
 	*x = PluginStateEntry{}
-	mi := &file_plugin_proto_msgTypes[26]
+	mi := &file_plugin_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1953,7 +2149,7 @@ func (x *PluginStateEntry) String() string {
 func (*PluginStateEntry) ProtoMessage() {}
 
 func (x *PluginStateEntry) ProtoReflect() protoreflect.Message {
-	mi := &file_plugin_proto_msgTypes[26]
+	mi := &file_plugin_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1966,7 +2162,7 @@ func (x *PluginStateEntry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PluginStateEntry.ProtoReflect.Descriptor instead.
 func (*PluginStateEntry) Descriptor() ([]byte, []int) {
-	return file_plugin_proto_rawDescGZIP(), []int{26}
+	return file_plugin_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *PluginStateEntry) GetKey() []byte {
@@ -2036,12 +2232,24 @@ const file_plugin_proto_rawDesc = "" +
 	"\x14PluginGenesisRequest\x12!\n" +
 	"\fgenesis_json\x18\x01 \x01(\fR\vgenesisJson\"A\n" +
 	"\x15PluginGenesisResponse\x12(\n" +
-	"\x05error\x18c \x01(\v2\x12.types.PluginErrorR\x05error\"\xaf\x01\n" +
+	"\x05error\x18c \x01(\v2\x12.types.PluginErrorR\x05error\"\x83\x02\n" +
 	"\x12PluginBeginRequest\x12\x16\n" +
 	"\x06height\x18\x01 \x01(\x04R\x06height\x12.\n" +
 	"\x13previous_block_hash\x18\x02 \x01(\fR\x11previousBlockHash\x12#\n" +
 	"\rvalidator_set\x18\x03 \x01(\fR\fvalidatorSet\x12,\n" +
-	"\x12next_validator_set\x18\x04 \x01(\fR\x10nextValidatorSet\"e\n" +
+	"\x12next_validator_set\x18\x04 \x01(\fR\x10nextValidatorSet\x12R\n" +
+	"\x16auxiliary_certificates\x18\x05 \x03(\v2\x1b.types.AuxiliaryCertificateR\x15auxiliaryCertificates\"l\n" +
+	"\x12AuxiliaryCandidate\x12\x12\n" +
+	"\x04kind\x18\x01 \x01(\tR\x04kind\x12\x10\n" +
+	"\x03key\x18\x02 \x01(\fR\x03key\x12\x16\n" +
+	"\x06digest\x18\x03 \x01(\fR\x06digest\x12\x18\n" +
+	"\apayload\x18\x04 \x01(\fR\apayload\"S\n" +
+	"\x1bAuxiliaryAggregateSignature\x12\x1c\n" +
+	"\tsignature\x18\x01 \x01(\fR\tsignature\x12\x16\n" +
+	"\x06bitmap\x18\x02 \x01(\fR\x06bitmap\"\x91\x01\n" +
+	"\x14AuxiliaryCertificate\x127\n" +
+	"\tcandidate\x18\x01 \x01(\v2\x19.types.AuxiliaryCandidateR\tcandidate\x12@\n" +
+	"\tsignature\x18\x02 \x01(\v2\".types.AuxiliaryAggregateSignatureR\tsignature\"e\n" +
 	"\x13PluginBeginResponse\x12$\n" +
 	"\x06events\x18\x01 \x03(\v2\f.types.EventR\x06events\x12(\n" +
 	"\x05error\x18c \x01(\v2\x12.types.PluginErrorR\x05error\"P\n" +
@@ -2066,11 +2274,13 @@ const file_plugin_proto_rawDesc = "" +
 	"\x10proposer_address\x18\x02 \x01(\fR\x0fproposerAddress\x12\x1f\n" +
 	"\vtime_micros\x18\x03 \x01(\x04R\n" +
 	"timeMicros\x12,\n" +
-	"\x12next_validator_set\x18\x04 \x01(\fR\x10nextValidatorSet\"\xd9\x01\n" +
+	"\x12next_validator_set\x18\x04 \x01(\fR\x10nextValidatorSet\"\xe9\x02\n" +
 	"\x11PluginEndResponse\x12$\n" +
 	"\x06events\x18\x01 \x03(\v2\f.types.EventR\x06events\x125\n" +
 	"\x17validator_set_epoch_end\x18\x02 \x01(\bR\x14validatorSetEpochEnd\x12=\n" +
-	"\x1bvalidator_set_epoch_prepare\x18\x03 \x01(\bR\x18validatorSetEpochPrepare\x12(\n" +
+	"\x1bvalidator_set_epoch_prepare\x18\x03 \x01(\bR\x18validatorSetEpochPrepare\x12L\n" +
+	"\x14auxiliary_candidates\x18\x04 \x03(\v2\x19.types.AuxiliaryCandidateR\x13auxiliaryCandidates\x12@\n" +
+	"\x1creplace_auxiliary_candidates\x18\x05 \x01(\bR\x1areplaceAuxiliaryCandidates\x12(\n" +
 	"\x05error\x18c \x01(\v2\x12.types.PluginErrorR\x05error\"K\n" +
 	"\vPluginError\x12\x12\n" +
 	"\x04code\x18\x01 \x01(\x04R\x04code\x12\x16\n" +
@@ -2127,85 +2337,92 @@ func file_plugin_proto_rawDescGZIP() []byte {
 	return file_plugin_proto_rawDescData
 }
 
-var file_plugin_proto_msgTypes = make([]protoimpl.MessageInfo, 27)
+var file_plugin_proto_msgTypes = make([]protoimpl.MessageInfo, 30)
 var file_plugin_proto_goTypes = []any{
-	(*FSMToPlugin)(nil),              // 0: types.FSMToPlugin
-	(*PluginToFSM)(nil),              // 1: types.PluginToFSM
-	(*PluginConfig)(nil),             // 2: types.PluginConfig
-	(*PluginFSMConfig)(nil),          // 3: types.PluginFSMConfig
-	(*PluginGenesisRequest)(nil),     // 4: types.PluginGenesisRequest
-	(*PluginGenesisResponse)(nil),    // 5: types.PluginGenesisResponse
-	(*PluginBeginRequest)(nil),       // 6: types.PluginBeginRequest
-	(*PluginBeginResponse)(nil),      // 7: types.PluginBeginResponse
-	(*PluginCheckRequest)(nil),       // 8: types.PluginCheckRequest
-	(*PluginCheckResponse)(nil),      // 9: types.PluginCheckResponse
-	(*PluginDeliverRequest)(nil),     // 10: types.PluginDeliverRequest
-	(*PluginDeliverResponse)(nil),    // 11: types.PluginDeliverResponse
-	(*PluginEndRequest)(nil),         // 12: types.PluginEndRequest
-	(*PluginEndResponse)(nil),        // 13: types.PluginEndResponse
-	(*PluginError)(nil),              // 14: types.PluginError
-	(*PluginQueryRequest)(nil),       // 15: types.PluginQueryRequest
-	(*PluginQueryResponse)(nil),      // 16: types.PluginQueryResponse
-	(*PluginStateReadRequest)(nil),   // 17: types.PluginStateReadRequest
-	(*PluginKeyRead)(nil),            // 18: types.PluginKeyRead
-	(*PluginRangeRead)(nil),          // 19: types.PluginRangeRead
-	(*PluginStateReadResponse)(nil),  // 20: types.PluginStateReadResponse
-	(*PluginReadResult)(nil),         // 21: types.PluginReadResult
-	(*PluginStateWriteRequest)(nil),  // 22: types.PluginStateWriteRequest
-	(*PluginStateWriteResponse)(nil), // 23: types.PluginStateWriteResponse
-	(*PluginSetOp)(nil),              // 24: types.PluginSetOp
-	(*PluginDeleteOp)(nil),           // 25: types.PluginDeleteOp
-	(*PluginStateEntry)(nil),         // 26: types.PluginStateEntry
-	(*Event)(nil),                    // 27: types.Event
-	(*Transaction)(nil),              // 28: types.Transaction
+	(*FSMToPlugin)(nil),                 // 0: types.FSMToPlugin
+	(*PluginToFSM)(nil),                 // 1: types.PluginToFSM
+	(*PluginConfig)(nil),                // 2: types.PluginConfig
+	(*PluginFSMConfig)(nil),             // 3: types.PluginFSMConfig
+	(*PluginGenesisRequest)(nil),        // 4: types.PluginGenesisRequest
+	(*PluginGenesisResponse)(nil),       // 5: types.PluginGenesisResponse
+	(*PluginBeginRequest)(nil),          // 6: types.PluginBeginRequest
+	(*AuxiliaryCandidate)(nil),          // 7: types.AuxiliaryCandidate
+	(*AuxiliaryAggregateSignature)(nil), // 8: types.AuxiliaryAggregateSignature
+	(*AuxiliaryCertificate)(nil),        // 9: types.AuxiliaryCertificate
+	(*PluginBeginResponse)(nil),         // 10: types.PluginBeginResponse
+	(*PluginCheckRequest)(nil),          // 11: types.PluginCheckRequest
+	(*PluginCheckResponse)(nil),         // 12: types.PluginCheckResponse
+	(*PluginDeliverRequest)(nil),        // 13: types.PluginDeliverRequest
+	(*PluginDeliverResponse)(nil),       // 14: types.PluginDeliverResponse
+	(*PluginEndRequest)(nil),            // 15: types.PluginEndRequest
+	(*PluginEndResponse)(nil),           // 16: types.PluginEndResponse
+	(*PluginError)(nil),                 // 17: types.PluginError
+	(*PluginQueryRequest)(nil),          // 18: types.PluginQueryRequest
+	(*PluginQueryResponse)(nil),         // 19: types.PluginQueryResponse
+	(*PluginStateReadRequest)(nil),      // 20: types.PluginStateReadRequest
+	(*PluginKeyRead)(nil),               // 21: types.PluginKeyRead
+	(*PluginRangeRead)(nil),             // 22: types.PluginRangeRead
+	(*PluginStateReadResponse)(nil),     // 23: types.PluginStateReadResponse
+	(*PluginReadResult)(nil),            // 24: types.PluginReadResult
+	(*PluginStateWriteRequest)(nil),     // 25: types.PluginStateWriteRequest
+	(*PluginStateWriteResponse)(nil),    // 26: types.PluginStateWriteResponse
+	(*PluginSetOp)(nil),                 // 27: types.PluginSetOp
+	(*PluginDeleteOp)(nil),              // 28: types.PluginDeleteOp
+	(*PluginStateEntry)(nil),            // 29: types.PluginStateEntry
+	(*Event)(nil),                       // 30: types.Event
+	(*Transaction)(nil),                 // 31: types.Transaction
 }
 var file_plugin_proto_depIdxs = []int32{
 	3,  // 0: types.FSMToPlugin.config:type_name -> types.PluginFSMConfig
 	4,  // 1: types.FSMToPlugin.genesis:type_name -> types.PluginGenesisRequest
 	6,  // 2: types.FSMToPlugin.begin:type_name -> types.PluginBeginRequest
-	8,  // 3: types.FSMToPlugin.check:type_name -> types.PluginCheckRequest
-	10, // 4: types.FSMToPlugin.deliver:type_name -> types.PluginDeliverRequest
-	12, // 5: types.FSMToPlugin.end:type_name -> types.PluginEndRequest
-	20, // 6: types.FSMToPlugin.state_read:type_name -> types.PluginStateReadResponse
-	23, // 7: types.FSMToPlugin.state_write:type_name -> types.PluginStateWriteResponse
-	16, // 8: types.FSMToPlugin.query:type_name -> types.PluginQueryResponse
-	14, // 9: types.FSMToPlugin.error:type_name -> types.PluginError
+	11, // 3: types.FSMToPlugin.check:type_name -> types.PluginCheckRequest
+	13, // 4: types.FSMToPlugin.deliver:type_name -> types.PluginDeliverRequest
+	15, // 5: types.FSMToPlugin.end:type_name -> types.PluginEndRequest
+	23, // 6: types.FSMToPlugin.state_read:type_name -> types.PluginStateReadResponse
+	26, // 7: types.FSMToPlugin.state_write:type_name -> types.PluginStateWriteResponse
+	19, // 8: types.FSMToPlugin.query:type_name -> types.PluginQueryResponse
+	17, // 9: types.FSMToPlugin.error:type_name -> types.PluginError
 	2,  // 10: types.PluginToFSM.config:type_name -> types.PluginConfig
 	5,  // 11: types.PluginToFSM.genesis:type_name -> types.PluginGenesisResponse
-	7,  // 12: types.PluginToFSM.begin:type_name -> types.PluginBeginResponse
-	9,  // 13: types.PluginToFSM.check:type_name -> types.PluginCheckResponse
-	11, // 14: types.PluginToFSM.deliver:type_name -> types.PluginDeliverResponse
-	13, // 15: types.PluginToFSM.end:type_name -> types.PluginEndResponse
-	17, // 16: types.PluginToFSM.state_read:type_name -> types.PluginStateReadRequest
-	22, // 17: types.PluginToFSM.state_write:type_name -> types.PluginStateWriteRequest
-	15, // 18: types.PluginToFSM.query:type_name -> types.PluginQueryRequest
+	10, // 12: types.PluginToFSM.begin:type_name -> types.PluginBeginResponse
+	12, // 13: types.PluginToFSM.check:type_name -> types.PluginCheckResponse
+	14, // 14: types.PluginToFSM.deliver:type_name -> types.PluginDeliverResponse
+	16, // 15: types.PluginToFSM.end:type_name -> types.PluginEndResponse
+	20, // 16: types.PluginToFSM.state_read:type_name -> types.PluginStateReadRequest
+	25, // 17: types.PluginToFSM.state_write:type_name -> types.PluginStateWriteRequest
+	18, // 18: types.PluginToFSM.query:type_name -> types.PluginQueryRequest
 	2,  // 19: types.PluginFSMConfig.config:type_name -> types.PluginConfig
-	14, // 20: types.PluginGenesisResponse.error:type_name -> types.PluginError
-	27, // 21: types.PluginBeginResponse.events:type_name -> types.Event
-	14, // 22: types.PluginBeginResponse.error:type_name -> types.PluginError
-	28, // 23: types.PluginCheckRequest.tx:type_name -> types.Transaction
-	14, // 24: types.PluginCheckResponse.error:type_name -> types.PluginError
-	28, // 25: types.PluginDeliverRequest.tx:type_name -> types.Transaction
-	27, // 26: types.PluginDeliverResponse.events:type_name -> types.Event
-	14, // 27: types.PluginDeliverResponse.error:type_name -> types.PluginError
-	27, // 28: types.PluginEndResponse.events:type_name -> types.Event
-	14, // 29: types.PluginEndResponse.error:type_name -> types.PluginError
-	17, // 30: types.PluginQueryRequest.read:type_name -> types.PluginStateReadRequest
-	20, // 31: types.PluginQueryResponse.read:type_name -> types.PluginStateReadResponse
-	14, // 32: types.PluginQueryResponse.error:type_name -> types.PluginError
-	18, // 33: types.PluginStateReadRequest.keys:type_name -> types.PluginKeyRead
-	19, // 34: types.PluginStateReadRequest.ranges:type_name -> types.PluginRangeRead
-	21, // 35: types.PluginStateReadResponse.results:type_name -> types.PluginReadResult
-	14, // 36: types.PluginStateReadResponse.error:type_name -> types.PluginError
-	26, // 37: types.PluginReadResult.entries:type_name -> types.PluginStateEntry
-	24, // 38: types.PluginStateWriteRequest.sets:type_name -> types.PluginSetOp
-	25, // 39: types.PluginStateWriteRequest.deletes:type_name -> types.PluginDeleteOp
-	14, // 40: types.PluginStateWriteResponse.error:type_name -> types.PluginError
-	41, // [41:41] is the sub-list for method output_type
-	41, // [41:41] is the sub-list for method input_type
-	41, // [41:41] is the sub-list for extension type_name
-	41, // [41:41] is the sub-list for extension extendee
-	0,  // [0:41] is the sub-list for field type_name
+	17, // 20: types.PluginGenesisResponse.error:type_name -> types.PluginError
+	9,  // 21: types.PluginBeginRequest.auxiliary_certificates:type_name -> types.AuxiliaryCertificate
+	7,  // 22: types.AuxiliaryCertificate.candidate:type_name -> types.AuxiliaryCandidate
+	8,  // 23: types.AuxiliaryCertificate.signature:type_name -> types.AuxiliaryAggregateSignature
+	30, // 24: types.PluginBeginResponse.events:type_name -> types.Event
+	17, // 25: types.PluginBeginResponse.error:type_name -> types.PluginError
+	31, // 26: types.PluginCheckRequest.tx:type_name -> types.Transaction
+	17, // 27: types.PluginCheckResponse.error:type_name -> types.PluginError
+	31, // 28: types.PluginDeliverRequest.tx:type_name -> types.Transaction
+	30, // 29: types.PluginDeliverResponse.events:type_name -> types.Event
+	17, // 30: types.PluginDeliverResponse.error:type_name -> types.PluginError
+	30, // 31: types.PluginEndResponse.events:type_name -> types.Event
+	7,  // 32: types.PluginEndResponse.auxiliary_candidates:type_name -> types.AuxiliaryCandidate
+	17, // 33: types.PluginEndResponse.error:type_name -> types.PluginError
+	20, // 34: types.PluginQueryRequest.read:type_name -> types.PluginStateReadRequest
+	23, // 35: types.PluginQueryResponse.read:type_name -> types.PluginStateReadResponse
+	17, // 36: types.PluginQueryResponse.error:type_name -> types.PluginError
+	21, // 37: types.PluginStateReadRequest.keys:type_name -> types.PluginKeyRead
+	22, // 38: types.PluginStateReadRequest.ranges:type_name -> types.PluginRangeRead
+	24, // 39: types.PluginStateReadResponse.results:type_name -> types.PluginReadResult
+	17, // 40: types.PluginStateReadResponse.error:type_name -> types.PluginError
+	29, // 41: types.PluginReadResult.entries:type_name -> types.PluginStateEntry
+	27, // 42: types.PluginStateWriteRequest.sets:type_name -> types.PluginSetOp
+	28, // 43: types.PluginStateWriteRequest.deletes:type_name -> types.PluginDeleteOp
+	17, // 44: types.PluginStateWriteResponse.error:type_name -> types.PluginError
+	45, // [45:45] is the sub-list for method output_type
+	45, // [45:45] is the sub-list for method input_type
+	45, // [45:45] is the sub-list for extension type_name
+	45, // [45:45] is the sub-list for extension extendee
+	0,  // [0:45] is the sub-list for field type_name
 }
 
 func init() { file_plugin_proto_init() }
@@ -2244,7 +2461,7 @@ func file_plugin_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_plugin_proto_rawDesc), len(file_plugin_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   27,
+			NumMessages:   30,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

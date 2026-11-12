@@ -1,6 +1,8 @@
 package bft
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"github.com/canopy-network/canopy/lib"
 	"github.com/canopy-network/canopy/lib/crypto"
 )
@@ -24,8 +26,25 @@ type (
 		Vote            *Message               `json:"vote,omitempty"`
 		TotalVotedPower uint64                 `json:"totalVotedPower,omitempty"`
 		multiKey        crypto.MultiPublicKeyI // tracks and aggregates bls signatures from replicas
+		auxiliary       map[string]*auxiliaryVoteSet
+	}
+	auxiliaryVoteSet struct {
+		candidate *lib.AuxiliaryCandidate
+		power     uint64
+		multiKey  crypto.MultiPublicKeyI
 	}
 )
+
+const maxAuxiliaryVotes = 32
+
+func auxiliaryCandidateID(candidate *lib.AuxiliaryCandidate) string {
+	payloadHash := sha256.Sum256(candidate.Payload)
+	return candidate.Kind + ":" + hex.EncodeToString(candidate.Key) + ":" + hex.EncodeToString(candidate.Digest) + ":" + hex.EncodeToString(payloadHash[:])
+}
+
+func validAuxiliaryCandidate(candidate *lib.AuxiliaryCandidate) bool {
+	return candidate != nil && len(candidate.Kind) > 0 && len(candidate.Kind) <= 64 && len(candidate.Key) > 0 && len(candidate.Key) <= 128 && len(candidate.Digest) == 32 && len(candidate.Payload) <= 16<<10
+}
 
 // GetMajorityVote() returns the Message and AggregateSignature with a VoteSet with a +2/3 majority from the Replicas
 // NOTE: Votes for a specific Height-Round-Phase are organized by `Payload Hash` to ensure that all Replicas are voting on the same proposal
@@ -98,8 +117,9 @@ func (b *BFT) getVoteSet(vote *Message) (voteSet *VoteSet) {
 	// if no VoteSet is created for this Round.Phase.Payload then create a new VoteSet
 	if voteSet, ok = b.Votes[round][phase][payload]; !ok {
 		voteSet = &VoteSet{
-			Vote:     vote,
-			multiKey: b.ValidatorSet.MultiKey.Copy(),
+			Vote:      vote,
+			multiKey:  b.ValidatorSet.MultiKey.Copy(),
+			auxiliary: make(map[string]*auxiliaryVoteSet),
 		}
 		b.Votes[round][phase][payload] = voteSet
 	}
@@ -124,7 +144,63 @@ func (b *BFT) addSigToVoteSet(vote *Message, voteSet *VoteSet) (err lib.ErrorI) 
 	if er = voteSet.multiKey.AddSigner(vote.Signature.Signature, idx); er != nil {
 		return ErrUnableToAddSigner(er)
 	}
+	// Auxiliary signatures are best-effort attachments. Missing, malformed, or
+	// conflicting attachments never invalidate the ordinary consensus vote.
+	if vote.Qc.Header.Phase != PrecommitVote || len(vote.AuxiliaryVotes) > maxAuxiliaryVotes {
+		return nil
+	}
+	publicKey, keyErr := crypto.BytesToBLS12381Public(vote.Signature.PublicKey)
+	if keyErr != nil {
+		return nil
+	}
+	logicalKeys := make(map[string]struct{}, len(vote.AuxiliaryVotes))
+	for _, attachment := range vote.AuxiliaryVotes {
+		if attachment == nil || !validAuxiliaryCandidate(attachment.Candidate) || len(attachment.Signature) != crypto.BLS12381SignatureSize ||
+			!publicKey.VerifyBytes(attachment.Candidate.Digest, attachment.Signature) {
+			continue
+		}
+		logical := attachment.Candidate.Kind + ":" + hex.EncodeToString(attachment.Candidate.Key)
+		if _, duplicate := logicalKeys[logical]; duplicate {
+			continue
+		}
+		logicalKeys[logical] = struct{}{}
+		id := auxiliaryCandidateID(attachment.Candidate)
+		set := voteSet.auxiliary[id]
+		if set == nil {
+			set = &auxiliaryVoteSet{candidate: attachment.Candidate, multiKey: b.ValidatorSet.MultiKey.Copy()}
+			voteSet.auxiliary[id] = set
+		}
+		if enabled, enableErr := set.multiKey.SignerEnabledAt(idx); enableErr != nil || enabled {
+			continue
+		}
+		if addErr := set.multiKey.AddSigner(attachment.Signature, idx); addErr == nil {
+			set.power += val.VotingPower
+		}
+	}
 	return
+}
+
+// AuxiliaryCertificates returns bounded strict >2/3 BDN certificates.
+func (b *BFT) AuxiliaryCertificates(vote *Message) []*lib.AuxiliaryCertificate {
+	if vote == nil || vote.Qc == nil || vote.Qc.Header == nil {
+		return nil
+	}
+	payload := crypto.HashString(vote.SignBytes())
+	voteSet := b.Votes[vote.Qc.Header.Round][phaseToString(vote.Qc.Header.Phase)][payload]
+	if voteSet == nil {
+		return nil
+	}
+	result := make([]*lib.AuxiliaryCertificate, 0, len(voteSet.auxiliary))
+	for _, set := range voteSet.auxiliary {
+		if set.power*3 <= b.ValidatorSet.TotalPower*2 {
+			continue
+		}
+		signature, err := set.multiKey.AggregateSignatures()
+		if err == nil {
+			result = append(result, &lib.AuxiliaryCertificate{Candidate: set.candidate, Signature: &lib.AggregateSignature{Signature: signature, Bitmap: set.multiKey.Bitmap()}})
+		}
+	}
+	return result
 }
 
 // handleHighQCVDFAndEvidence() processes any 'highQC', 'vdf' or 'evidence' an ElectionVote from a Replica may have submitted

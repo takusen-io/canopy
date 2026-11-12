@@ -66,8 +66,12 @@ type Message struct {
 	Timestamp uint64 `protobuf:"varint,8,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
 	// rcBuildHeight: the root height when the block was built
 	RcBuildHeight uint64 `protobuf:"varint,9,opt,name=rcBuildHeight,proto3" json:"rcBuildHeight,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	// Optional bounded BDN vote extensions. The normal consensus signature
+	// authenticates these attachments, but consensus progress never depends on
+	// their presence or validity.
+	AuxiliaryVotes []*AuxiliaryVote `protobuf:"bytes,10,rep,name=auxiliary_votes,json=auxiliaryVotes,proto3" json:"auxiliary_votes,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *Message) Reset() {
@@ -163,6 +167,65 @@ func (x *Message) GetRcBuildHeight() uint64 {
 	return 0
 }
 
+func (x *Message) GetAuxiliaryVotes() []*AuxiliaryVote {
+	if x != nil {
+		return x.AuxiliaryVotes
+	}
+	return nil
+}
+
+type AuxiliaryVote struct {
+	state         protoimpl.MessageState  `protogen:"open.v1"`
+	Candidate     *lib.AuxiliaryCandidate `protobuf:"bytes,1,opt,name=candidate,proto3" json:"candidate,omitempty"`
+	Signature     []byte                  `protobuf:"bytes,2,opt,name=signature,proto3" json:"signature,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AuxiliaryVote) Reset() {
+	*x = AuxiliaryVote{}
+	mi := &file_bft_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AuxiliaryVote) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AuxiliaryVote) ProtoMessage() {}
+
+func (x *AuxiliaryVote) ProtoReflect() protoreflect.Message {
+	mi := &file_bft_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AuxiliaryVote.ProtoReflect.Descriptor instead.
+func (*AuxiliaryVote) Descriptor() ([]byte, []int) {
+	return file_bft_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *AuxiliaryVote) GetCandidate() *lib.AuxiliaryCandidate {
+	if x != nil {
+		return x.Candidate
+	}
+	return nil
+}
+
+func (x *AuxiliaryVote) GetSignature() []byte {
+	if x != nil {
+		return x.Signature
+	}
+	return nil
+}
+
 // double_sign_evidence is proof that a validator has signed two conflicting proposals at the same block height and round
 // showing dishonest or faulty behavior and triggering slashes to protect the network’s integrity
 type DoubleSignEvidence struct {
@@ -179,7 +242,7 @@ type DoubleSignEvidence struct {
 
 func (x *DoubleSignEvidence) Reset() {
 	*x = DoubleSignEvidence{}
-	mi := &file_bft_proto_msgTypes[1]
+	mi := &file_bft_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -191,7 +254,7 @@ func (x *DoubleSignEvidence) String() string {
 func (*DoubleSignEvidence) ProtoMessage() {}
 
 func (x *DoubleSignEvidence) ProtoReflect() protoreflect.Message {
-	mi := &file_bft_proto_msgTypes[1]
+	mi := &file_bft_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -204,7 +267,7 @@ func (x *DoubleSignEvidence) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DoubleSignEvidence.ProtoReflect.Descriptor instead.
 func (*DoubleSignEvidence) Descriptor() ([]byte, []int) {
-	return file_bft_proto_rawDescGZIP(), []int{1}
+	return file_bft_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *DoubleSignEvidence) GetVoteA() *lib.QuorumCertificate {
@@ -234,7 +297,7 @@ type DoubleSignEvidences struct {
 
 func (x *DoubleSignEvidences) Reset() {
 	*x = DoubleSignEvidences{}
-	mi := &file_bft_proto_msgTypes[2]
+	mi := &file_bft_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -246,7 +309,7 @@ func (x *DoubleSignEvidences) String() string {
 func (*DoubleSignEvidences) ProtoMessage() {}
 
 func (x *DoubleSignEvidences) ProtoReflect() protoreflect.Message {
-	mi := &file_bft_proto_msgTypes[2]
+	mi := &file_bft_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -259,7 +322,7 @@ func (x *DoubleSignEvidences) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DoubleSignEvidences.ProtoReflect.Descriptor instead.
 func (*DoubleSignEvidences) Descriptor() ([]byte, []int) {
-	return file_bft_proto_rawDescGZIP(), []int{2}
+	return file_bft_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *DoubleSignEvidences) GetEvidence() []*DoubleSignEvidence {
@@ -280,7 +343,7 @@ var File_bft_proto protoreflect.FileDescriptor
 
 const file_bft_proto_rawDesc = "" +
 	"\n" +
-	"\tbft.proto\x12\x05types\x1a\x0fconsensus.proto\x1a\fcrypto.proto\x1a\x11certificate.proto\x1a\btx.proto\"\x97\x03\n" +
+	"\tbft.proto\x12\x05types\x1a\x0fconsensus.proto\x1a\fcrypto.proto\x1a\x11certificate.proto\x1a\btx.proto\"\xd6\x03\n" +
 	"\aMessage\x12#\n" +
 	"\x06header\x18\x01 \x01(\v2\v.types.ViewR\x06header\x12\"\n" +
 	"\x03vrf\x18\x02 \x01(\v2\x10.types.SignatureR\x03vrf\x12(\n" +
@@ -291,7 +354,12 @@ const file_bft_proto_rawDesc = "" +
 	".types.VDFR\x03vdf\x12.\n" +
 	"\tsignature\x18\a \x01(\v2\x10.types.SignatureR\tsignature\x12\x1c\n" +
 	"\ttimestamp\x18\b \x01(\x04R\ttimestamp\x12$\n" +
-	"\rrcBuildHeight\x18\t \x01(\x04R\rrcBuildHeight\"v\n" +
+	"\rrcBuildHeight\x18\t \x01(\x04R\rrcBuildHeight\x12=\n" +
+	"\x0fauxiliary_votes\x18\n" +
+	" \x03(\v2\x14.types.AuxiliaryVoteR\x0eauxiliaryVotes\"f\n" +
+	"\rAuxiliaryVote\x127\n" +
+	"\tcandidate\x18\x01 \x01(\v2\x19.types.AuxiliaryCandidateR\tcandidate\x12\x1c\n" +
+	"\tsignature\x18\x02 \x01(\fR\tsignature\"v\n" +
 	"\x12DoubleSignEvidence\x12/\n" +
 	"\x06vote_a\x18\x01 \x01(\v2\x18.types.QuorumCertificateR\x05voteA\x12/\n" +
 	"\x06vote_b\x18\x02 \x01(\v2\x18.types.QuorumCertificateR\x05voteB\"\xdf\x01\n" +
@@ -314,34 +382,38 @@ func file_bft_proto_rawDescGZIP() []byte {
 	return file_bft_proto_rawDescData
 }
 
-var file_bft_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
+var file_bft_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
 var file_bft_proto_goTypes = []any{
-	(*Message)(nil),               // 0: types.Message
-	(*DoubleSignEvidence)(nil),    // 1: types.DoubleSignEvidence
-	(*DoubleSignEvidences)(nil),   // 2: types.DoubleSignEvidences
-	nil,                           // 3: types.DoubleSignEvidences.DeDuplicatorEntry
-	(*lib.View)(nil),              // 4: types.View
-	(*lib.Signature)(nil),         // 5: types.Signature
-	(*lib.QuorumCertificate)(nil), // 6: types.QuorumCertificate
-	(*crypto.VDF)(nil),            // 7: types.VDF
+	(*Message)(nil),                // 0: types.Message
+	(*AuxiliaryVote)(nil),          // 1: types.AuxiliaryVote
+	(*DoubleSignEvidence)(nil),     // 2: types.DoubleSignEvidence
+	(*DoubleSignEvidences)(nil),    // 3: types.DoubleSignEvidences
+	nil,                            // 4: types.DoubleSignEvidences.DeDuplicatorEntry
+	(*lib.View)(nil),               // 5: types.View
+	(*lib.Signature)(nil),          // 6: types.Signature
+	(*lib.QuorumCertificate)(nil),  // 7: types.QuorumCertificate
+	(*crypto.VDF)(nil),             // 8: types.VDF
+	(*lib.AuxiliaryCandidate)(nil), // 9: types.AuxiliaryCandidate
 }
 var file_bft_proto_depIdxs = []int32{
-	4,  // 0: types.Message.header:type_name -> types.View
-	5,  // 1: types.Message.vrf:type_name -> types.Signature
-	6,  // 2: types.Message.qc:type_name -> types.QuorumCertificate
-	6,  // 3: types.Message.high_qc:type_name -> types.QuorumCertificate
-	1,  // 4: types.Message.last_double_sign_evidence:type_name -> types.DoubleSignEvidence
-	7,  // 5: types.Message.vdf:type_name -> types.VDF
-	5,  // 6: types.Message.signature:type_name -> types.Signature
-	6,  // 7: types.DoubleSignEvidence.vote_a:type_name -> types.QuorumCertificate
-	6,  // 8: types.DoubleSignEvidence.vote_b:type_name -> types.QuorumCertificate
-	1,  // 9: types.DoubleSignEvidences.Evidence:type_name -> types.DoubleSignEvidence
-	3,  // 10: types.DoubleSignEvidences.DeDuplicator:type_name -> types.DoubleSignEvidences.DeDuplicatorEntry
-	11, // [11:11] is the sub-list for method output_type
-	11, // [11:11] is the sub-list for method input_type
-	11, // [11:11] is the sub-list for extension type_name
-	11, // [11:11] is the sub-list for extension extendee
-	0,  // [0:11] is the sub-list for field type_name
+	5,  // 0: types.Message.header:type_name -> types.View
+	6,  // 1: types.Message.vrf:type_name -> types.Signature
+	7,  // 2: types.Message.qc:type_name -> types.QuorumCertificate
+	7,  // 3: types.Message.high_qc:type_name -> types.QuorumCertificate
+	2,  // 4: types.Message.last_double_sign_evidence:type_name -> types.DoubleSignEvidence
+	8,  // 5: types.Message.vdf:type_name -> types.VDF
+	6,  // 6: types.Message.signature:type_name -> types.Signature
+	1,  // 7: types.Message.auxiliary_votes:type_name -> types.AuxiliaryVote
+	9,  // 8: types.AuxiliaryVote.candidate:type_name -> types.AuxiliaryCandidate
+	7,  // 9: types.DoubleSignEvidence.vote_a:type_name -> types.QuorumCertificate
+	7,  // 10: types.DoubleSignEvidence.vote_b:type_name -> types.QuorumCertificate
+	2,  // 11: types.DoubleSignEvidences.Evidence:type_name -> types.DoubleSignEvidence
+	4,  // 12: types.DoubleSignEvidences.DeDuplicator:type_name -> types.DoubleSignEvidences.DeDuplicatorEntry
+	13, // [13:13] is the sub-list for method output_type
+	13, // [13:13] is the sub-list for method input_type
+	13, // [13:13] is the sub-list for extension type_name
+	13, // [13:13] is the sub-list for extension extendee
+	0,  // [0:13] is the sub-list for field type_name
 }
 
 func init() { file_bft_proto_init() }
@@ -355,7 +427,7 @@ func file_bft_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_bft_proto_rawDesc), len(file_bft_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   4,
+			NumMessages:   5,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
