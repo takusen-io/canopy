@@ -9,17 +9,22 @@ trap 'rm -rf "$first" "$second"' EXIT
 
 "$root/scripts/verify-takusen-release-source.sh"
 
+# The RPC server embeds this ignored build output. Always produce it from the
+# committed lockfile before compiling a release.
+npm ci --prefix "$root/cmd/rpc/web/explorer"
+npm run build --prefix "$root/cmd/rpc/web/explorer"
+
 build_once() {
   local destination=$1
   mkdir -p "$destination"
   (
     cd "$root"
-    CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -buildvcs=true \
+    CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GOTOOLCHAIN=go1.26.0 go build -trimpath -buildvcs=true \
       -ldflags='-s -w' -o "$destination/canopy" ./cmd/main/...
   )
   (
     cd "$root/plugin/go"
-    CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -buildvcs=false \
+    CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GOTOOLCHAIN=go1.26.0 go build -trimpath -buildvcs=false \
       -ldflags='-s -w' -o "$destination/takusen-canopy-plugin" .
   )
   (
@@ -39,7 +44,7 @@ mkdir -p "$output"
 cp "$first"/* "$output"/
 commit=$(git -C "$root" rev-parse HEAD)
 tree=$(git -C "$root" rev-parse HEAD^{tree})
-toolchain=$(go version | sed 's/"/\\"/g')
+toolchain=$(GOTOOLCHAIN=go1.26.0 go version | sed 's/"/\\"/g')
 generated_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 {
   printf '{\n'
