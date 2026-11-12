@@ -124,10 +124,18 @@ func (s *StateMachine) EndBlock(proposerAddress []byte) (events lib.Events, err 
 	}
 	// execute plugin end block if enabled
 	if s.Plugin != nil {
+		var nextValidatorSet []byte
+		if s.Plugin.ManagesValidatorSetEpochs() {
+			nextValidatorSet, err = s.EncodeCandidateValidatorSet()
+			if err != nil {
+				return nil, err
+			}
+		}
 		resp, e := s.Plugin.EndBlock(s, &lib.PluginEndRequest{
-			Height:          s.height,
-			ProposerAddress: proposerAddress,
-			TimeMicros:      s.blockTimeMicros,
+			Height:           s.height,
+			ProposerAddress:  proposerAddress,
+			TimeMicros:       s.blockTimeMicros,
+			NextValidatorSet: nextValidatorSet,
 		})
 		if e != nil {
 			return nil, e

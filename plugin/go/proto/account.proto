@@ -257,8 +257,9 @@ message ProtocolParams {
   uint64 settlement_interval_blocks = 26;
   repeated string supported_output_schemas = 27;
   repeated string default_models = 28;
-  reserved 29;
-  uint64 validator_handoff_lead_blocks = 30;
+  // Field 30 previously carried validator_handoff_lead_blocks. Handoffs now
+  // begin atomically at the nominal epoch boundary; never reuse this number.
+  reserved 29, 30;
   repeated SettlementDomain settlement_domains = 31;
   bool require_nitro_attestation = 32;
   // Wall-clock notice for a changed-roster EVM schedule. This is independent
@@ -342,10 +343,11 @@ message EpochClock {
   uint64 start_height = 2;
   uint64 end_height = 3;
   uint64 validator_set_id = 4;
-  // Scheduling values are snapshotted when the epoch begins. Governance
-  // updates affect only the following epoch.
+  // The epoch duration is snapshotted when the epoch begins. Handoff values
+  // are snapshotted atomically at the nominal boundary.
   uint64 epoch_blocks = 5;
-  uint64 validator_handoff_lead_blocks = 6;
+  // Field 6 previously carried validator_handoff_lead_blocks. Never reuse it.
+  reserved 6;
   bool validator_handoff_prepared = 7;
   // Unix seconds at which scheduled EVM verifiers permanently stop accepting
   // the outgoing committee until incoming activation.
@@ -356,6 +358,10 @@ message EpochClock {
   uint64 validator_handoff_attempt = 10;
   uint64 consensus_time_seconds = 11;
   uint64 validator_handoff_notice_seconds = 12;
+  bytes validator_handoff_roster_hash = 13;
+  bytes validator_handoff_domain_set_hash = 14;
+  uint64 validator_handoff_outgoing_authority_cutoff = 15;
+  uint64 validator_handoff_native_chain_id = 16;
 }
 
 message BridgeState {

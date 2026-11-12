@@ -15,7 +15,7 @@ func defaultProtocolParams() *ProtocolParams {
 	return &ProtocolParams{
 		QuorumNumerator: 2, QuorumDenominator: 3,
 		RetryLimit: 3, MinimumServicerBond: 1, MinimumValidatorBond: 1,
-		EpochBlocks: 3600, ValidatorHandoffLeadBlocks: 1800, ValidatorHandoffNoticeSeconds: 2400, UnbondingEpochs: 24,
+		EpochBlocks: 3600, ValidatorHandoffNoticeSeconds: 2400, UnbondingEpochs: 24,
 		BridgeEpochMintLimit: math.MaxUint64, BridgeTransferLimit: math.MaxUint64,
 		SupportedOutputSchemas:  []string{"boolean", "score", "choice", "private_hash"},
 		SettlementDomains:       []*SettlementDomain{defaultSettlementDomain()},
@@ -54,8 +54,7 @@ func validateProtocolParams(params *ProtocolParams) *PluginError {
 		uint64(params.QuorumNumerator)*3 < uint64(params.QuorumDenominator)*2 ||
 		params.FoundationFeeBps > 10_000 || (params.ServicerMarginBps > 0 && params.ServicerMarginBps >= params.FoundationFeeBps) ||
 		params.TimeoutSlashBps > 10_000 || params.InvalidReceiptSlashBps > 10_000 ||
-		params.TreasuryBps > 10_000 || params.EpochBlocks == 0 || params.ValidatorHandoffLeadBlocks == 0 ||
-		params.ValidatorHandoffLeadBlocks >= params.EpochBlocks || params.UnbondingEpochs == 0 ||
+		params.TreasuryBps > 10_000 || params.EpochBlocks == 0 || params.UnbondingEpochs == 0 ||
 		params.ValidatorHandoffNoticeSeconds < 1200 || params.ValidatorHandoffNoticeSeconds > 7*24*60*60 ||
 		params.RetryLimit == 0 || params.MinimumServicerBond == 0 || params.MinimumValidatorBond == 0 {
 		return ErrInvalidTransaction("invalid governed protocol parameters")

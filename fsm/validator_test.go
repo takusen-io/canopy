@@ -133,7 +133,7 @@ func TestValidatorSetEpochSnapshotDefersPauseSlashAndJoin(t *testing.T) {
 	require.Equal(t, uint64(200), powers[string(joining.PublicKey)])
 }
 
-func TestPreparedValidatorSetDefersChangesAfterHandoffCutoff(t *testing.T) {
+func TestBoundaryCandidateMatchesPreparedSetAndDefersLaterChanges(t *testing.T) {
 	sm := newTestStateMachine(t)
 	initial := make([]*Validator, 2)
 	for i := range initial {
@@ -153,10 +153,13 @@ func TestPreparedValidatorSetDefersChangesAfterHandoffCutoff(t *testing.T) {
 		NetAddress: "tcp://prepared", StakedAmount: 100, Committees: []uint64{lib.CanopyChainId},
 	}
 	require.NoError(t, sm.SetValidator(preparedJoin))
+	candidate, err := sm.EncodeCandidateValidatorSet()
+	require.NoError(t, err)
+	require.NotEmpty(t, candidate)
 	require.NoError(t, sm.PrepareValidatorSets())
 	encoded, err := sm.EncodePreparedValidatorSet()
 	require.NoError(t, err)
-	require.NotEmpty(t, encoded)
+	require.Equal(t, candidate, encoded)
 
 	lateJoin := &Validator{
 		Address: newTestAddressBytes(t, 3), PublicKey: newTestPublicKeyBytes(t, 3),

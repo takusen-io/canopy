@@ -1115,8 +1115,11 @@ type PluginEndRequest struct {
 	Height          uint64                 `protobuf:"varint,1,opt,name=height,proto3" json:"height,omitempty"`
 	ProposerAddress []byte                 `protobuf:"bytes,2,opt,name=proposer_address,json=proposerAddress,proto3" json:"proposer_address,omitempty"`
 	TimeMicros      uint64                 `protobuf:"varint,3,opt,name=time_micros,json=timeMicros,proto3" json:"time_micros,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// next_validator_set is the exact candidate committee derived by core from
+	// end-block state. The plugin consumes it only at the nominal boundary.
+	NextValidatorSet []byte `protobuf:"bytes,4,opt,name=next_validator_set,json=nextValidatorSet,proto3" json:"next_validator_set,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *PluginEndRequest) Reset() {
@@ -1170,14 +1173,21 @@ func (x *PluginEndRequest) GetTimeMicros() uint64 {
 	return 0
 }
 
+func (x *PluginEndRequest) GetNextValidatorSet() []byte {
+	if x != nil {
+		return x.NextValidatorSet
+	}
+	return nil
+}
+
 // PluginEndResponse acknowledges end block execution
 type PluginEndResponse struct {
 	state  protoimpl.MessageState `protogen:"open.v1"`
 	Events []*Event               `protobuf:"bytes,1,rep,name=events,proto3" json:"events,omitempty"`
 	// validator_set_epoch_end: the current block is the final block of the governed validator-set epoch.
 	ValidatorSetEpochEnd bool `protobuf:"varint,2,opt,name=validator_set_epoch_end,json=validatorSetEpochEnd,proto3" json:"validatorSetEpochEnd"` // @gotags: json:"validatorSetEpochEnd"
-	// validator_set_epoch_prepare freezes the next core committee while the
-	// current committee is still authoritative for cross-chain handoff proofs.
+	// validator_set_epoch_prepare freezes the next core committee atomically at
+	// the nominal boundary while the current committee remains authoritative.
 	ValidatorSetEpochPrepare bool         `protobuf:"varint,3,opt,name=validator_set_epoch_prepare,json=validatorSetEpochPrepare,proto3" json:"validatorSetEpochPrepare"` // @gotags: json:"validatorSetEpochPrepare"
 	Error                    *PluginError `protobuf:"bytes,99,opt,name=error,proto3" json:"error,omitempty"`
 	unknownFields            protoimpl.UnknownFields
@@ -2050,12 +2060,13 @@ const file_plugin_proto_rawDesc = "" +
 	"\x1agovernance_parameter_value\x18\x05 \x01(\fR\x18governanceParameterValue\"g\n" +
 	"\x15PluginDeliverResponse\x12$\n" +
 	"\x06events\x18\x01 \x03(\v2\f.types.EventR\x06events\x12(\n" +
-	"\x05error\x18c \x01(\v2\x12.types.PluginErrorR\x05error\"v\n" +
+	"\x05error\x18c \x01(\v2\x12.types.PluginErrorR\x05error\"\xa4\x01\n" +
 	"\x10PluginEndRequest\x12\x16\n" +
 	"\x06height\x18\x01 \x01(\x04R\x06height\x12)\n" +
 	"\x10proposer_address\x18\x02 \x01(\fR\x0fproposerAddress\x12\x1f\n" +
 	"\vtime_micros\x18\x03 \x01(\x04R\n" +
-	"timeMicros\"\xd9\x01\n" +
+	"timeMicros\x12,\n" +
+	"\x12next_validator_set\x18\x04 \x01(\fR\x10nextValidatorSet\"\xd9\x01\n" +
 	"\x11PluginEndResponse\x12$\n" +
 	"\x06events\x18\x01 \x03(\v2\f.types.EventR\x06events\x125\n" +
 	"\x17validator_set_epoch_end\x18\x02 \x01(\bR\x14validatorSetEpochEnd\x12=\n" +

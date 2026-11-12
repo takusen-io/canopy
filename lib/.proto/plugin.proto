@@ -170,6 +170,9 @@ message PluginEndRequest {
   uint64 height = 1;
   bytes proposer_address = 2;
   uint64 time_micros = 3;
+  // next_validator_set is the exact candidate committee derived by core from
+  // end-block state. The plugin consumes it only at the nominal boundary.
+  bytes next_validator_set = 4;
 }
 
 // PluginEndResponse acknowledges end block execution
@@ -178,8 +181,8 @@ message PluginEndResponse {
   // validator_set_epoch_end: the current block is the final block of the governed
   // validator-set epoch. Core activates the next frozen set for the following block.
   bool validator_set_epoch_end = 2; // @gotags: json:"validatorSetEpochEnd"
-  // validator_set_epoch_prepare freezes the next core committee while the
-  // current committee is still authoritative for cross-chain handoff proofs.
+  // validator_set_epoch_prepare freezes the next core committee atomically at
+  // the nominal boundary while the current committee remains authoritative.
   bool validator_set_epoch_prepare = 3; // @gotags: json:"validatorSetEpochPrepare"
   PluginError error = 99;
 }

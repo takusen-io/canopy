@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"slices"
@@ -23,15 +24,12 @@ func seedQueuedRotation(t *testing.T, store *memoryStateStore, params *ProtocolP
 	if encoded := store.values[string(KeyForEpochClock())]; len(encoded) == 0 || Unmarshal(encoded, clock) != nil {
 		t.Fatal("epoch clock is unavailable")
 	}
-	if len(clock.ValidatorHandoffDomains) == 0 {
-		clock.ValidatorHandoffDomains = authorityHandoffDomains(params)
+	if !clock.ValidatorHandoffPrepared || len(clock.ValidatorHandoffDomains) == 0 || clock.ValidatorHandoffAttempt == 0 {
+		t.Fatal("validator handoff attempt is unavailable")
 	}
-	if clock.ValidatorHandoffAttempt == 0 {
-		clock.ValidatorHandoffAttempt = 1
-	}
-	if clock.ValidatorHandoffTimestamp == 0 {
-		clock.ValidatorHandoffTimestamp = clock.EndHeight
-	}
+	// Keep fixtures short while retaining the attempt-one cutoff invariant.
+	clock.ValidatorHandoffTimestamp = clock.ConsensusTimeSeconds
+	clock.ValidatorHandoffOutgoingAuthorityCutoff = clock.ValidatorHandoffTimestamp
 	store.put(t, KeyForEpochClock(), clock)
 	generation := validatorHandoffGeneration(clock)
 	for _, domain := range params.SettlementDomains {
@@ -49,11 +47,42 @@ func seedQueuedRotation(t *testing.T, store *memoryStateStore, params *ProtocolP
 }
 
 func epochEndRequest(height uint64, proposer []byte) *PluginEndRequest {
-	return &PluginEndRequest{Height: height, ProposerAddress: proposer, TimeMicros: height * 1_000_000}
+	return epochEndRequestWithWeights(height, height, proposer, 100+height, 100+height)
 }
 
 func epochEndRequestAt(height, unixSeconds uint64, proposer []byte) *PluginEndRequest {
-	return &PluginEndRequest{Height: height, ProposerAddress: proposer, TimeMicros: unixSeconds * 1_000_000}
+	return epochEndRequestWithWeights(height, unixSeconds, proposer, 100+height, 100+height)
+}
+
+func epochEndRequestWithWeights(height, unixSeconds uint64, proposer []byte, weights ...uint64) *PluginEndRequest {
+	var encoded bytes.Buffer
+	encoded.WriteByte(activeValidatorSetEncodingVersion)
+	_ = binary.Write(&encoded, binary.BigEndian, uint64(1))
+	_ = binary.Write(&encoded, binary.BigEndian, uint32(len(weights)))
+	for index, weight := range weights {
+		address := bytes.Repeat([]byte{byte(index + 1)}, addressSize)
+		publicKey := bytes.Repeat([]byte{byte(0x41 + index)}, 48)
+		encoded.Write(address)
+		_ = binary.Write(&encoded, binary.BigEndian, uint16(len(publicKey)))
+		encoded.Write(publicKey)
+		_ = binary.Write(&encoded, binary.BigEndian, weight)
+		_ = binary.Write(&encoded, binary.BigEndian, uint16(0))
+	}
+	return &PluginEndRequest{Height: height, ProposerAddress: proposer, TimeMicros: unixSeconds * 1_000_000, NextValidatorSet: encoded.Bytes()}
+}
+
+func completePreparedClock(clock *EpochClock, params *ProtocolParams, rosterHash []byte) {
+	clock.ValidatorHandoffPrepared = true
+	clock.ValidatorHandoffDomains = authorityHandoffDomains(params)
+	clock.ValidatorHandoffDomainSetHash = validatorHandoffDomainSetHash(clock.ValidatorHandoffDomains)
+	clock.ValidatorHandoffRosterHash = append([]byte(nil), rosterHash...)
+	if len(clock.ValidatorHandoffRosterHash) == 0 {
+		clock.ValidatorHandoffRosterHash = bytes.Repeat([]byte{0x51}, 32)
+	}
+	clock.ValidatorHandoffAttempt = 1
+	clock.ValidatorHandoffNativeChainId = 1
+	clock.ValidatorHandoffNoticeSeconds = params.ValidatorHandoffNoticeSeconds
+	clock.ValidatorHandoffOutgoingAuthorityCutoff = clock.ValidatorHandoffTimestamp
 }
 
 type memoryStateStore struct{ values map[string][]byte }
@@ -63,8 +92,8 @@ func newMemoryContract(t *testing.T) (*Contract, *memoryStateStore, []byte, []by
 	store := &memoryStateStore{values: make(map[string][]byte)}
 	contract := &Contract{Config: Config{ChainId: 1}, plugin: store}
 	first, second := bytes.Repeat([]byte{1}, 20), bytes.Repeat([]byte{2}, 20)
-	firstValidator := &Validator{Address: first, StakedAmount: 100, Committees: []uint64{1}}
-	secondValidator := &Validator{Address: second, StakedAmount: 100, Committees: []uint64{1}}
+	firstValidator := &Validator{Address: first, PublicKey: bytes.Repeat([]byte{0x41}, 48), StakedAmount: 100, Committees: []uint64{1}}
+	secondValidator := &Validator{Address: second, PublicKey: bytes.Repeat([]byte{0x42}, 48), StakedAmount: 100, Committees: []uint64{1}}
 	store.put(t, KeyForValidator(first), firstValidator)
 	store.put(t, KeyForValidator(second), secondValidator)
 	store.put(t, KeyForEpochValidator(1, first), firstValidator)
@@ -841,7 +870,7 @@ func TestReassignmentWaitsForEligibleServicerWithoutExhaustingRetries(t *testing
 func TestEpochAppliesStakeUnbondingBaseRewardsAndSlashing(t *testing.T) {
 	contract, store, first, second := newMemoryContract(t)
 	params := defaultProtocolParams()
-	params.Revision, params.EpochBlocks, params.ValidatorHandoffLeadBlocks, params.UnbondingEpochs = 1, 10, 3, 1
+	params.Revision, params.EpochBlocks, params.UnbondingEpochs = 1, 10, 1
 	params.EmissionPerEpoch, params.TreasuryBps = 1_000, 1_000
 	params.TimeoutSlashBps, params.InvalidReceiptSlashBps = 1_000, 5_000
 	params.CanonicalChainId, params.ValidatorSetId = 8453, 1
@@ -871,9 +900,8 @@ func TestEpochAppliesStakeUnbondingBaseRewardsAndSlashing(t *testing.T) {
 		if clock.ValidatorHandoffAttempt == 0 {
 			clock.ValidatorHandoffAttempt = 1
 		}
-		if clock.ValidatorHandoffTimestamp == 0 {
-			clock.ValidatorHandoffTimestamp = clock.EndHeight
-		}
+		clock.ValidatorHandoffTimestamp = clock.ConsensusTimeSeconds
+		clock.ValidatorHandoffOutgoingAuthorityCutoff = clock.ValidatorHandoffTimestamp
 		store.put(t, KeyForEpochClock(), clock)
 		proofID := hashFields([]byte("rotation"), uint64Bytes(oldSetID))
 		store.put(t, KeyForQuorumProof(proofID), &QuorumProof{
@@ -884,11 +912,11 @@ func TestEpochAppliesStakeUnbondingBaseRewardsAndSlashing(t *testing.T) {
 		})
 		store.put(t, KeyForQueuedRotationIndex(params.SettlementDomains[0].Id, oldSetID, oldSetID+1), &ReplayMarker{Id: proofID})
 	}
-	if response := contract.endBlock(epochEndRequest(7, first)); response.Error != nil || !response.ValidatorSetEpochPrepare {
-		t.Fatalf("epoch-one preparation = %#v", response)
+	if response := contract.endBlock(epochEndRequest(10, first)); response.Error != nil || !response.ValidatorSetEpochPrepare {
+		t.Fatalf("epoch-one boundary preparation = %#v", response)
 	}
 	seedRotation(1)
-	if response := contract.endBlock(epochEndRequest(10, first)); response.Error != nil {
+	if response := contract.endBlock(epochEndRequest(11, first)); response.Error != nil {
 		t.Fatal(response.Error)
 	}
 	servicer := new(Servicer)
@@ -908,11 +936,11 @@ func TestEpochAppliesStakeUnbondingBaseRewardsAndSlashing(t *testing.T) {
 		t.Fatalf("epoch authorization = %#v, found = %v, err = %v", epoch, found, err)
 	}
 
-	if response := contract.endBlock(epochEndRequest(17, first)); response.Error != nil || !response.ValidatorSetEpochPrepare {
+	if response := contract.endBlock(epochEndRequest(21, first)); response.Error != nil || !response.ValidatorSetEpochPrepare {
 		t.Fatalf("epoch-two preparation = %#v", response)
 	}
 	seedRotation(2)
-	if response := contract.endBlock(epochEndRequest(20, first)); response.Error != nil {
+	if response := contract.endBlock(epochEndRequest(22, first)); response.Error != nil {
 		t.Fatal(response.Error)
 	}
 	// Core installs the newly activated frozen roster at the next BeginBlock.
@@ -939,11 +967,11 @@ func TestEpochAppliesStakeUnbondingBaseRewardsAndSlashing(t *testing.T) {
 	if found, err := contract.read(KeyForSlashEvidence(evidenceID), queued); err != nil || !found || queued.Status != "queued" || queued.Penalty == 0 {
 		t.Fatalf("queued slash = %#v, found = %v, err = %v", queued, found, err)
 	}
-	if response := contract.endBlock(epochEndRequest(27, first)); response.Error != nil || !response.ValidatorSetEpochPrepare {
+	if response := contract.endBlock(epochEndRequest(32, first)); response.Error != nil || !response.ValidatorSetEpochPrepare {
 		t.Fatalf("epoch-three preparation = %#v", response)
 	}
 	seedRotation(3)
-	if response := contract.endBlock(epochEndRequest(30, first)); response.Error != nil {
+	if response := contract.endBlock(epochEndRequest(33, first)); response.Error != nil {
 		t.Fatal(response.Error)
 	}
 	applied := new(SlashEvidence)
@@ -955,38 +983,38 @@ func TestEpochAppliesStakeUnbondingBaseRewardsAndSlashing(t *testing.T) {
 func TestEpochClockKeepsMonotonicEpochsAcrossGovernedDurationChange(t *testing.T) {
 	contract, store, first, _ := newMemoryContract(t)
 	params := defaultProtocolParams()
-	params.Revision, params.EpochBlocks, params.ValidatorHandoffLeadBlocks, params.ValidatorSetId = 1, 10, 3, 1
+	params.Revision, params.EpochBlocks, params.ValidatorSetId = 1, 10, 1
 	store.put(t, KeyForProtocolParams(), params)
-	if response := contract.endBlock(epochEndRequest(7, first)); response.Error != nil || !response.ValidatorSetEpochPrepare {
-		t.Fatalf("epoch-one preparation = %#v", response)
+	if response := contract.endBlock(epochEndRequest(10, first)); response.Error != nil || !response.ValidatorSetEpochPrepare {
+		t.Fatalf("epoch-one boundary preparation = %#v", response)
 	}
 	seedQueuedRotation(t, store, params, 1)
-	if response := contract.endBlock(epochEndRequest(10, first)); response.Error != nil {
+	if response := contract.endBlock(epochEndRequest(11, first)); response.Error != nil {
 		t.Fatal(response.Error)
 	}
 
 	params = proto.Clone(params).(*ProtocolParams)
 	params.Revision, params.EpochBlocks = 2, 25
 	store.put(t, KeyForProtocolParams(), params)
-	if response := contract.endBlock(epochEndRequest(17, first)); response.Error != nil || !response.ValidatorSetEpochPrepare {
+	if response := contract.endBlock(epochEndRequest(21, first)); response.Error != nil || !response.ValidatorSetEpochPrepare {
 		t.Fatalf("epoch-two preparation = %#v", response)
 	}
 	seedQueuedRotation(t, store, params, 2)
-	if response := contract.endBlock(epochEndRequest(20, first)); response.Error != nil {
+	if response := contract.endBlock(epochEndRequest(22, first)); response.Error != nil {
 		t.Fatal(response.Error)
 	}
 	clock := new(EpochClock)
 	if found, err := contract.read(KeyForEpochClock(), clock); err != nil || !found {
 		t.Fatalf("epoch clock missing: found=%v err=%v", found, err)
 	}
-	if clock.CurrentEpoch != 3 || clock.StartHeight != 21 || clock.EndHeight != 45 || clock.ValidatorSetId != 3 {
+	if clock.CurrentEpoch != 3 || clock.StartHeight != 23 || clock.EndHeight != 47 || clock.ValidatorSetId != 3 {
 		t.Fatalf("epoch clock after duration change = %#v", clock)
 	}
-	if response := contract.endBlock(epochEndRequest(42, first)); response.Error != nil || !response.ValidatorSetEpochPrepare {
+	if response := contract.endBlock(epochEndRequest(47, first)); response.Error != nil || !response.ValidatorSetEpochPrepare {
 		t.Fatalf("epoch-three preparation = %#v", response)
 	}
 	seedQueuedRotation(t, store, params, 3)
-	if response := contract.endBlock(epochEndRequest(45, first)); response.Error != nil {
+	if response := contract.endBlock(epochEndRequest(48, first)); response.Error != nil {
 		t.Fatal(response.Error)
 	}
 	for epoch := uint64(1); epoch <= 3; epoch++ {
@@ -1000,40 +1028,30 @@ func TestEpochClockKeepsMonotonicEpochsAcrossGovernedDurationChange(t *testing.T
 func TestEpochEndSignalsCoreValidatorSetActivation(t *testing.T) {
 	contract, store, proposer, _ := newMemoryContract(t)
 	params := defaultProtocolParams()
-	params.Revision, params.EpochBlocks, params.ValidatorHandoffLeadBlocks, params.ValidatorSetId = 1, 10, 3, 1
+	params.Revision, params.EpochBlocks, params.ValidatorSetId = 1, 10, 1
 	store.put(t, KeyForProtocolParams(), params)
 
 	response := contract.endBlock(epochEndRequest(5, proposer))
 	if response.Error != nil || response.ValidatorSetEpochEnd {
 		t.Fatalf("mid-epoch response = %#v", response)
 	}
-	response = contract.endBlock(epochEndRequest(7, proposer))
+	response = contract.endBlock(epochEndRequest(10, proposer))
 	if response.Error != nil || !response.ValidatorSetEpochPrepare {
-		t.Fatalf("epoch preparation response = %#v", response)
+		t.Fatalf("epoch boundary preparation response = %#v", response)
 	}
 	seedQueuedRotation(t, store, params, 1)
-	response = contract.endBlock(epochEndRequest(10, proposer))
+	response = contract.endBlock(epochEndRequest(11, proposer))
 	if response.Error != nil || !response.ValidatorSetEpochEnd {
 		t.Fatalf("epoch-boundary response = %#v", response)
 	}
 }
 
 func TestUnchangedEpochRosterDoesNotRotateSettlementVerifiers(t *testing.T) {
-	contract, store, first, second := newMemoryContract(t)
+	contract, store, first, _ := newMemoryContract(t)
 	params := defaultProtocolParams()
-	params.Revision, params.EpochBlocks, params.ValidatorHandoffLeadBlocks, params.ValidatorSetId = 1, 10, 3, 1
+	params.Revision, params.EpochBlocks, params.ValidatorSetId = 1, 10, 1
 	store.put(t, KeyForProtocolParams(), params)
-	for _, address := range [][]byte{first, second} {
-		validator := new(Validator)
-		if found, err := contract.read(KeyForValidator(address), validator); err != nil || !found {
-			t.Fatal(err)
-		}
-		store.put(t, KeyForEpochValidator(2, address), validator)
-	}
-	if response := contract.endBlock(epochEndRequest(7, first)); response.Error != nil || !response.ValidatorSetEpochPrepare {
-		t.Fatalf("prepare = %#v", response)
-	}
-	response := contract.endBlock(epochEndRequest(10, first))
+	response := contract.endBlock(epochEndRequestWithWeights(10, 10, first, 100, 100))
 	if response.Error != nil || !response.ValidatorSetEpochEnd {
 		t.Fatalf("unchanged epoch boundary = %#v", response)
 	}
@@ -1046,19 +1064,11 @@ func TestUnchangedEpochRosterDoesNotRotateSettlementVerifiers(t *testing.T) {
 func TestObservedEpochMintClearsPendingIndex(t *testing.T) {
 	contract, store, first, second := newMemoryContract(t)
 	params := defaultProtocolParams()
-	params.Revision, params.EpochBlocks, params.ValidatorHandoffLeadBlocks, params.ValidatorSetId = 1, 10, 3, 1
+	params.Revision, params.EpochBlocks, params.ValidatorSetId = 1, 10, 1
 	params.EmissionPerEpoch, params.TreasuryBps = 100, 0
 	params.CanonicalTokenAddress = bytes.Repeat([]byte{0x71}, 20)
 	store.put(t, KeyForProtocolParams(), params)
-	for _, address := range [][]byte{first, second} {
-		validator := new(Validator)
-		if found, err := contract.read(KeyForValidator(address), validator); err != nil || !found {
-			t.Fatal(err)
-		}
-		store.put(t, KeyForEpochValidator(2, address), validator)
-	}
-	_ = contract.endBlock(epochEndRequest(7, first))
-	if response := contract.endBlock(epochEndRequest(10, first)); response.Error != nil {
+	if response := contract.endBlock(epochEndRequestWithWeights(10, 10, first, 100, 100)); response.Error != nil {
 		t.Fatal(response.Error)
 	}
 	if found, err := contract.read(KeyForPendingEpochAuthorization(1), new(ReplayMarker)); err != nil || !found {
@@ -1081,20 +1091,24 @@ func TestObservedEpochMintClearsPendingIndex(t *testing.T) {
 	}
 }
 
-func TestEpochSignalsNextValidatorSetPreparationBeforeBoundary(t *testing.T) {
+func TestEpochCreatesNextValidatorSetOnlyAtBoundary(t *testing.T) {
 	contract, store, proposer, _ := newMemoryContract(t)
 	params := defaultProtocolParams()
-	params.Revision, params.EpochBlocks, params.ValidatorHandoffLeadBlocks, params.ValidatorSetId = 1, 10, 3, 1
+	params.Revision, params.EpochBlocks, params.ValidatorSetId = 1, 10, 1
 	store.put(t, KeyForProtocolParams(), params)
 
 	response := contract.endBlock(epochEndRequest(7, proposer))
+	if response.Error != nil || response.ValidatorSetEpochPrepare || response.ValidatorSetEpochEnd {
+		t.Fatalf("pre-boundary block created a handoff = %#v", response)
+	}
+	response = contract.endBlock(epochEndRequest(10, proposer))
 	if response.Error != nil || !response.ValidatorSetEpochPrepare || response.ValidatorSetEpochEnd {
-		t.Fatalf("handoff-cutoff response = %#v", response)
+		t.Fatalf("epoch-boundary snapshot response = %#v", response)
 	}
 	seedQueuedRotation(t, store, params, 1)
-	response = contract.endBlock(epochEndRequest(10, proposer))
+	response = contract.endBlock(epochEndRequest(11, proposer))
 	if response.Error != nil || !response.ValidatorSetEpochEnd {
-		t.Fatalf("epoch-boundary response = %#v", response)
+		t.Fatalf("ready handoff response = %#v", response)
 	}
 	clock := new(EpochClock)
 	if found, err := contract.read(KeyForEpochClock(), clock); err != nil || !found || clock.ValidatorSetId != 2 {
@@ -1105,16 +1119,12 @@ func TestEpochSignalsNextValidatorSetPreparationBeforeBoundary(t *testing.T) {
 func TestHandoffTimestampStartsFromActualBoundaryConsensusTime(t *testing.T) {
 	contract, store, proposer, _ := newMemoryContract(t)
 	params := defaultProtocolParams()
-	params.Revision, params.EpochBlocks, params.ValidatorHandoffLeadBlocks, params.ValidatorSetId = 1, 10, 3, 1
+	params.Revision, params.EpochBlocks, params.ValidatorSetId = 1, 10, 1
 	params.ValidatorHandoffNoticeSeconds = 2_400
 	store.put(t, KeyForProtocolParams(), params)
 
-	if response := contract.endBlock(epochEndRequestAt(7, 100, proposer)); response.Error != nil || !response.ValidatorSetEpochPrepare {
-		t.Fatalf("handoff preparation = %#v", response)
-	}
-	prepared := new(EpochClock)
-	if found, err := contract.read(KeyForEpochClock(), prepared); err != nil || !found || prepared.ValidatorHandoffTimestamp != 0 {
-		t.Fatalf("pre-boundary block projected a handoff timestamp: found=%v err=%v clock=%#v", found, err, prepared)
+	if response := contract.endBlock(epochEndRequestAt(7, 100, proposer)); response.Error != nil || response.ValidatorSetEpochPrepare {
+		t.Fatalf("pre-boundary block prepared a handoff = %#v", response)
 	}
 	if response := contract.endBlock(epochEndRequestAt(10, 10_000, proposer)); response.Error != nil || response.ValidatorSetEpochEnd {
 		t.Fatalf("boundary did not start a schedule attempt: %#v", response)
@@ -1126,17 +1136,31 @@ func TestHandoffTimestampStartsFromActualBoundaryConsensusTime(t *testing.T) {
 	}
 }
 
+func TestValidatorHandoffGenerationVector(t *testing.T) {
+	clock := &EpochClock{
+		ValidatorHandoffNativeChainId: 1, CurrentEpoch: 7, ValidatorSetId: 11,
+		ValidatorHandoffRosterHash:    bytes.Repeat([]byte{0x11}, 32),
+		ValidatorHandoffDomainSetHash: bytes.Repeat([]byte{0x22}, 32),
+		ValidatorHandoffAttempt:       3, ValidatorHandoffTimestamp: 1_700_000_000,
+		ValidatorHandoffOutgoingAuthorityCutoff: 1_699_990_000,
+	}
+	const want = "2b15397b65e1d5d01e5f495ef83bedbd7954583d9715b49950022e04f4870c53"
+	if got := hex.EncodeToString(validatorHandoffGeneration(clock)); got != want {
+		t.Fatalf("generation = %s, want %s", got, want)
+	}
+}
+
 func TestPreparedHandoffKeepsItsSettlementDomainSnapshot(t *testing.T) {
 	contract, store, proposer, _ := newMemoryContract(t)
 	params := defaultProtocolParams()
-	params.Revision, params.EpochBlocks, params.ValidatorHandoffLeadBlocks, params.ValidatorSetId = 1, 10, 3, 1
+	params.Revision, params.EpochBlocks, params.ValidatorSetId = 1, 10, 1
 	second := proto.Clone(params.SettlementDomains[0]).(*SettlementDomain)
 	second.Id = bytes.Repeat([]byte{0x93}, 32)
 	second.ChainId = 56
 	params.SettlementDomains = append(params.SettlementDomains, second)
 	store.put(t, KeyForProtocolParams(), params)
-	if response := contract.endBlock(epochEndRequest(7, proposer)); response.Error != nil || !response.ValidatorSetEpochPrepare {
-		t.Fatalf("handoff preparation = %#v", response)
+	if response := contract.endBlock(epochEndRequest(10, proposer)); response.Error != nil || !response.ValidatorSetEpochPrepare {
+		t.Fatalf("boundary handoff preparation = %#v", response)
 	}
 	clock := new(EpochClock)
 	if found, err := contract.read(KeyForEpochClock(), clock); err != nil || !found || len(clock.ValidatorHandoffDomains) != 2 {
@@ -1152,12 +1176,70 @@ func TestPreparedHandoffKeepsItsSettlementDomainSnapshot(t *testing.T) {
 	changed.SettlementDomains = append(changed.SettlementDomains, third)
 	store.put(t, KeyForProtocolParams(), changed)
 
-	if response := contract.endBlock(epochEndRequest(10, proposer)); response.Error != nil || response.ValidatorSetEpochEnd {
+	if response := contract.endBlock(epochEndRequest(11, proposer)); response.Error != nil || response.ValidatorSetEpochEnd {
 		t.Fatalf("boundary did not create snapshotted attempt: %#v", response)
 	}
 	if found, err := contract.read(KeyForEpochClock(), clock); err != nil || !found || len(clock.ValidatorHandoffDomains) != 2 ||
 		!handoffIncludesDomain(clock, second.Id) || handoffIncludesDomain(clock, third.Id) {
 		t.Fatalf("governance rewrote the prepared domain snapshot: found=%v err=%v clock=%#v", found, err, clock)
+	}
+}
+
+func TestBoundarySnapshotIsImmuneToLaterRosterAndParameterChanges(t *testing.T) {
+	contract, store, proposer, secondAddress := newMemoryContract(t)
+	params := defaultProtocolParams()
+	params.Revision, params.EpochBlocks, params.ValidatorSetId = 1, 10, 1
+	store.put(t, KeyForProtocolParams(), params)
+	if response := contract.endBlock(epochEndRequestAt(10, 10_000, proposer)); response.Error != nil || !response.ValidatorSetEpochPrepare {
+		t.Fatalf("boundary preparation = %#v", response)
+	}
+	before := new(EpochClock)
+	if found, err := contract.read(KeyForEpochClock(), before); err != nil || !found {
+		t.Fatalf("prepared clock missing: found=%v err=%v", found, err)
+	}
+
+	changed := proto.Clone(params).(*ProtocolParams)
+	changed.Revision = 2
+	changed.ValidatorHandoffNoticeSeconds = 7_200
+	third := proto.Clone(changed.SettlementDomains[0]).(*SettlementDomain)
+	third.Id = bytes.Repeat([]byte{0xb7}, 32)
+	third.ChainId = 56
+	changed.SettlementDomains = append(changed.SettlementDomains, third)
+	store.put(t, KeyForProtocolParams(), changed)
+	validator := new(Validator)
+	if found, err := contract.read(KeyForValidator(secondAddress), validator); err != nil || !found {
+		t.Fatalf("validator missing: found=%v err=%v", found, err)
+	}
+	validator.StakedAmount = 9_999
+	store.put(t, KeyForValidator(secondAddress), validator)
+
+	if response := contract.endBlock(epochEndRequestAt(11, 10_001, proposer)); response.Error != nil || response.ValidatorSetEpochEnd {
+		t.Fatalf("extended boundary response = %#v", response)
+	}
+	after := new(EpochClock)
+	if found, err := contract.read(KeyForEpochClock(), after); err != nil || !found {
+		t.Fatalf("extended clock missing: found=%v err=%v", found, err)
+	}
+	if !bytes.Equal(after.ValidatorHandoffRosterHash, before.ValidatorHandoffRosterHash) ||
+		!bytes.Equal(after.ValidatorHandoffDomainSetHash, before.ValidatorHandoffDomainSetHash) ||
+		after.ValidatorHandoffTimestamp != before.ValidatorHandoffTimestamp ||
+		after.ValidatorHandoffNoticeSeconds != before.ValidatorHandoffNoticeSeconds ||
+		len(after.ValidatorHandoffDomains) != len(before.ValidatorHandoffDomains) {
+		t.Fatalf("later state rewrote frozen transition: before=%#v after=%#v", before, after)
+	}
+}
+
+func TestLegacyLeadHeightPreparedStateIsRejected(t *testing.T) {
+	contract, store, _, _ := newMemoryContract(t)
+	params := defaultProtocolParams()
+	params.Revision, params.EpochBlocks, params.ValidatorSetId = 1, 10, 1
+	store.put(t, KeyForProtocolParams(), params)
+	store.put(t, KeyForEpochClock(), &EpochClock{
+		CurrentEpoch: 1, StartHeight: 1, EndHeight: 10, ValidatorSetId: 1,
+		EpochBlocks: 10, ValidatorHandoffPrepared: true,
+	})
+	if _, err := contract.currentEpochClock(params); err == nil || !strings.Contains(err.Msg, "boundary migration") {
+		t.Fatalf("legacy prepared state was silently reinterpreted: %v", err)
 	}
 }
 
@@ -1207,12 +1289,12 @@ func TestGovernanceCannotRemoveDomainWithoutRetirementProtocol(t *testing.T) {
 	if response := contract.deliverGovernedParameter("takusen", "protocolParams", []byte(base64.StdEncoding.EncodeToString(encoded))); response.Error != nil {
 		t.Fatalf("traffic deactivation incorrectly removed authority tracking: %v", response.Error)
 	}
-	store.put(t, KeyForEpochClock(), &EpochClock{
+	preparedClock := &EpochClock{
 		CurrentEpoch: 1, StartHeight: 1, EndHeight: params.EpochBlocks, ValidatorSetId: params.ValidatorSetId,
-		EpochBlocks: params.EpochBlocks, ValidatorHandoffLeadBlocks: params.ValidatorHandoffLeadBlocks,
-		ValidatorHandoffNoticeSeconds: params.ValidatorHandoffNoticeSeconds, ValidatorHandoffPrepared: true,
-		ValidatorHandoffDomains: authorityHandoffDomains(deactivated),
-	})
+		EpochBlocks: params.EpochBlocks, ValidatorHandoffTimestamp: 100,
+	}
+	completePreparedClock(preparedClock, deactivated, nil)
+	store.put(t, KeyForEpochClock(), preparedClock)
 	reactivated := proto.Clone(deactivated).(*ProtocolParams)
 	reactivated.Revision = 3
 	reactivated.SettlementDomains[1].Active = true
@@ -1248,7 +1330,7 @@ func TestGovernanceCannotRemoveDomainWithoutRetirementProtocol(t *testing.T) {
 	}
 	store.put(t, KeyForEpochClock(), &EpochClock{
 		CurrentEpoch: 1, StartHeight: 1, EndHeight: params.EpochBlocks, ValidatorSetId: params.ValidatorSetId,
-		EpochBlocks: params.EpochBlocks, ValidatorHandoffLeadBlocks: params.ValidatorHandoffLeadBlocks,
+		EpochBlocks:                   params.EpochBlocks,
 		ValidatorHandoffNoticeSeconds: params.ValidatorHandoffNoticeSeconds,
 	})
 	store.put(t, KeyForSettlementDomainRetirement(second.Id), &ReplayMarker{Id: bytes.Repeat([]byte{0xaa}, 32)})
@@ -1280,7 +1362,7 @@ func TestLifecycleIntentRequiresExactGovernedGenerationActionNonceAndExpiry(t *t
 	store.put(t, KeyForProtocolParams(), params)
 	clock := &EpochClock{
 		CurrentEpoch: 1, StartHeight: 1, EndHeight: params.EpochBlocks, ValidatorSetId: 5,
-		EpochBlocks: params.EpochBlocks, ValidatorHandoffLeadBlocks: params.ValidatorHandoffLeadBlocks,
+		EpochBlocks: params.EpochBlocks,
 	}
 	store.put(t, KeyForEpochClock(), clock)
 	generation := bytes.Repeat([]byte{0x98}, 32)
@@ -1472,12 +1554,9 @@ func TestGovernanceCanDiscardNeverActiveStagedDomain(t *testing.T) {
 func TestMissedPreCutoffWindowCreatesIncomingRepairAttempt(t *testing.T) {
 	contract, store, proposer, _ := newMemoryContract(t)
 	params := defaultProtocolParams()
-	params.Revision, params.EpochBlocks, params.ValidatorHandoffLeadBlocks, params.ValidatorSetId = 1, 10, 3, 1
+	params.Revision, params.EpochBlocks, params.ValidatorSetId = 1, 10, 1
 	params.ValidatorHandoffNoticeSeconds = 2_400
 	store.put(t, KeyForProtocolParams(), params)
-	if response := contract.endBlock(epochEndRequestAt(7, 100, proposer)); response.Error != nil || !response.ValidatorSetEpochPrepare {
-		t.Fatalf("handoff preparation = %#v", response)
-	}
 	if response := contract.endBlock(epochEndRequestAt(10, 10_000, proposer)); response.Error != nil || response.ValidatorSetEpochEnd {
 		t.Fatalf("boundary did not start first attempt: %#v", response)
 	}
@@ -1485,11 +1564,15 @@ func TestMissedPreCutoffWindowCreatesIncomingRepairAttempt(t *testing.T) {
 	if found, err := contract.read(KeyForEpochClock(), clock); err != nil || !found || clock.ValidatorHandoffAttempt != 1 || clock.ValidatorHandoffTimestamp != 12_400 {
 		t.Fatalf("first attempt missing: found=%v err=%v clock=%#v", found, err, clock)
 	}
+	firstGeneration := validatorHandoffGeneration(clock)
 	if response := contract.endBlock(epochEndRequestAt(11, 11_200, proposer)); response.Error != nil || response.ValidatorSetEpochEnd {
 		t.Fatalf("abort-window renewal failed: %#v", response)
 	}
 	if found, err := contract.read(KeyForEpochClock(), clock); err != nil || !found || clock.ValidatorHandoffAttempt != 2 || clock.ValidatorHandoffTimestamp != 13_600 {
 		t.Fatalf("abort window did not create a fresh in-place attempt: found=%v err=%v clock=%#v", found, err, clock)
+	}
+	if bytes.Equal(firstGeneration, validatorHandoffGeneration(clock)) {
+		t.Fatal("renewal did not derive a new generation from the incremented attempt")
 	}
 	if response := contract.endBlock(epochEndRequestAt(12, 13_600, proposer)); response.Error != nil || response.ValidatorSetEpochEnd {
 		t.Fatalf("post-cutoff repair attempt failed: %#v", response)
@@ -1502,7 +1585,7 @@ func TestMissedPreCutoffWindowCreatesIncomingRepairAttempt(t *testing.T) {
 func TestEpochBoundaryFailsClosedUntilRotationProofExists(t *testing.T) {
 	contract, store, proposer, _ := newMemoryContract(t)
 	params := defaultProtocolParams()
-	params.Revision, params.EpochBlocks, params.ValidatorHandoffLeadBlocks, params.ValidatorSetId = 1, 10, 3, 1
+	params.Revision, params.EpochBlocks, params.ValidatorSetId = 1, 10, 1
 	params.CanonicalChainId = 8453
 	store.put(t, KeyForProtocolParams(), params)
 
@@ -1511,21 +1594,11 @@ func TestEpochBoundaryFailsClosedUntilRotationProofExists(t *testing.T) {
 		t.Fatalf("unprepared boundary did not fail closed: %#v", response)
 	}
 	clock := new(EpochClock)
-	if found, err := contract.read(KeyForEpochClock(), clock); err != nil || !found || clock.EndHeight != 13 || clock.ValidatorSetId != 1 || !clock.ValidatorHandoffPrepared {
+	if found, err := contract.read(KeyForEpochClock(), clock); err != nil || !found || clock.EndHeight != 11 || clock.ValidatorSetId != 1 || !clock.ValidatorHandoffPrepared {
 		t.Fatalf("extended epoch clock = %#v found=%v err=%v", clock, found, err)
 	}
-	clock.ValidatorHandoffAttempt = 1
-	clock.ValidatorHandoffTimestamp = 13
-	store.put(t, KeyForEpochClock(), clock)
-	proofID := bytes.Repeat([]byte{7}, 32)
-	store.put(t, KeyForQuorumProof(proofID), &QuorumProof{
-		ProofKind: "validator-set-rotation-queued", ProofId: bytes.Repeat([]byte{7}, 32),
-		ValidatorSetId: 1, NewValidatorSetId: 2, CompletedHeight: 12,
-		SettlementDomainId: params.SettlementDomains[0].Id,
-		HandoffGeneration:  validatorHandoffGeneration(clock), HandoffTimestamp: clock.ValidatorHandoffTimestamp,
-	})
-	store.put(t, KeyForQueuedRotationIndex(params.SettlementDomains[0].Id, 1, 2), &ReplayMarker{Id: proofID})
-	response = contract.endBlock(epochEndRequest(13, proposer))
+	seedQueuedRotation(t, store, params, 1)
+	response = contract.endBlock(epochEndRequest(11, proposer))
 	if response.Error != nil || !response.ValidatorSetEpochEnd {
 		t.Fatalf("authorized boundary did not activate: %#v", response)
 	}
@@ -1534,22 +1607,22 @@ func TestEpochBoundaryFailsClosedUntilRotationProofExists(t *testing.T) {
 func TestEpochBoundaryRequiresFinalizedScheduleForInactiveAuthorityDomain(t *testing.T) {
 	contract, store, proposer, _ := newMemoryContract(t)
 	params := defaultProtocolParams()
-	params.Revision, params.EpochBlocks, params.ValidatorHandoffLeadBlocks, params.ValidatorSetId = 1, 10, 3, 1
+	params.Revision, params.EpochBlocks, params.ValidatorSetId = 1, 10, 1
 	second := proto.Clone(params.SettlementDomains[0]).(*SettlementDomain)
 	second.Id = bytes.Repeat([]byte{0x92}, 32)
 	second.ChainId = 56
 	second.Active = false
 	params.SettlementDomains = append(params.SettlementDomains, second)
 	store.put(t, KeyForProtocolParams(), params)
-	if response := contract.endBlock(epochEndRequest(7, proposer)); response.Error != nil || !response.ValidatorSetEpochPrepare {
-		t.Fatalf("handoff preparation = %#v", response)
+	if response := contract.endBlock(epochEndRequest(10, proposer)); response.Error != nil || !response.ValidatorSetEpochPrepare {
+		t.Fatalf("boundary handoff preparation = %#v", response)
 	}
 	clock := new(EpochClock)
 	if found, err := contract.read(KeyForEpochClock(), clock); err != nil || !found {
 		t.Fatalf("prepared epoch clock missing: found=%v err=%v", found, err)
 	}
-	clock.ValidatorHandoffAttempt = 1
 	clock.ValidatorHandoffTimestamp = 1_300
+	clock.ValidatorHandoffOutgoingAuthorityCutoff = 1_300
 	store.put(t, KeyForEpochClock(), clock)
 	generation := validatorHandoffGeneration(clock)
 
@@ -1561,7 +1634,7 @@ func TestEpochBoundaryRequiresFinalizedScheduleForInactiveAuthorityDomain(t *tes
 		HandoffGeneration: generation, HandoffTimestamp: clock.ValidatorHandoffTimestamp,
 	})
 	store.put(t, KeyForQueuedRotationIndex(first.Id, 1, 2), &ReplayMarker{Id: proofID})
-	if response := contract.endBlock(epochEndRequest(10, proposer)); response.Error != nil || response.ValidatorSetEpochEnd {
+	if response := contract.endBlock(epochEndRequest(11, proposer)); response.Error != nil || response.ValidatorSetEpochEnd {
 		t.Fatalf("one-domain handoff advanced a two-domain epoch: %#v", response)
 	}
 
@@ -1572,7 +1645,7 @@ func TestEpochBoundaryRequiresFinalizedScheduleForInactiveAuthorityDomain(t *tes
 		HandoffGeneration: bytes.Repeat([]byte{0x43}, 32), HandoffTimestamp: clock.ValidatorHandoffTimestamp,
 	})
 	store.put(t, KeyForQueuedRotationIndex(second.Id, 1, 2), &ReplayMarker{Id: secondProofID})
-	if response := contract.endBlock(epochEndRequest(11, proposer)); response.Error == nil || response.ValidatorSetEpochEnd {
+	if response := contract.endBlock(epochEndRequest(12, proposer)); response.Error == nil || response.ValidatorSetEpochEnd {
 		t.Fatalf("mismatched global handoff generations advanced: %#v", response)
 	}
 	store.put(t, KeyForQuorumProof(secondProofID), &QuorumProof{
@@ -1580,7 +1653,7 @@ func TestEpochBoundaryRequiresFinalizedScheduleForInactiveAuthorityDomain(t *tes
 		NewValidatorSetId: 2, CompletedHeight: 11, SettlementDomainId: second.Id,
 		HandoffGeneration: generation, HandoffTimestamp: clock.ValidatorHandoffTimestamp,
 	})
-	if response := contract.endBlock(epochEndRequestAt(11, 1_300, proposer)); response.Error != nil || !response.ValidatorSetEpochEnd {
+	if response := contract.endBlock(epochEndRequestAt(12, 1_300, proposer)); response.Error != nil || !response.ValidatorSetEpochEnd {
 		t.Fatalf("all-domain handoff did not advance: %#v", response)
 	}
 }
@@ -1588,12 +1661,8 @@ func TestEpochBoundaryRequiresFinalizedScheduleForInactiveAuthorityDomain(t *tes
 func TestEpochProcessesPendingSlashesInBoundedChunks(t *testing.T) {
 	contract, store, proposer, _ := newMemoryContract(t)
 	params := defaultProtocolParams()
-	params.Revision, params.EpochBlocks, params.ValidatorHandoffLeadBlocks = 1, 10, 3
+	params.Revision, params.EpochBlocks = 1, 10
 	store.put(t, KeyForProtocolParams(), params)
-	store.put(t, KeyForEpochClock(), &EpochClock{
-		CurrentEpoch: 1, StartHeight: 1, EndHeight: 10, ValidatorSetId: 1,
-		EpochBlocks: 10, ValidatorHandoffLeadBlocks: 3, ValidatorHandoffPrepared: true,
-	})
 	store.put(t, KeyForServicer(proposer), &Servicer{OwnerAddress: proposer, Bond: 1_000, Active: true})
 	for index := uint64(0); index < maxEpochSlashApplications+1; index++ {
 		evidenceID := hashFields([]byte("bounded-slash"), uint64Bytes(index))
@@ -1603,8 +1672,7 @@ func TestEpochProcessesPendingSlashesInBoundedChunks(t *testing.T) {
 		})
 		store.put(t, KeyForPendingSlash(1, evidenceID), &ReplayMarker{Id: evidenceID})
 	}
-	seedQueuedRotation(t, store, params, 1)
-	response := contract.endBlock(epochEndRequest(10, proposer))
+	response := contract.endBlock(epochEndRequestWithWeights(10, 10, proposer, 100, 100))
 	if response.Error != nil || response.ValidatorSetEpochEnd {
 		t.Fatalf("first bounded slash chunk = %#v", response)
 	}
@@ -1616,7 +1684,7 @@ func TestEpochProcessesPendingSlashesInBoundedChunks(t *testing.T) {
 	if err != nil || len(pending) != 1 {
 		t.Fatalf("pending slash remainder=%d err=%v", len(pending), err)
 	}
-	response = contract.endBlock(epochEndRequest(11, proposer))
+	response = contract.endBlock(epochEndRequestWithWeights(11, 11, proposer, 100, 100))
 	if response.Error != nil || !response.ValidatorSetEpochEnd {
 		t.Fatalf("final bounded slash chunk = %#v", response)
 	}

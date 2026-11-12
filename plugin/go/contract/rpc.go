@@ -152,6 +152,10 @@ func (p *Plugin) rotationQueuesReadyHandler() http.HandlerFunc {
 			writeJSON(w, http.StatusConflict, map[string]string{"error": "validator handoff attempt is not prepared"})
 			return
 		}
+		if stateErr := validatePreparedValidatorHandoff(clock, p.config.ChainId); stateErr != nil {
+			writeJSON(w, http.StatusConflict, map[string]string{"error": stateErr.Msg})
+			return
+		}
 		generation := validatorHandoffGeneration(clock)
 		keys := make([]*PluginKeyRead, 0, len(clock.ValidatorHandoffDomains))
 		for _, domainID := range clock.ValidatorHandoffDomains {
@@ -202,7 +206,12 @@ func (p *Plugin) rotationQueuesReadyHandler() http.HandlerFunc {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"ready": ready, "renewal_pending": renewalPending, "handoff_generation": generation,
 			"handoff_timestamp": clock.ValidatorHandoffTimestamp, "handoff_attempt": clock.ValidatorHandoffAttempt,
-			"epoch_end_height": clock.EndHeight,
+			"epoch_end_height": clock.EndHeight, "native_chain_id": clock.ValidatorHandoffNativeChainId,
+			"epoch": clock.CurrentEpoch, "old_validator_set_id": clock.ValidatorSetId,
+			"new_validator_set_id":      clock.ValidatorSetId + 1,
+			"frozen_roster_hash":        clock.ValidatorHandoffRosterHash,
+			"frozen_domain_set_hash":    clock.ValidatorHandoffDomainSetHash,
+			"outgoing_authority_cutoff": clock.ValidatorHandoffOutgoingAuthorityCutoff,
 		})
 	}
 }

@@ -52,46 +52,61 @@ func (c *Contract) endBlock(request *PluginEndRequest) *PluginEndResponse {
 		string(key): producer, string(KeyForEpochClock()): clock,
 		string(KeyForProducerIdentity(request.ProposerAddress)): &ProducerIdentity{OwnerAddress: append([]byte(nil), request.ProposerAddress...)},
 	}
-	handoffEnabled := clock.ValidatorHandoffLeadBlocks > 0 &&
-		clock.ValidatorHandoffLeadBlocks < clock.EpochBlocks
-	prepare := handoffEnabled && !clock.ValidatorHandoffPrepared &&
-		request.Height >= clock.EndHeight-clock.ValidatorHandoffLeadBlocks
-	if prepare {
-		if request.Height == clock.EndHeight {
-			if clock.EndHeight > math.MaxUint64-clock.ValidatorHandoffLeadBlocks {
-				return &PluginEndResponse{Error: ErrState("epoch handoff recovery overflow")}
-			}
-			// A missed cutoff gets a complete new scheduling window. It must not
-			// manufacture a near-immediate EVM authority transition.
-			clock.EndHeight += clock.ValidatorHandoffLeadBlocks
-		}
-		clock.ValidatorHandoffDomains = authorityHandoffDomains(params)
-		if len(clock.ValidatorHandoffDomains) == 0 {
-			return &PluginEndResponse{Error: ErrState("epoch handoff has no active settlement domains")}
-		}
-		clock.ValidatorHandoffPrepared = true
-	}
 	if request.Height != clock.EndHeight {
-		return &PluginEndResponse{ValidatorSetEpochPrepare: prepare, Error: c.write(records)}
+		return &PluginEndResponse{Error: c.write(records)}
 	}
-	rotationRequired, rotationErr := c.validatorRotationRequired(clock)
-	if rotationErr != nil {
-		return &PluginEndResponse{Error: rotationErr}
-	}
-	if handoffEnabled && rotationRequired {
-		if !clock.ValidatorHandoffPrepared || len(clock.ValidatorHandoffDomains) == 0 {
-			return &PluginEndResponse{Error: ErrState("validator handoff roster or domain snapshot is unavailable")}
+	var deletes [][]byte
+	rotationRequired := clock.ValidatorHandoffPrepared
+	if !clock.ValidatorHandoffPrepared {
+		// The nominal boundary is the only place where N+1, the governed domain
+		// set, and handoff parameters are frozen. Core supplies the exact
+		// end-block candidate and persists the same committee atomically when the
+		// response requests preparation.
+		if len(request.NextValidatorSet) == 0 || clock.CurrentEpoch == math.MaxUint64 || clock.ValidatorSetId == math.MaxUint64 {
+			return &PluginEndResponse{Error: ErrState("epoch boundary is missing the next validator set")}
 		}
-		if clock.ValidatorHandoffTimestamp == 0 {
-			deletes, startErr := startValidatorHandoffAttempt(clock)
+		nextRecords, nextDeletes, snapshotErr := c.reconcileEpochValidatorSnapshot(clock.CurrentEpoch+1, request.NextValidatorSet)
+		if snapshotErr != nil {
+			return &PluginEndResponse{Error: snapshotErr}
+		}
+		for key, value := range nextRecords {
+			records[key] = value
+		}
+		deletes = append(deletes, nextDeletes...)
+		candidateHash, hashErr := validatorHandoffRosterHash(request.NextValidatorSet, c.Config.ChainId)
+		if hashErr != nil {
+			return &PluginEndResponse{Error: hashErr}
+		}
+		currentHash, hashErr := c.epochValidatorRosterHash(clock.CurrentEpoch)
+		if hashErr != nil {
+			return &PluginEndResponse{Error: hashErr}
+		}
+		rotationRequired = !bytes.Equal(currentHash, candidateHash)
+		if rotationRequired {
+			clock.ValidatorHandoffDomains = authorityHandoffDomains(params)
+			if len(clock.ValidatorHandoffDomains) == 0 {
+				return &PluginEndResponse{Error: ErrState("epoch handoff has no governed settlement domains")}
+			}
+			clock.ValidatorHandoffPrepared = true
+			clock.ValidatorHandoffNoticeSeconds = params.ValidatorHandoffNoticeSeconds
+			clock.ValidatorHandoffRosterHash = candidateHash
+			clock.ValidatorHandoffDomainSetHash = validatorHandoffDomainSetHash(clock.ValidatorHandoffDomains)
+			clock.ValidatorHandoffNativeChainId = c.Config.ChainId
+			attemptDeletes, startErr := startValidatorHandoffAttempt(clock)
 			if startErr != nil {
 				return &PluginEndResponse{Error: startErr}
 			}
+			deletes = append(deletes, attemptDeletes...)
 			if clock.EndHeight == math.MaxUint64 {
 				return &PluginEndResponse{Error: ErrState("epoch handoff wait overflow")}
 			}
 			clock.EndHeight++
-			return &PluginEndResponse{Error: c.writeChanges(records, deletes)}
+			return &PluginEndResponse{ValidatorSetEpochPrepare: true, Error: c.writeChanges(records, deletes)}
+		}
+	}
+	if rotationRequired {
+		if handoffStateErr := validatePreparedValidatorHandoff(clock, c.Config.ChainId); handoffStateErr != nil {
+			return &PluginEndResponse{Error: handoffStateErr}
 		}
 		ready, readyErr := c.validatorHandoffReady(clock)
 		if readyErr != nil {
@@ -121,10 +136,11 @@ func (c *Contract) endBlock(request *PluginEndRequest) *PluginEndResponse {
 			return &PluginEndResponse{Error: c.write(records)}
 		}
 	}
-	deletes, applyErr := c.applyEpochStakeChanges(epoch, params, records)
+	stakeDeletes, applyErr := c.applyEpochStakeChanges(epoch, params, records)
 	if applyErr != nil {
 		return &PluginEndResponse{Error: applyErr}
 	}
+	deletes = append(deletes, stakeDeletes...)
 	slashDeletes, slashesComplete, applyErr := c.applyEpochSlashes(epoch, params, records, maxEpochSlashApplications)
 	if applyErr != nil {
 		return &PluginEndResponse{Error: applyErr}
@@ -153,12 +169,14 @@ func (c *Contract) endBlock(request *PluginEndRequest) *PluginEndResponse {
 	}
 	clock.StartHeight = clock.EndHeight + 1
 	clock.EpochBlocks = params.EpochBlocks
-	clock.ValidatorHandoffLeadBlocks = params.ValidatorHandoffLeadBlocks
-	clock.ValidatorHandoffNoticeSeconds = params.ValidatorHandoffNoticeSeconds
 	clock.ValidatorHandoffPrepared = false
 	clock.ValidatorHandoffTimestamp = 0
 	clock.ValidatorHandoffDomains = nil
 	clock.ValidatorHandoffAttempt = 0
+	clock.ValidatorHandoffRosterHash = nil
+	clock.ValidatorHandoffDomainSetHash = nil
+	clock.ValidatorHandoffOutgoingAuthorityCutoff = 0
+	clock.ValidatorHandoffNativeChainId = 0
 	clock.EndHeight = clock.StartHeight + params.EpochBlocks - 1
 	return &PluginEndResponse{ValidatorSetEpochEnd: true, Error: c.writeChanges(records, deletes)}
 }
@@ -195,15 +213,87 @@ func (c *Contract) validatorHandoffReady(clock *EpochClock) (bool, *PluginError)
 
 func validatorHandoffGeneration(clock *EpochClock) []byte {
 	hash := sha256.New()
-	_, _ = hash.Write([]byte("takusen:global-validator-handoff"))
+	_, _ = hash.Write([]byte("takusen:validator-handoff-generation:v1"))
+	_, _ = hash.Write(uint64Bytes(clock.ValidatorHandoffNativeChainId))
+	_, _ = hash.Write(uint64Bytes(clock.CurrentEpoch))
 	_, _ = hash.Write(uint64Bytes(clock.ValidatorSetId))
 	_, _ = hash.Write(uint64Bytes(clock.ValidatorSetId + 1))
-	_, _ = hash.Write(uint64Bytes(clock.ValidatorHandoffTimestamp))
+	_, _ = hash.Write(clock.ValidatorHandoffRosterHash)
+	_, _ = hash.Write(clock.ValidatorHandoffDomainSetHash)
 	_, _ = hash.Write(uint64Bytes(clock.ValidatorHandoffAttempt))
-	for _, domain := range clock.ValidatorHandoffDomains {
+	_, _ = hash.Write(uint64Bytes(clock.ValidatorHandoffTimestamp))
+	_, _ = hash.Write(uint64Bytes(clock.ValidatorHandoffOutgoingAuthorityCutoff))
+	return hash.Sum(nil)
+}
+
+func validatorHandoffDomainSetHash(domains [][]byte) []byte {
+	ordered := make([][]byte, len(domains))
+	for index, domain := range domains {
+		ordered[index] = append([]byte(nil), domain...)
+	}
+	sort.Slice(ordered, func(i, j int) bool { return bytes.Compare(ordered[i], ordered[j]) < 0 })
+	hash := sha256.New()
+	_, _ = hash.Write([]byte("takusen:validator-handoff-domains:v1"))
+	_, _ = hash.Write(uint64Bytes(uint64(len(ordered))))
+	for _, domain := range ordered {
 		_, _ = hash.Write(domain)
 	}
 	return hash.Sum(nil)
+}
+
+func validatorHandoffRosterHash(encoded []byte, chainID uint64) ([]byte, *PluginError) {
+	decoded, err := decodeActiveValidatorSet(encoded, chainID)
+	if err != nil {
+		return nil, err
+	}
+	validators := make([]*Validator, 0, len(decoded))
+	for _, value := range decoded {
+		validators = append(validators, value.(*Validator))
+	}
+	return validatorRosterHash(validators), nil
+}
+
+func validatorRosterHash(validators []*Validator) []byte {
+	sort.Slice(validators, func(i, j int) bool { return bytes.Compare(validators[i].PublicKey, validators[j].PublicKey) < 0 })
+	hash := sha256.New()
+	_, _ = hash.Write([]byte("takusen:validator-handoff-roster:v1"))
+	_, _ = hash.Write(uint64Bytes(uint64(len(validators))))
+	for _, validator := range validators {
+		keyHash := sha256.Sum256(validator.PublicKey)
+		_, _ = hash.Write(keyHash[:])
+		_, _ = hash.Write(uint64Bytes(validator.StakedAmount))
+	}
+	return hash.Sum(nil)
+}
+
+func (c *Contract) epochValidatorRosterHash(epoch uint64) ([]byte, *PluginError) {
+	entries, err := c.rangeRead(EpochValidatorPrefix(epoch))
+	if err != nil {
+		return nil, err
+	}
+	if len(entries) == 0 {
+		return nil, ErrState("epoch validator snapshot is empty")
+	}
+	validators := make([]*Validator, 0, len(entries))
+	for _, entry := range entries {
+		validator := new(Validator)
+		if decodeErr := Unmarshal(entry.Value, validator); decodeErr != nil {
+			return nil, decodeErr
+		}
+		validators = append(validators, validator)
+	}
+	return validatorRosterHash(validators), nil
+}
+
+func validatePreparedValidatorHandoff(clock *EpochClock, chainID uint64) *PluginError {
+	if clock == nil || !clock.ValidatorHandoffPrepared || clock.ValidatorHandoffAttempt == 0 ||
+		clock.ValidatorHandoffTimestamp == 0 || clock.ValidatorHandoffOutgoingAuthorityCutoff == 0 ||
+		clock.ValidatorHandoffNativeChainId != chainID || len(clock.ValidatorHandoffRosterHash) != 32 ||
+		len(clock.ValidatorHandoffDomainSetHash) != 32 || len(clock.ValidatorHandoffDomains) == 0 ||
+		!bytes.Equal(clock.ValidatorHandoffDomainSetHash, validatorHandoffDomainSetHash(clock.ValidatorHandoffDomains)) {
+		return ErrState("validator handoff state is invalid or requires a boundary migration")
+	}
+	return nil
 }
 
 // authorityHandoffDomains includes every governed custody/verifier domain.
@@ -260,6 +350,11 @@ func startValidatorHandoffAttempt(clock *EpochClock) ([][]byte, *PluginError) {
 	}
 	clock.ValidatorHandoffAttempt++
 	clock.ValidatorHandoffTimestamp = clock.ConsensusTimeSeconds + clock.ValidatorHandoffNoticeSeconds
+	if clock.ValidatorHandoffAttempt == 1 {
+		clock.ValidatorHandoffOutgoingAuthorityCutoff = clock.ValidatorHandoffTimestamp
+	} else if clock.ValidatorHandoffOutgoingAuthorityCutoff == 0 {
+		return nil, ErrState("validator handoff cutoff is unavailable")
+	}
 	deletes := make([][]byte, 0, len(clock.ValidatorHandoffDomains)*4)
 	for _, domainID := range clock.ValidatorHandoffDomains {
 		deletes = append(deletes,
@@ -338,14 +433,20 @@ func (c *Contract) currentEpochClock(params *ProtocolParams) (*EpochClock, *Plug
 		if clock.EpochBlocks == 0 {
 			clock.EpochBlocks = params.EpochBlocks
 		}
-		if clock.ValidatorHandoffLeadBlocks == 0 {
-			clock.ValidatorHandoffLeadBlocks = params.ValidatorHandoffLeadBlocks
-		}
 		if clock.ValidatorHandoffNoticeSeconds == 0 {
 			clock.ValidatorHandoffNoticeSeconds = params.ValidatorHandoffNoticeSeconds
 		}
-		if clock.ValidatorHandoffLeadBlocks >= clock.EpochBlocks {
-			return nil, ErrState("invalid epoch handoff schedule")
+		if clock.ValidatorHandoffPrepared {
+			if err := validatePreparedValidatorHandoff(clock, c.Config.ChainId); err != nil {
+				return nil, err
+			}
+			frozenRosterHash, err := c.epochValidatorRosterHash(clock.CurrentEpoch + 1)
+			if err != nil {
+				return nil, err
+			}
+			if !bytes.Equal(frozenRosterHash, clock.ValidatorHandoffRosterHash) {
+				return nil, ErrState("validator handoff roster commitment does not match the frozen snapshot")
+			}
 		}
 		return clock, nil
 	}
@@ -376,7 +477,6 @@ func (c *Contract) currentEpochClock(params *ProtocolParams) (*EpochClock, *Plug
 	return &EpochClock{
 		CurrentEpoch: lastEpoch + 1, StartHeight: start, EndHeight: start + params.EpochBlocks - 1,
 		ValidatorSetId: params.ValidatorSetId, EpochBlocks: params.EpochBlocks,
-		ValidatorHandoffLeadBlocks:    params.ValidatorHandoffLeadBlocks,
 		ValidatorHandoffNoticeSeconds: params.ValidatorHandoffNoticeSeconds,
 	}, nil
 }

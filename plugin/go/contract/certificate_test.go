@@ -194,7 +194,7 @@ func TestEmergencyDomainAbandonmentRequiresCoolingPeriodAndStrictQuorum(t *testi
 	deactivationGeneration := bytes.Repeat([]byte{0xae}, 32)
 	store.put(t, KeyForSettlementDomainDeactivation(retiring.Id), &ReplayMarker{Id: deactivationGeneration})
 	store.put(t, KeyForSettlementDomainDeactivationEpoch(retiring.Id), &ReplayMarker{Id: uint64Bytes(1)})
-	clock := &EpochClock{CurrentEpoch: 168, StartHeight: 1, EndHeight: params.EpochBlocks, ValidatorSetId: 5, EpochBlocks: params.EpochBlocks, ValidatorHandoffLeadBlocks: params.ValidatorHandoffLeadBlocks}
+	clock := &EpochClock{CurrentEpoch: 168, StartHeight: 1, EndHeight: params.EpochBlocks, ValidatorSetId: 5, EpochBlocks: params.EpochBlocks}
 	store.put(t, KeyForEpochClock(), clock)
 	intentID := storeLifecycleIntent(t, store, retiring.Id, deactivationGeneration, "abandon", 1, 170)
 
@@ -276,7 +276,7 @@ func TestCleanDomainRetirementMarkerRequiresStrictQuorum(t *testing.T) {
 	store.put(t, KeyForProtocolParams(), params)
 	store.put(t, KeyForEpochClock(), &EpochClock{
 		CurrentEpoch: 1, StartHeight: 1, EndHeight: params.EpochBlocks, ValidatorSetId: 5,
-		EpochBlocks: params.EpochBlocks, ValidatorHandoffLeadBlocks: params.ValidatorHandoffLeadBlocks,
+		EpochBlocks: params.EpochBlocks,
 	})
 	deactivationGeneration := bytes.Repeat([]byte{0xce}, 32)
 	store.put(t, KeyForSettlementDomainDeactivation(retiring.Id), &ReplayMarker{Id: deactivationGeneration})
@@ -342,7 +342,7 @@ func TestRetirementCancellationMarkerRequiresStrictQuorumAndGeneration(t *testin
 	store.put(t, KeyForProtocolParams(), params)
 	store.put(t, KeyForEpochClock(), &EpochClock{
 		CurrentEpoch: 1, StartHeight: 1, EndHeight: params.EpochBlocks, ValidatorSetId: 5,
-		EpochBlocks: params.EpochBlocks, ValidatorHandoffLeadBlocks: params.ValidatorHandoffLeadBlocks,
+		EpochBlocks: params.EpochBlocks,
 	})
 	generation := bytes.Repeat([]byte{0xe1}, 32)
 	store.put(t, KeyForSettlementDomainDeactivation(retiring.Id), &ReplayMarker{Id: generation})
@@ -406,10 +406,10 @@ func TestRotationCancellationAuthorizationRetainsRecoveryIndex(t *testing.T) {
 	store.put(t, KeyForProtocolParams(), params)
 	clock := &EpochClock{
 		CurrentEpoch: 1, StartHeight: 1, EndHeight: 100, ValidatorSetId: 7,
-		EpochBlocks: params.EpochBlocks, ValidatorHandoffLeadBlocks: params.ValidatorHandoffLeadBlocks,
-		ValidatorHandoffPrepared: true, ValidatorHandoffTimestamp: 100, ValidatorHandoffAttempt: 1,
-		ValidatorHandoffDomains: authorityHandoffDomains(params), ConsensusTimeSeconds: 99, ValidatorHandoffNoticeSeconds: 2_400,
+		EpochBlocks:               params.EpochBlocks,
+		ValidatorHandoffTimestamp: 100, ConsensusTimeSeconds: 99,
 	}
+	completePreparedClock(clock, params, nil)
 	store.put(t, KeyForEpochClock(), clock)
 
 	suite := drandbls.NewBLS12381Suite()
@@ -419,6 +419,7 @@ func TestRotationCancellationAuthorizationRetainsRecoveryIndex(t *testing.T) {
 		private kyber.Scalar
 	}
 	signers := make([]signer, 2)
+	nextValidators := make([]*Validator, 0, len(signers))
 	for index := range signers {
 		private := suite.G1().Scalar().SetInt64(int64(index + 1))
 		public := suite.G1().Point().Mul(private, nil)
@@ -430,8 +431,12 @@ func TestRotationCancellationAuthorizationRetainsRecoveryIndex(t *testing.T) {
 		address := append([]byte(nil), hash[:20]...)
 		validator := &Validator{Address: address, PublicKey: encoded, StakedAmount: 100, Committees: []uint64{1}}
 		store.put(t, KeyForEpochValidator(1, address), validator)
+		store.put(t, KeyForEpochValidator(2, address), validator)
+		nextValidators = append(nextValidators, validator)
 		signers[index] = signer{address: address, private: private}
 	}
+	clock.ValidatorHandoffRosterHash = validatorRosterHash(nextValidators)
+	store.put(t, KeyForEpochClock(), clock)
 
 	rotationNonce := uint64(4)
 	rotationProofID := sha256.Sum256([]byte("queued rotation generation"))
@@ -552,9 +557,8 @@ func TestPreparedRotationRequiresExactRawVotingPower(t *testing.T) {
 			store.put(t, KeyForProtocolParams(), params)
 			clock := &EpochClock{
 				CurrentEpoch: 1, StartHeight: 1, EndHeight: 100, ValidatorSetId: 5,
-				ValidatorHandoffPrepared: true, ValidatorHandoffTimestamp: 1_000,
+				ValidatorHandoffTimestamp: 1_000,
 			}
-			store.put(t, KeyForEpochClock(), clock)
 
 			suite := drandbls.NewBLS12381Suite()
 			validators := make([]*Validator, len(weights))
@@ -571,6 +575,8 @@ func TestPreparedRotationRequiresExactRawVotingPower(t *testing.T) {
 				store.put(t, KeyForEpochValidator(2, validator.Address), validator)
 			}
 			sort.Slice(validators, func(i, j int) bool { return bytes.Compare(validators[i].PublicKey, validators[j].PublicKey) < 0 })
+			completePreparedClock(clock, params, validatorRosterHash(append([]*Validator(nil), validators...)))
+			store.put(t, KeyForEpochClock(), clock)
 			points := make([]kyber.Point, len(validators))
 			for index, validator := range validators {
 				point, err := bdnPublicKey(validator.PublicKey)

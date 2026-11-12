@@ -1,10 +1,8 @@
 name: takusen-release-provenance
 
 on:
-  push:
-    branches: [takusen-integration]
-  pull_request:
-    branches: [takusen-integration]
+  # Automatic runs are paused while the application and Native module change
+  # transition state together. Operators may still request a manual build.
   workflow_dispatch:
 
 permissions:

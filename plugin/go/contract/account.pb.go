@@ -1891,7 +1891,6 @@ type ProtocolParams struct {
 	SettlementIntervalBlocks    uint64                 `protobuf:"varint,26,opt,name=settlement_interval_blocks,json=settlementIntervalBlocks,proto3" json:"settlement_interval_blocks,omitempty"`
 	SupportedOutputSchemas      []string               `protobuf:"bytes,27,rep,name=supported_output_schemas,json=supportedOutputSchemas,proto3" json:"supported_output_schemas,omitempty"`
 	DefaultModels               []string               `protobuf:"bytes,28,rep,name=default_models,json=defaultModels,proto3" json:"default_models,omitempty"`
-	ValidatorHandoffLeadBlocks  uint64                 `protobuf:"varint,30,opt,name=validator_handoff_lead_blocks,json=validatorHandoffLeadBlocks,proto3" json:"validator_handoff_lead_blocks,omitempty"`
 	SettlementDomains           []*SettlementDomain    `protobuf:"bytes,31,rep,name=settlement_domains,json=settlementDomains,proto3" json:"settlement_domains,omitempty"`
 	RequireNitroAttestation     bool                   `protobuf:"varint,32,opt,name=require_nitro_attestation,json=requireNitroAttestation,proto3" json:"require_nitro_attestation,omitempty"`
 	// Wall-clock notice for a changed-roster EVM schedule. This is independent
@@ -2125,13 +2124,6 @@ func (x *ProtocolParams) GetDefaultModels() []string {
 		return x.DefaultModels
 	}
 	return nil
-}
-
-func (x *ProtocolParams) GetValidatorHandoffLeadBlocks() uint64 {
-	if x != nil {
-		return x.ValidatorHandoffLeadBlocks
-	}
-	return 0
 }
 
 func (x *ProtocolParams) GetSettlementDomains() []*SettlementDomain {
@@ -2790,22 +2782,25 @@ type EpochClock struct {
 	StartHeight    uint64                 `protobuf:"varint,2,opt,name=start_height,json=startHeight,proto3" json:"start_height,omitempty"`
 	EndHeight      uint64                 `protobuf:"varint,3,opt,name=end_height,json=endHeight,proto3" json:"end_height,omitempty"`
 	ValidatorSetId uint64                 `protobuf:"varint,4,opt,name=validator_set_id,json=validatorSetId,proto3" json:"validator_set_id,omitempty"`
-	// Scheduling values are snapshotted when the epoch begins. Governance
-	// updates affect only the following epoch.
-	EpochBlocks                uint64 `protobuf:"varint,5,opt,name=epoch_blocks,json=epochBlocks,proto3" json:"epoch_blocks,omitempty"`
-	ValidatorHandoffLeadBlocks uint64 `protobuf:"varint,6,opt,name=validator_handoff_lead_blocks,json=validatorHandoffLeadBlocks,proto3" json:"validator_handoff_lead_blocks,omitempty"`
-	ValidatorHandoffPrepared   bool   `protobuf:"varint,7,opt,name=validator_handoff_prepared,json=validatorHandoffPrepared,proto3" json:"validator_handoff_prepared,omitempty"`
+	// The epoch duration is snapshotted when the epoch begins. Handoff values
+	// are snapshotted atomically at the nominal boundary.
+	EpochBlocks              uint64 `protobuf:"varint,5,opt,name=epoch_blocks,json=epochBlocks,proto3" json:"epoch_blocks,omitempty"`
+	ValidatorHandoffPrepared bool   `protobuf:"varint,7,opt,name=validator_handoff_prepared,json=validatorHandoffPrepared,proto3" json:"validator_handoff_prepared,omitempty"`
 	// Unix seconds at which scheduled EVM verifiers permanently stop accepting
 	// the outgoing committee until incoming activation.
 	ValidatorHandoffTimestamp uint64 `protobuf:"varint,8,opt,name=validator_handoff_timestamp,json=validatorHandoffTimestamp,proto3" json:"validator_handoff_timestamp,omitempty"`
 	// The domain set is frozen with the prepared validator roster. Governance
 	// edits apply to a later handoff and cannot rewrite an in-flight generation.
-	ValidatorHandoffDomains       [][]byte `protobuf:"bytes,9,rep,name=validator_handoff_domains,json=validatorHandoffDomains,proto3" json:"validator_handoff_domains,omitempty"`
-	ValidatorHandoffAttempt       uint64   `protobuf:"varint,10,opt,name=validator_handoff_attempt,json=validatorHandoffAttempt,proto3" json:"validator_handoff_attempt,omitempty"`
-	ConsensusTimeSeconds          uint64   `protobuf:"varint,11,opt,name=consensus_time_seconds,json=consensusTimeSeconds,proto3" json:"consensus_time_seconds,omitempty"`
-	ValidatorHandoffNoticeSeconds uint64   `protobuf:"varint,12,opt,name=validator_handoff_notice_seconds,json=validatorHandoffNoticeSeconds,proto3" json:"validator_handoff_notice_seconds,omitempty"`
-	unknownFields                 protoimpl.UnknownFields
-	sizeCache                     protoimpl.SizeCache
+	ValidatorHandoffDomains                 [][]byte `protobuf:"bytes,9,rep,name=validator_handoff_domains,json=validatorHandoffDomains,proto3" json:"validator_handoff_domains,omitempty"`
+	ValidatorHandoffAttempt                 uint64   `protobuf:"varint,10,opt,name=validator_handoff_attempt,json=validatorHandoffAttempt,proto3" json:"validator_handoff_attempt,omitempty"`
+	ConsensusTimeSeconds                    uint64   `protobuf:"varint,11,opt,name=consensus_time_seconds,json=consensusTimeSeconds,proto3" json:"consensus_time_seconds,omitempty"`
+	ValidatorHandoffNoticeSeconds           uint64   `protobuf:"varint,12,opt,name=validator_handoff_notice_seconds,json=validatorHandoffNoticeSeconds,proto3" json:"validator_handoff_notice_seconds,omitempty"`
+	ValidatorHandoffRosterHash              []byte   `protobuf:"bytes,13,opt,name=validator_handoff_roster_hash,json=validatorHandoffRosterHash,proto3" json:"validator_handoff_roster_hash,omitempty"`
+	ValidatorHandoffDomainSetHash           []byte   `protobuf:"bytes,14,opt,name=validator_handoff_domain_set_hash,json=validatorHandoffDomainSetHash,proto3" json:"validator_handoff_domain_set_hash,omitempty"`
+	ValidatorHandoffOutgoingAuthorityCutoff uint64   `protobuf:"varint,15,opt,name=validator_handoff_outgoing_authority_cutoff,json=validatorHandoffOutgoingAuthorityCutoff,proto3" json:"validator_handoff_outgoing_authority_cutoff,omitempty"`
+	ValidatorHandoffNativeChainId           uint64   `protobuf:"varint,16,opt,name=validator_handoff_native_chain_id,json=validatorHandoffNativeChainId,proto3" json:"validator_handoff_native_chain_id,omitempty"`
+	unknownFields                           protoimpl.UnknownFields
+	sizeCache                               protoimpl.SizeCache
 }
 
 func (x *EpochClock) Reset() {
@@ -2873,13 +2868,6 @@ func (x *EpochClock) GetEpochBlocks() uint64 {
 	return 0
 }
 
-func (x *EpochClock) GetValidatorHandoffLeadBlocks() uint64 {
-	if x != nil {
-		return x.ValidatorHandoffLeadBlocks
-	}
-	return 0
-}
-
 func (x *EpochClock) GetValidatorHandoffPrepared() bool {
 	if x != nil {
 		return x.ValidatorHandoffPrepared
@@ -2918,6 +2906,34 @@ func (x *EpochClock) GetConsensusTimeSeconds() uint64 {
 func (x *EpochClock) GetValidatorHandoffNoticeSeconds() uint64 {
 	if x != nil {
 		return x.ValidatorHandoffNoticeSeconds
+	}
+	return 0
+}
+
+func (x *EpochClock) GetValidatorHandoffRosterHash() []byte {
+	if x != nil {
+		return x.ValidatorHandoffRosterHash
+	}
+	return nil
+}
+
+func (x *EpochClock) GetValidatorHandoffDomainSetHash() []byte {
+	if x != nil {
+		return x.ValidatorHandoffDomainSetHash
+	}
+	return nil
+}
+
+func (x *EpochClock) GetValidatorHandoffOutgoingAuthorityCutoff() uint64 {
+	if x != nil {
+		return x.ValidatorHandoffOutgoingAuthorityCutoff
+	}
+	return 0
+}
+
+func (x *EpochClock) GetValidatorHandoffNativeChainId() uint64 {
+	if x != nil {
+		return x.ValidatorHandoffNativeChainId
 	}
 	return 0
 }
@@ -3765,7 +3781,7 @@ const file_account_proto_rawDesc = "" +
 	"\x04pcr0\x18\x01 \x01(\fR\x04pcr0\x12\x12\n" +
 	"\x04pcr1\x18\x02 \x01(\fR\x04pcr1\x12\x12\n" +
 	"\x04pcr2\x18\x03 \x01(\fR\x04pcr2\x12\x16\n" +
-	"\x06active\x18\x04 \x01(\bR\x06active\"\xeb\f\n" +
+	"\x06active\x18\x04 \x01(\bR\x06active\"\xae\f\n" +
 	"\x0eProtocolParams\x12\x1a\n" +
 	"\brevision\x18\x01 \x01(\x04R\brevision\x12*\n" +
 	"\x06models\x18\x02 \x03(\v2\x12.types.ModelParamsR\x06models\x125\n" +
@@ -3796,11 +3812,10 @@ const file_account_proto_rawDesc = "" +
 	"\x15bridge_transfer_limit\x18\x19 \x01(\x04R\x13bridgeTransferLimit\x12<\n" +
 	"\x1asettlement_interval_blocks\x18\x1a \x01(\x04R\x18settlementIntervalBlocks\x128\n" +
 	"\x18supported_output_schemas\x18\x1b \x03(\tR\x16supportedOutputSchemas\x12%\n" +
-	"\x0edefault_models\x18\x1c \x03(\tR\rdefaultModels\x12A\n" +
-	"\x1dvalidator_handoff_lead_blocks\x18\x1e \x01(\x04R\x1avalidatorHandoffLeadBlocks\x12F\n" +
+	"\x0edefault_models\x18\x1c \x03(\tR\rdefaultModels\x12F\n" +
 	"\x12settlement_domains\x18\x1f \x03(\v2\x17.types.SettlementDomainR\x11settlementDomains\x12:\n" +
 	"\x19require_nitro_attestation\x18  \x01(\bR\x17requireNitroAttestation\x12G\n" +
-	" validator_handoff_notice_seconds\x18! \x01(\x04R\x1dvalidatorHandoffNoticeSecondsJ\x04\b\x1d\x10\x1e\"\xe2\x01\n" +
+	" validator_handoff_notice_seconds\x18! \x01(\x04R\x1dvalidatorHandoffNoticeSecondsJ\x04\b\x1d\x10\x1eJ\x04\b\x1e\x10\x1f\"\xe2\x01\n" +
 	"\vStakeChange\x12#\n" +
 	"\rowner_address\x18\x01 \x01(\fR\fownerAddress\x12\x1f\n" +
 	"\vtarget_bond\x18\x02 \x01(\x04R\n" +
@@ -3856,7 +3871,7 @@ const file_account_proto_rawDesc = "" +
 	" \x01(\fR\x14canonicalChainDigest\x12\x16\n" +
 	"\x06status\x18\v \x01(\tR\x06status\x12+\n" +
 	"\x11compounded_amount\x18\f \x01(\x04R\x10compoundedAmount\x12>\n" +
-	"\x1ccanonical_chain_mint_tx_hash\x18\r \x01(\fR\x18canonicalChainMintTxHash\"\xf8\x04\n" +
+	"\x1ccanonical_chain_mint_tx_hash\x18\r \x01(\fR\x18canonicalChainMintTxHash\"\xf0\x06\n" +
 	"\n" +
 	"EpochClock\x12#\n" +
 	"\rcurrent_epoch\x18\x01 \x01(\x04R\fcurrentEpoch\x12!\n" +
@@ -3864,15 +3879,18 @@ const file_account_proto_rawDesc = "" +
 	"\n" +
 	"end_height\x18\x03 \x01(\x04R\tendHeight\x12(\n" +
 	"\x10validator_set_id\x18\x04 \x01(\x04R\x0evalidatorSetId\x12!\n" +
-	"\fepoch_blocks\x18\x05 \x01(\x04R\vepochBlocks\x12A\n" +
-	"\x1dvalidator_handoff_lead_blocks\x18\x06 \x01(\x04R\x1avalidatorHandoffLeadBlocks\x12<\n" +
+	"\fepoch_blocks\x18\x05 \x01(\x04R\vepochBlocks\x12<\n" +
 	"\x1avalidator_handoff_prepared\x18\a \x01(\bR\x18validatorHandoffPrepared\x12>\n" +
 	"\x1bvalidator_handoff_timestamp\x18\b \x01(\x04R\x19validatorHandoffTimestamp\x12:\n" +
 	"\x19validator_handoff_domains\x18\t \x03(\fR\x17validatorHandoffDomains\x12:\n" +
 	"\x19validator_handoff_attempt\x18\n" +
 	" \x01(\x04R\x17validatorHandoffAttempt\x124\n" +
 	"\x16consensus_time_seconds\x18\v \x01(\x04R\x14consensusTimeSeconds\x12G\n" +
-	" validator_handoff_notice_seconds\x18\f \x01(\x04R\x1dvalidatorHandoffNoticeSeconds\"{\n" +
+	" validator_handoff_notice_seconds\x18\f \x01(\x04R\x1dvalidatorHandoffNoticeSeconds\x12A\n" +
+	"\x1dvalidator_handoff_roster_hash\x18\r \x01(\fR\x1avalidatorHandoffRosterHash\x12H\n" +
+	"!validator_handoff_domain_set_hash\x18\x0e \x01(\fR\x1dvalidatorHandoffDomainSetHash\x12\\\n" +
+	"+validator_handoff_outgoing_authority_cutoff\x18\x0f \x01(\x04R'validatorHandoffOutgoingAuthorityCutoff\x12H\n" +
+	"!validator_handoff_native_chain_id\x18\x10 \x01(\x04R\x1dvalidatorHandoffNativeChainIdJ\x04\b\x06\x10\a\"{\n" +
 	"\vBridgeState\x12%\n" +
 	"\x0eoutbound_nonce\x18\x01 \x01(\x04R\routboundNonce\x12\x1d\n" +
 	"\n" +

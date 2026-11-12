@@ -46,6 +46,22 @@ func (s *StateMachine) EncodePreparedValidatorSet() ([]byte, lib.ErrorI) {
 	return encodeValidatorSet(s.Config.ChainId, members.ValidatorSet)
 }
 
+// EncodeCandidateValidatorSet derives the exact committee that would become
+// active if the current block closed the epoch. It does not persist anything;
+// the epoch-aware plugin consumes it only at the nominal boundary and asks
+// core to freeze the same end-block state atomically when rotation is needed.
+func (s *StateMachine) EncodeCandidateValidatorSet() ([]byte, lib.ErrorI) {
+	validators, err := s.GetValidators()
+	if err != nil {
+		return nil, err
+	}
+	set, err := s.deriveValidatorSet(validators, s.Config.ChainId, false)
+	if err != nil {
+		return nil, err
+	}
+	return encodeValidatorSet(s.Config.ChainId, set.ValidatorSet.ValidatorSet)
+}
+
 func encodeValidatorSet(chainID uint64, members []*lib.ConsensusValidator) ([]byte, lib.ErrorI) {
 	var encoded bytes.Buffer
 	encoded.WriteByte(activeValidatorSetEncodingVersion)
