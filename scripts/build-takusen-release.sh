@@ -22,7 +22,12 @@ build_once() {
     CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -buildvcs=false \
       -ldflags='-s -w' -o "$destination/takusen-canopy-plugin" .
   )
-  (cd "$destination" && shasum -a 256 * | LC_ALL=C sort) >"$destination/SHA256SUMS"
+  (
+    cd "$destination"
+    for file in *; do
+      [[ "$file" == SHA256SUMS ]] || shasum -a 256 "$file"
+    done | LC_ALL=C sort
+  ) >"$destination/SHA256SUMS"
 }
 
 build_once "$first"
