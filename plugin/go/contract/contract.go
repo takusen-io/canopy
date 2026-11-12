@@ -205,6 +205,9 @@ func (c *Contract) BeginBlock(request *PluginBeginRequest) *PluginBeginResponse 
 	for key, record := range c.consumeAuxiliaryCertificates(request.Height, request.AuxiliaryCertificates) {
 		records[key] = record
 	}
+	if cursorErr := c.advanceTimeoutCandidateCursor(records); cursorErr != nil {
+		return &PluginBeginResponse{Error: cursorErr}
+	}
 	if expired, pruneErr := c.expiredPendingAuthorizations(request.Height, 32); pruneErr == nil {
 		deletes = append(deletes, expired...)
 	}

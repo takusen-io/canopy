@@ -156,7 +156,7 @@ func (b *BFT) addSigToVoteSet(vote *Message, voteSet *VoteSet) (err lib.ErrorI) 
 	logicalKeys := make(map[string]struct{}, len(vote.AuxiliaryVotes))
 	for _, attachment := range vote.AuxiliaryVotes {
 		if attachment == nil || !validAuxiliaryCandidate(attachment.Candidate) || len(attachment.Signature) != crypto.BLS12381SignatureSize ||
-			!publicKey.VerifyBytes(attachment.Candidate.Digest, attachment.Signature) {
+			!publicKey.VerifyBytes(lib.AuxiliaryCandidateSignBytes(attachment.Candidate), attachment.Signature) {
 			continue
 		}
 		logical := attachment.Candidate.Kind + ":" + hex.EncodeToString(attachment.Candidate.Key)

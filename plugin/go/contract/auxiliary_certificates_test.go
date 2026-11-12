@@ -3,9 +3,12 @@ package contract
 import (
 	"bytes"
 	"encoding/json"
+	"sort"
 	"testing"
 
+	"github.com/drand/kyber"
 	drandbls "github.com/drand/kyber-bls12381"
+	"github.com/drand/kyber/sign"
 	"github.com/drand/kyber/sign/bdn"
 	"google.golang.org/protobuf/proto"
 )
@@ -63,14 +66,41 @@ func TestAuxiliaryCertificatePersistsStrictQuorumWithoutAffectingConsensus(t *te
 
 	digest := bytes.Repeat([]byte{0x42}, 32)
 	suite := drandbls.NewBLS12381Suite()
-	signature, err := bdn.NewSchemeOnG2(suite).Sign(suite.G1().Scalar().SetInt64(1), digest)
+	candidate := &AuxiliaryCandidate{Kind: "test-native", Key: uint64Bytes(9), Digest: digest, Payload: []byte("bounded")}
+	points := []kyber.Point{suite.G1().Point().Mul(suite.G1().Scalar().SetInt64(1), nil), suite.G1().Point().Mul(suite.G1().Scalar().SetInt64(2), nil)}
+	sort.Slice(points, func(i, j int) bool {
+		left, _ := points[i].MarshalBinary()
+		right, _ := points[j].MarshalBinary()
+		return bytes.Compare(left, right) < 0
+	})
+	mask, err := sign.NewMask(suite, points, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	candidate := &AuxiliaryCandidate{Kind: "test-native", Key: uint64Bytes(9), Digest: digest, Payload: []byte("bounded")}
+	partials := make([][]byte, 0, 2)
+	for index, point := range points {
+		encoded, _ := point.MarshalBinary()
+		scalar := suite.G1().Scalar().SetInt64(1)
+		if bytes.Equal(encoded, testBDNPublicKey(2)) {
+			scalar = suite.G1().Scalar().SetInt64(2)
+		}
+		partial, signErr := bdn.NewSchemeOnG2(suite).Sign(scalar, auxiliaryCandidateSignBytes(candidate))
+		if signErr != nil || mask.SetBit(index, true) != nil {
+			t.Fatal(signErr)
+		}
+		partials = append(partials, partial)
+	}
+	signature, err := bdn.NewSchemeOnG2(suite).AggregateSignatures(partials, mask)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encodedSignature, err := signature.MarshalBinary()
+	if err != nil {
+		t.Fatal(err)
+	}
 	certificates := []*AuxiliaryCertificate{{
 		Candidate: candidate,
-		Signature: &AuxiliaryAggregateSignature{Signature: signature, Bitmap: []byte{0x03}},
+		Signature: &AuxiliaryAggregateSignature{Signature: encodedSignature, Bitmap: mask.Mask()},
 	}}
 	records := contract.consumeAuxiliaryCertificates(12, certificates)
 	record, ok := records[string(KeyForConsensusCertificate(candidate.Kind, candidate.Key, candidate.Digest))].(*ConsensusCertificate)
@@ -78,6 +108,16 @@ func TestAuxiliaryCertificatePersistsStrictQuorumWithoutAffectingConsensus(t *te
 		record.TotalWeight != 200 || record.CompletedHeight != 12 || len(record.AggregateSignatureEip2537) != 256 {
 		t.Fatalf("unexpected persisted certificate: %+v", record)
 	}
+
+	// A proposer cannot reuse the valid aggregate with a different application
+	// payload even when the advertised digest and all-validator bitmap remain.
+	mutated := proto.Clone(candidate).(*AuxiliaryCandidate)
+	mutated.Payload = []byte("forged deposit payload")
+	certificates[0].Candidate = mutated
+	if got := contract.consumeAuxiliaryCertificates(13, certificates); len(got) != 0 {
+		t.Fatal("aggregate signature over another candidate envelope was accepted")
+	}
+	certificates[0].Candidate = candidate
 
 	certificates[0].Signature.Bitmap = []byte{0x01}
 	if got := contract.consumeAuxiliaryCertificates(13, certificates); len(got) != 0 {

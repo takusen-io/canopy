@@ -248,6 +248,24 @@ func (x *QuorumCertificate) SignBytes() (signBytes []byte) {
 	return
 }
 
+// AuxiliaryCandidateSignBytes returns the canonical, domain-separated envelope
+// signed by auxiliary vote extensions. Signing the complete envelope prevents
+// a proposer from combining a certified digest with a different kind, logical
+// key, or application payload.
+func AuxiliaryCandidateSignBytes(candidate *AuxiliaryCandidate) []byte {
+	if candidate == nil {
+		return nil
+	}
+	encoded, err := Marshal(candidate)
+	if err != nil {
+		return nil
+	}
+	const domain = "canopy:auxiliary-candidate:v1:"
+	result := make([]byte, 0, len(domain)+len(encoded))
+	result = append(result, domain...)
+	return append(result, encoded...)
+}
+
 // EqualPayloads() compares the payloads only of two certs (can have different signatures)
 func (x *QuorumCertificate) EqualPayloads(compare *QuorumCertificate) bool {
 	// returns if both certificates have the same height, proposer key, block hash and result hash

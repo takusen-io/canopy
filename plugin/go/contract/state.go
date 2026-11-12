@@ -56,6 +56,7 @@ var (
 	consensusCertificatePrefix        = []byte{140}
 	nativeAuthorizationIntentPrefix   = []byte{141}
 	pendingAuthorizationPrefix        = []byte{142}
+	timeoutCandidateCursorPrefix      = []byte{143}
 )
 
 func EnclavePrefix() []byte        { return JoinLenPrefix(enclavePrefix) }
@@ -75,6 +76,12 @@ func KeyForNativeAuthorizationIntent(kind string, domainID []byte) []byte {
 	return JoinLenPrefix(nativeAuthorizationIntentPrefix, []byte(kind), domainID)
 }
 func PendingAuthorizationPrefix() []byte { return JoinLenPrefix(pendingAuthorizationPrefix) }
+func KeyForTimeoutCandidateCursorCurrent() []byte {
+	return JoinLenPrefix(timeoutCandidateCursorPrefix, []byte("current"))
+}
+func KeyForTimeoutCandidateCursorNext() []byte {
+	return JoinLenPrefix(timeoutCandidateCursorPrefix, []byte("next"))
+}
 func KeyForPendingAuthorization(requestID string) []byte {
 	return JoinLenPrefix(pendingAuthorizationPrefix, []byte(requestID))
 }

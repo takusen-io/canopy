@@ -359,40 +359,40 @@ func validateProposalTime(proposed uint64, previous *lib.BlockResult) lib.ErrorI
 	return nil
 }
 
-type auxiliaryDigestSignBytes []byte
+type auxiliaryCandidateSignBytes struct{ candidate *lib.AuxiliaryCandidate }
 
-func (a auxiliaryDigestSignBytes) SignBytes() []byte { return a }
+func (a auxiliaryCandidateSignBytes) SignBytes() []byte {
+	return lib.AuxiliaryCandidateSignBytes(a.candidate)
+}
 
 // sanitizeAuxiliaryCertificate retains only an independently valid strict
 // >2/3 certificate for the application-selected manifest root. Auxiliary
 // failure is deliberately fail-open for Native block consensus: it delays the
 // external handoff and the next block retries collection.
-func (c *Controller) sanitizeAuxiliaryCertificate(qc *lib.QuorumCertificate) {
+func (c *Controller) validateAuxiliaryCertificates(qc *lib.QuorumCertificate, validatorSet lib.ValidatorSet) lib.ErrorI {
 	if qc == nil {
-		return
+		return nil
 	}
 	if len(qc.AuxiliaryCertificates) > 32 {
-		qc.AuxiliaryCertificates = nil
-		return
+		return lib.ErrInvalidAggrSignature()
 	}
-	valid := make([]*lib.AuxiliaryCertificate, 0, len(qc.AuxiliaryCertificates))
 	logical := make(map[string]struct{}, len(qc.AuxiliaryCertificates))
 	for _, certificate := range qc.AuxiliaryCertificates {
 		candidate := certificate.GetCandidate()
 		if candidate == nil || len(candidate.Kind) == 0 || len(candidate.Kind) > 64 || len(candidate.Key) == 0 || len(candidate.Key) > 128 || len(candidate.Digest) != 32 || len(candidate.Payload) > 16<<10 || certificate.Signature == nil {
-			continue
+			return lib.ErrInvalidAggrSignature()
 		}
 		key := candidate.Kind + string(candidate.Key)
 		if _, duplicate := logical[key]; duplicate {
-			continue
+			return lib.ErrInvalidAggrSignature()
 		}
-		partial, err := certificate.Signature.Check(auxiliaryDigestSignBytes(candidate.Digest), c.Consensus.ValidatorSet)
-		if err == nil && !partial {
-			logical[key] = struct{}{}
-			valid = append(valid, certificate)
+		partial, err := certificate.Signature.Check(auxiliaryCandidateSignBytes{candidate: candidate}, validatorSet)
+		if err != nil || partial {
+			return lib.ErrInvalidAggrSignature()
 		}
+		logical[key] = struct{}{}
 	}
-	qc.AuxiliaryCertificates = valid
+	return nil
 }
 
 // CommitCertificate() is executed after the quorum agrees on a block
@@ -431,8 +431,9 @@ func (c *Controller) CommitCertificate(qc *lib.QuorumCertificate, block *lib.Blo
 			return
 		}
 	}
-	c.sanitizeAuxiliaryCertificate(qc)
-	c.consumeAuxiliaryCertificates(qc.AuxiliaryCertificates)
+	if auxErr := c.validateAuxiliaryCertificates(qc, c.Consensus.ValidatorSet); auxErr != nil {
+		return auxErr
+	}
 	// log indexing the quorum certificate
 	c.log.Debugf("Indexing certificate for height %d", qc.Header.Height)
 	// index the quorum certificate in the store
@@ -464,6 +465,9 @@ func (c *Controller) CommitCertificate(qc *lib.QuorumCertificate, block *lib.Blo
 	if _, err = storeI.Commit(); err != nil {
 		// exit with error
 		return err
+	}
+	if block.BlockHeader.LastQuorumCertificate != nil {
+		c.consumeAuxiliaryCertificates(block.BlockHeader.LastQuorumCertificate.AuxiliaryCertificates)
 	}
 	// log to signal finishing the commit
 	c.log.Infof("Committed block %s at H:%d 🔒", lib.BytesToTruncatedString(qc.BlockHash), block.BlockHeader.Height)
@@ -546,8 +550,9 @@ func (c *Controller) CommitCertificateParallel(qc *lib.QuorumCertificate, block 
 			return
 		}
 	}
-	c.sanitizeAuxiliaryCertificate(qc)
-	c.consumeAuxiliaryCertificates(qc.AuxiliaryCertificates)
+	if auxErr := c.validateAuxiliaryCertificates(qc, c.Consensus.ValidatorSet); auxErr != nil {
+		return auxErr
+	}
 	// log indexing the quorum certificate
 	c.log.Debugf("Indexing certificate for height %d", qc.Header.Height)
 	// index the quorum certificate in the store
@@ -566,7 +571,10 @@ func (c *Controller) CommitCertificateParallel(qc *lib.QuorumCertificate, block 
 	c.FSM.ParsePollTransactions(blockResult)
 	// sync path: no mempool maintenance and no parallelism, only commit inline
 	if syncing {
-		return c.commitToStore(storeI, qc, block.BlockHeader.Height)
+		if err = c.commitToStore(storeI, qc, block.BlockHeader.Height); err == nil && block.BlockHeader.LastQuorumCertificate != nil {
+			c.consumeAuxiliaryCertificates(block.BlockHeader.LastQuorumCertificate.AuxiliaryCertificates)
+		}
+		return err
 	}
 	// live path: commit and mempool refresh run in parallel
 	// create an ephemeral store copy for the mempool
@@ -589,6 +597,9 @@ func (c *Controller) CommitCertificateParallel(qc *lib.QuorumCertificate, block 
 		if err = c.commitToStore(storeI, qc, block.BlockHeader.Height); err != nil {
 			// exit with error
 			return err
+		}
+		if block.BlockHeader.LastQuorumCertificate != nil {
+			c.consumeAuxiliaryCertificates(block.BlockHeader.LastQuorumCertificate.AuxiliaryCertificates)
 		}
 		// publish root chain information to all nested chain subscribers
 		for _, id := range c.RCManager.ChainIds() {
@@ -839,6 +850,18 @@ func (c *Controller) CheckAndSetLastCertificate(candidate *lib.BlockHeader) lib.
 		if !candidate.LastQuorumCertificate.EqualPayloads(lastCertificate) {
 			// exit with error
 			return lib.ErrInvalidLastQuorumCertificate()
+		}
+		// Auxiliary certificates are best-effort, but any certificate a proposer
+		// embeds must independently prove strict >2/3 authorization by the frozen
+		// committee for that QC. Validate before ApplyBlock can expose it to the
+		// application; never sanitize an invalid proposer-supplied certificate.
+		auxQC := candidate.LastQuorumCertificate
+		auxVS, auxErr := c.LoadCommittee(c.LoadRootChainId(auxQC.Header.Height), auxQC.Header.RootHeight)
+		if auxErr != nil {
+			return auxErr
+		}
+		if auxErr = c.validateAuxiliaryCertificates(auxQC, auxVS); auxErr != nil {
+			return auxErr
 		}
 		// the synced blocks were already validated during consensus, no need to validate again
 		if !c.Syncing().Load() {

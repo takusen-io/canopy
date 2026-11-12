@@ -9,7 +9,17 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-const maxNativeAuxiliaryCandidates = 32
+const (
+	// Leave capacity for validator-local finalized-EVM observations even when
+	// Native authorizations are continuously backlogged.
+	maxNativeAuxiliaryCandidates = 24
+	timeoutCandidatePageSize     = uint64(512)
+)
+
+var nativeCandidateCategoryLimits = map[string]int{
+	"priority": 4, "settlement": 8, "reward": 3, "bridge": 3,
+	"abandonment": 1, "lifecycle": 2, "timeout": 3,
+}
 
 type certifiedEVMObservation struct {
 	Kind               string `json:"kind"`
@@ -28,8 +38,12 @@ func evmObservationDigest(observation *certifiedEVMObservation, subject []byte) 
 
 func (c *Contract) nativeAuxiliaryCandidates(height uint64, params *ProtocolParams, priority ...*AuxiliaryCandidate) ([]*AuxiliaryCandidate, *PluginError) {
 	result := make([]*AuxiliaryCandidate, 0, maxNativeAuxiliaryCandidates)
-	appendCandidate := func(candidate *AuxiliaryCandidate) {
+	categoryCounts := make(map[string]int, len(nativeCandidateCategoryLimits))
+	appendCandidate := func(category string, candidate *AuxiliaryCandidate) {
 		if candidate == nil || len(result) == maxNativeAuxiliaryCandidates {
+			return
+		}
+		if categoryCounts[category] >= nativeCandidateCategoryLimits[category] {
 			return
 		}
 		for _, existing := range result {
@@ -41,9 +55,10 @@ func (c *Contract) nativeAuxiliaryCandidates(height uint64, params *ProtocolPara
 			return
 		}
 		result = append(result, candidate)
+		categoryCounts[category]++
 	}
 	for _, candidate := range priority {
-		appendCandidate(candidate)
+		appendCandidate("priority", candidate)
 	}
 	clock, clockErr := c.currentEpochClock(params)
 	if clockErr != nil {
@@ -54,7 +69,7 @@ func (c *Contract) nativeAuxiliaryCandidates(height uint64, params *ProtocolPara
 		return nil, settlementErr
 	}
 	for _, candidate := range settlements {
-		appendCandidate(candidate)
+		appendCandidate("settlement", candidate)
 	}
 
 	epochs, err := c.rangeReadPage(PendingEpochAuthorizationPrefix(), nil, maxNativeAuxiliaryCandidates)
@@ -93,7 +108,7 @@ func (c *Contract) nativeAuxiliaryCandidates(height uint64, params *ProtocolPara
 		if marshalErr != nil {
 			return nil, ErrState("encode epoch reward certificate payload")
 		}
-		appendCandidate(&AuxiliaryCandidate{Kind: "epoch-rewards", Key: append([]byte(nil), marker.Id...), Digest: append([]byte(nil), certificateAuthorization.CanonicalChainDigest...), Payload: payload})
+		appendCandidate("reward", &AuxiliaryCandidate{Kind: "epoch-rewards", Key: append([]byte(nil), marker.Id...), Digest: append([]byte(nil), certificateAuthorization.CanonicalChainDigest...), Payload: payload})
 	}
 
 	burns, err := c.rangeReadPage(PendingBridgeBurnPrefix(), nil, maxNativeAuxiliaryCandidates)
@@ -120,7 +135,7 @@ func (c *Contract) nativeAuxiliaryCandidates(height uint64, params *ProtocolPara
 		if marshalErr != nil {
 			return nil, ErrState("encode bridge release certificate payload")
 		}
-		appendCandidate(&AuxiliaryCandidate{Kind: "bridge-release", Key: append([]byte(nil), marker.Id...), Digest: append([]byte(nil), certificateBurn.CanonicalChainDigest...), Payload: payload})
+		appendCandidate("bridge", &AuxiliaryCandidate{Kind: "bridge-release", Key: append([]byte(nil), marker.Id...), Digest: append([]byte(nil), certificateBurn.CanonicalChainDigest...), Payload: payload})
 	}
 
 	// Emergency abandonment is an explicit governed intent plus a fixed native
@@ -161,7 +176,7 @@ func (c *Contract) nativeAuxiliaryCandidates(height uint64, params *ProtocolPara
 		if marshalErr != nil {
 			return nil, marshalErr
 		}
-		appendCandidate(&AuxiliaryCandidate{Kind: message.ProofKind, Key: append([]byte(nil), domain.Id...), Digest: append([]byte(nil), message.Digest...), Payload: payload})
+		appendCandidate("abandonment", &AuxiliaryCandidate{Kind: message.ProofKind, Key: append([]byte(nil), domain.Id...), Digest: append([]byte(nil), message.Digest...), Payload: payload})
 	}
 
 	for _, domain := range params.SettlementDomains {
@@ -199,13 +214,19 @@ func (c *Contract) nativeAuxiliaryCandidates(height uint64, params *ProtocolPara
 			return nil, marshalErr
 		}
 		key := hashFields(domain.Id, uint64Bytes(message.RotationNonce), message.HandoffGeneration, message.LifecycleIntentId)
-		appendCandidate(&AuxiliaryCandidate{Kind: authorizationKind, Key: key, Digest: append([]byte(nil), message.Digest...), Payload: payload})
+		appendCandidate("lifecycle", &AuxiliaryCandidate{Kind: authorizationKind, Key: key, Digest: append([]byte(nil), message.Digest...), Payload: payload})
 	}
 
 	// Timeout discovery is bounded per block. The same earliest expired facts
 	// remain candidates until certified, after which their request state changes
 	// and the next bounded page can progress.
-	requests, err := c.rangeReadPage(RequestPrefix(), nil, 5000)
+	cursor := new(ReplayMarker)
+	if found, readErr := c.read(KeyForTimeoutCandidateCursorCurrent(), cursor); readErr != nil {
+		return nil, readErr
+	} else if !found {
+		cursor.Id = nil
+	}
+	requests, err := c.rangeReadPage(RequestPrefix(), cursor.Id, timeoutCandidatePageSize)
 	if err != nil {
 		return nil, err
 	}
@@ -233,10 +254,34 @@ func (c *Contract) nativeAuxiliaryCandidates(height uint64, params *ProtocolPara
 			}
 			attempt := assignment.Attempt + 1
 			key := hashFields([]byte(request.RequestId), []byte(assignment.Model), uint32Bytes(attempt))
-			appendCandidate(&AuxiliaryCandidate{Kind: "native-reassignment", Key: key, Digest: reassignmentSubject(message, attempt), Payload: payload})
+			appendCandidate("timeout", &AuxiliaryCandidate{Kind: "native-reassignment", Key: key, Digest: reassignmentSubject(message, attempt), Payload: payload})
 		}
 	}
 	return result, nil
+}
+
+// advanceTimeoutCandidateCursor persists a deterministic continuation across
+// request pages. Two markers let BeginBlock prepare the next cursor while
+// EndBlock scans the current page, so no request is skipped at wraparound.
+func (c *Contract) advanceTimeoutCandidateCursor(records map[string]proto.Message) *PluginError {
+	next := new(ReplayMarker)
+	if found, err := c.read(KeyForTimeoutCandidateCursorNext(), next); err != nil {
+		return err
+	} else if !found {
+		next.Id = nil
+	}
+	current := &ReplayMarker{Id: append([]byte(nil), next.Id...)}
+	page, err := c.rangeReadPage(RequestPrefix(), current.Id, timeoutCandidatePageSize)
+	if err != nil {
+		return err
+	}
+	following := &ReplayMarker{}
+	if uint64(len(page)) == timeoutCandidatePageSize {
+		following.Id = append([]byte(nil), page[len(page)-1].Key...)
+	}
+	records[string(KeyForTimeoutCandidateCursorCurrent())] = current
+	records[string(KeyForTimeoutCandidateCursorNext())] = following
+	return nil
 }
 
 func bytesToUint64(value []byte) uint64 {

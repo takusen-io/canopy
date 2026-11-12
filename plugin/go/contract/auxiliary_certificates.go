@@ -10,6 +10,14 @@ import (
 
 const maxAuxiliaryCertificatesPerBlock = 32
 
+func auxiliaryCandidateSignBytes(candidate *AuxiliaryCandidate) []byte {
+	encoded, err := proto.MarshalOptions{Deterministic: true}.Marshal(candidate)
+	if err != nil {
+		return nil
+	}
+	return append([]byte("canopy:auxiliary-candidate:v1:"), encoded...)
+}
+
 // consumeAuxiliaryCertificates persists only certificates whose signer bitmap
 // still proves strict >2/3 against the immutable active epoch snapshot. Core
 // already verifies every aggregate signature before committing the QC; this
@@ -52,6 +60,9 @@ func (c *Contract) consumeAuxiliaryCertificates(height uint64, certificates []*A
 		left := new(big.Int).Mul(new(big.Int).SetUint64(signed), big.NewInt(3))
 		right := new(big.Int).Mul(new(big.Int).SetUint64(snapshot.totalStake), big.NewInt(2))
 		if !valid || left.Cmp(right) <= 0 {
+			continue
+		}
+		if verifyErr := c.verifyValidatorCertificate(auxiliaryCandidateSignBytes(candidate), snapshot.validatorSetID, signature.Bitmap, signature.Signature); verifyErr != nil {
 			continue
 		}
 		eipSignature, conversionErr := g2CompressedToEIP2537(signature.Signature)

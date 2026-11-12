@@ -39,14 +39,14 @@ type Controller struct {
 	Consensus *bft.BFT          // the async consensus process between the committee members for the chain
 	P2P       *p2p.P2P          // the P2P module the node uses to connect to the network
 
-	RCManager   lib.RCManagerI                     // the data manager for the 'root chain'
-	Plugin      *lib.Plugin                        // extensible plugin for FSM
-	checkpoints map[uint64]map[uint64]lib.HexBytes // cached checkpoints loaded from file
-	isSyncing   *atomic.Bool                       // is the chain currently being downloaded from peers
-	log         lib.LoggerI                        // object for logging
-	auxiliaryMu sync.RWMutex
+	RCManager           lib.RCManagerI                     // the data manager for the 'root chain'
+	Plugin              *lib.Plugin                        // extensible plugin for FSM
+	checkpoints         map[uint64]map[uint64]lib.HexBytes // cached checkpoints loaded from file
+	isSyncing           *atomic.Bool                       // is the chain currently being downloaded from peers
+	log                 lib.LoggerI                        // object for logging
+	auxiliaryMu         sync.RWMutex
 	auxiliaryCandidates map[string]*lib.AuxiliaryCandidate
-	*sync.Mutex                                    // mutex for thread safety
+	*sync.Mutex         // mutex for thread safety
 }
 
 // New() creates a new instance of a Controller, this is the entry point when initializing an instance of a Canopy application
@@ -61,19 +61,22 @@ func New(fsm *fsm.StateMachine, c lib.Config, valKey crypto.PrivateKeyI, metrics
 	}
 	// create the controller
 	controller = &Controller{
-		Address:    address.Bytes(),
-		PublicKey:  valKey.PublicKey().Bytes(),
-		PrivateKey: valKey,
-		Config:     c,
-		Metrics:    metrics,
-		FSM:        fsm,
-		Mempool:    nil,
-		Consensus:  nil,
-		P2P:        p2p.New(valKey, maxMembersPerCommittee, metrics, c, l),
-		isSyncing:  &atomic.Bool{},
-		log:        l,
+		Address:             address.Bytes(),
+		PublicKey:           valKey.PublicKey().Bytes(),
+		PrivateKey:          valKey,
+		Config:              c,
+		Metrics:             metrics,
+		FSM:                 fsm,
+		Mempool:             nil,
+		Consensus:           nil,
+		P2P:                 p2p.New(valKey, maxMembersPerCommittee, metrics, c, l),
+		isSyncing:           &atomic.Bool{},
+		log:                 l,
 		auxiliaryCandidates: make(map[string]*lib.AuxiliaryCandidate),
-		Mutex:      &sync.Mutex{},
+		Mutex:               &sync.Mutex{},
+	}
+	if loadErr := controller.loadAuxiliaryCandidates(); loadErr != nil {
+		return nil, lib.NewError(lib.NoCode, lib.MainModule, fmt.Sprintf("load auxiliary candidate outbox: %v", loadErr))
 	}
 	// load checkpoints from file (if provided)
 	controller.loadCheckpointsFile()
