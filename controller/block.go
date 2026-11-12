@@ -162,10 +162,47 @@ func (c *Controller) ProduceProposal(evidence *bft.ByzantineEvidence, vdf *crypt
 			if c.Config.ConsensusConfig.UsesDeterministicProposers() {
 				proposalTime := time.Now()
 				if lastBlock.BlockHeader.Time != 0 {
+					leadTime := proposalConsensusLeadTime(
+						c.Config.ConsensusConfig.BlockConsensusLeadTime(), len(p.Block.Transactions))
 					proposalTime = nextProposalTime(lastBlock.BlockHeader.Time, time.Now(),
-						c.Config.ConsensusConfig.RoundRobinBlockInterval(), c.Config.ConsensusConfig.BlockConsensusLeadTime())
+						c.Config.ConsensusConfig.RoundRobinBlockInterval(), leadTime)
 				}
-				p.Block.BlockHeader.Time = uint64(proposalTime.UnixMicro())
+				// EndBlock commits the consensus timestamp into plugin state. A cached
+				// proposal was executed with its cache-build timestamp, so merely
+				// rewriting the header here would leave its state root describing a
+				// different block. Replay the exact transaction set after choosing the
+				// final signed timestamp so proposer and replicas execute identical
+				// inputs.
+				finalTime := uint64(proposalTime.UnixMicro())
+				if p.Block.BlockHeader.Time != finalTime {
+					c.Mempool.FSM.Reset()
+					if p.CertResults != nil && p.CertResults.RootDexBatch != nil {
+						c.Mempool.FSM.SetRootDexCache(p.CertResults.RootDexBatch)
+					}
+					rebuilt := &lib.Block{
+						BlockHeader: &lib.BlockHeader{
+							Time:            finalTime,
+							ProposerAddress: p.Block.BlockHeader.ProposerAddress,
+						},
+						Transactions: p.Block.Transactions,
+					}
+					header, applyResults, applyErr := c.Mempool.FSM.ApplyBlock(context.Background(), rebuilt, true)
+					if applyErr != nil {
+						return false, applyErr
+					}
+					if len(applyResults.Failed) != 0 {
+						return false, lib.ErrFailedTransactions()
+					}
+					rebuilt.BlockHeader = header
+					p.Block = rebuilt
+					p.BlockResult = &lib.BlockResult{
+						BlockHeader:  header,
+						Transactions: applyResults.Results,
+						Events:       applyResults.Events,
+					}
+					p.CertResults = c.NewCertificateResults(c.Mempool.FSM, rebuilt, p.BlockResult,
+						&bft.ByzantineEvidence{DSE: bft.DoubleSignEvidences{}}, p.rcBuildHeight)
+				}
 			}
 			// validate the verifiable delay function from the bft module
 			if c.FSM.Height() > 1 && vdf != nil {
@@ -261,6 +298,38 @@ func (c *Controller) ValidateProposal(rcBuildHeight uint64, qc *lib.QuorumCertif
 	}
 	// exit
 	return
+}
+
+const proposalExecutionBudgetPerTransaction = 25 * time.Millisecond
+
+// ProposalBuildDeadline adds one bounded slot only while the local mempool is
+// busy enough that speculative proposal construction is intentionally skipped.
+// BFT uses this solely for the initial proposal wait; it never replaces the
+// signed block timestamp that coordinates voting and commit.
+func (c *Controller) ProposalBuildDeadline(nominal time.Time) time.Time {
+	if c == nil || c.Mempool == nil || c.Mempool.L == nil {
+		return nominal
+	}
+	busy := true
+	if c.Mempool.L.TryLock() {
+		busy = c.Mempool.TxCount() > maxSpeculativeProposalTxs
+		c.Mempool.L.Unlock()
+	}
+	if !busy {
+		return nominal
+	}
+	return nominal.Add(c.Config.ConsensusConfig.RoundRobinBlockInterval())
+}
+
+// proposalConsensusLeadTime reserves enough of the deterministic slot for
+// replicas to execute and vote on a busy proposal. Light blocks retain the
+// configured low-latency lead; heavy blocks move to a later shared slot rather
+// than repeatedly timing out after every validator has done the same work.
+func proposalConsensusLeadTime(configured time.Duration, transactionCount int) time.Duration {
+	if transactionCount <= 0 {
+		return configured
+	}
+	return configured + time.Duration(transactionCount)*proposalExecutionBudgetPerTransaction
 }
 
 // nextProposalTime() returns the first target slot with enough consensus lead time in constant time.
@@ -367,18 +436,21 @@ func (c *Controller) CommitCertificate(qc *lib.QuorumCertificate, block *lib.Blo
 		return err
 	}
 	if !syncing {
-		// Keep each validator's next-height proposal warm so the selected leader can transmit immediately.
+		// Prepare a next-height mempool FSM, invalidate the old proposal, and let
+		// the cancellable background builder warm the cache. Replaying the entire
+		// pending mempool synchronously here makes every validator's commit latency
+		// grow with load even though only the selected leader needs the proposal.
+		// ProduceProposal validates the cache version and builds synchronously if
+		// the background worker has not finished, preserving proposal freshness.
 		c.Mempool.FSM.Discard()
 		if c.Mempool.FSM, err = c.FSM.Copy(); err != nil {
 			return err
 		}
 		c.Mempool.dirtyVersion.Add(1)
-		resetProposalConfig := c.SetFSMInConsensusModeForProposals()
-		if e := c.Mempool.CheckMempool(); e != nil {
-			c.log.Warnf("Post-commit mempool rebuild failed: %s", e.Error())
+		select {
+		case c.Mempool.proposalWake <- struct{}{}:
+		default:
 		}
-		resetProposalConfig()
-		c.Mempool.FSM.Reset()
 	}
 	// update telemetry (using proper defer to ensure time.Since is evaluated at defer execution)
 	defer c.UpdateTelemetry(qc, block, time.Since(start))

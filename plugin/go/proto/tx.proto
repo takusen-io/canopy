@@ -3,6 +3,7 @@ package types;
 option go_package = "github.com/canopy-network/go-plugin/contract";
 
 import "google/protobuf/any.proto";
+import "account.proto";
 // Transaction represents a request or action submitted to the network like transfer assets or perform other operations
 // within the blockchain system - THIS MUST MATCH lib.Transaction EXACTLY for signing
 message Transaction {
@@ -44,6 +45,9 @@ message MessageObserveEnclave {
   bytes nonce = 9;
   bytes user_data = 10;
   bytes proof_signature = 11;
+  // Complete COSE/CBOR Nitro evidence is consensus transaction history. It is
+  // intentionally not retained in active EnclaveKey state after registration.
+  bytes attestation_document = 12;
 }
 
 message MessageRevokeEnclave {
@@ -53,7 +57,7 @@ message MessageRevokeEnclave {
 
 message MessageRegisterServicer {
   bytes owner_address = 1;
-  bytes payout_address = 2;
+  repeated SettlementPayout payouts = 2;
   string tee_key_id = 3;
   repeated string models = 4;
   uint64 bond = 5;
@@ -61,14 +65,47 @@ message MessageRegisterServicer {
 
 message MessageUpdateServicer {
   bytes owner_address = 1;
-  bytes payout_address = 2;
+  repeated SettlementPayout payouts = 2;
   string tee_key_id = 3;
   repeated string models = 4;
   uint64 additional_bond = 5;
   bool active = 6;
 }
 
+message MessageObserveDeposit {
+  bytes observer_address = 1;
+  bytes settlement_domain_id = 2;
+  bytes chain_tx_hash = 3;
+  bytes requester = 4;
+  uint64 amount_micros = 5;
+  bytes token_amount = 6;
+  // provisional is set by each observer from its local chain finality policy.
+  // It is never trusted from the API request.
+  bool provisional = 7;
+}
+
+// MessageResolveDeposit lets the same validator quorum either promote a
+// provisional deposit after chain safe finality or orphan it after a reorg.
+message MessageResolveDeposit {
+  bytes observer_address = 1;
+  bytes settlement_domain_id = 2;
+  bytes chain_tx_hash = 3;
+  string resolution = 4;
+}
+
+// MessageResolveSettlement identifies the exact execution segment whose EVM
+// transaction disappeared so it can become independently settleable again.
+message MessageResolveSettlement {
+  bytes observer_address = 1;
+  bytes settlement_domain_id = 2;
+  string request_id = 3;
+  bytes settlement_tx_hash = 4;
+  repeated string execution_ids = 5;
+  bool finalizes_request = 6;
+}
+
 message MessageObserveAuthorization {
+  reserved 9;
   bytes observer_address = 1;
   string request_id = 2;
   bytes input_hash = 3;
@@ -76,9 +113,35 @@ message MessageObserveAuthorization {
   uint64 reserved_budget = 5;
   string output_type = 6;
   repeated string models = 7;
+  // Display-only agreement observation threshold.
   uint32 execution_quorum = 8;
-  bytes base_tx_hash = 9;
   uint64 deadline_height = 10;
+  bytes authorization_signature = 11;
+  uint64 authorization_deadline = 12;
+  // direct_eoa lets the native state machine verify an ordinary EOA's EIP-712
+  // signature itself. Contract-wallet signatures retain validator observation.
+  bool direct_eoa = 13;
+  // Content address of the replicated full request input. Admission is
+  // fail-closed unless this artifact was published first.
+  string request_archive_id = 14;
+  // ERC-1271 authorization is evaluated at this settlement chain's canonical
+  // safe header.
+  // EOA authorization is state-independent and leaves both fields empty.
+  uint64 authorization_chain_block_number = 15;
+  bytes authorization_chain_block_hash = 16;
+  bytes settlement_domain_id = 17;
+  int64 output_minimum = 18;
+  int64 output_maximum = 19;
+  repeated string output_choices = 20;
+  bytes schema_hash = 21;
+}
+
+// MessageObserveAuthorizations admits a short cohort of independently signed
+// requester authorizations in one Canopy transaction. Every item retains the
+// same native EIP-712 validation as the single-request path.
+message MessageObserveAuthorizations {
+  bytes observer_address = 1;
+  repeated MessageObserveAuthorization authorizations = 2;
 }
 
 message MessageSubmitExecution {
@@ -89,6 +152,15 @@ message MessageSubmitExecution {
   string archive_id = 5;
 }
 
+message MessageSubmitExecutions {
+  bytes servicer_address = 1;
+  repeated MessageSubmitExecution executions = 2;
+  bytes public_key = 3;
+  // Gzip-compressed protobuf MessageSubmitExecutions containing only the
+  // executions field. The outer signer identity remains uncompressed.
+  bytes compressed_executions = 4;
+}
+
 message MessageReassignRequest {
   bytes observer_address = 1;
   string request_id = 2;
@@ -97,15 +169,32 @@ message MessageReassignRequest {
 }
 
 message MessageFinalizeRequest {
+  reserved 4;
   bytes observer_address = 1;
   string request_id = 2;
-  bytes base_settlement_tx_hash = 3;
+  bytes settlement_tx_hash = 3;
+  uint64 reserved_budget = 5;
+  uint64 validator_set_id = 6;
+  bytes signer_bitmap = 7;
+  bytes aggregate_signature = 8;
+  repeated string execution_ids = 9;
+  bool finalizes_request = 10;
+  uint64 request_spent = 11;
+  bytes settlement_domain_id = 12;
+}
+
+message MessageFinalizeRequests {
+  bytes observer_address = 1;
+  repeated MessageFinalizeRequest requests = 2;
+  uint64 validator_set_id = 3;
+  bytes signer_bitmap = 4;
+  bytes aggregate_signature = 5;
 }
 
 // MessageSubmitQuorumSignature lets an active validator attest to the exact
-// digest Base will verify. The outer Canopy transaction authenticates the
+// digest an EVM contract will verify. The outer Canopy transaction authenticates the
 // observer; signature is a second BDN/BLS signature over message (normally the
-// 32-byte Base digest) so shares can be aggregated and exported to Base.
+// 32-byte EVM digest) so shares can be aggregated and exported to the target chain.
 message MessageSubmitQuorumSignature {
   bytes observer_address = 1;
   string proof_kind = 2;
@@ -114,6 +203,85 @@ message MessageSubmitQuorumSignature {
   bytes message = 5;
   uint64 validator_set_id = 6;
   bytes signature = 7;
+  repeated bytes validator_keys = 8;
+  repeated uint64 validator_weights = 9;
+  uint64 new_validator_set_id = 10;
+  reserved 11;
+  string request_id = 12;
+  bytes settlement_tx_hash = 13;
+  uint64 reserved_budget = 14;
+  repeated string execution_ids = 15;
+  bool finalizes_request = 16;
+  uint64 request_spent = 17;
+  uint64 batch_nonce = 18;
+  bytes settlement_payload = 19;
+  repeated MessageFinalizeRequest finalizations = 20;
+  bytes settlement_domain_id = 21;
+  uint64 rotation_nonce = 22;
+  uint64 epoch = 23;
+  bytes burn_id = 24;
+  bytes handoff_generation = 25;
+  uint64 handoff_timestamp = 26;
+  uint64 control_block_number = 27;
+  bytes control_block_hash = 28;
+  bytes lifecycle_intent_id = 29;
+}
+
+message MessageObserveBridgeLock {
+  bytes observer_address = 1;
+  bytes canonical_chain_tx_hash = 2;
+  uint64 nonce = 3;
+  bytes canonical_chain_sender = 4;
+  bytes recipient = 5;
+  uint64 amount = 6;
+}
+
+message MessageBurnBridge {
+  bytes owner_address = 1;
+  bytes canonical_chain_recipient = 2;
+  uint64 amount = 3;
+  bytes burn_id = 4;
+}
+
+message MessageObserveBridgeRelease {
+  bytes observer_address = 1;
+  bytes burn_id = 2;
+  bytes canonical_chain_tx_hash = 3;
+  uint64 nonce = 4;
+  bytes canonical_chain_recipient = 5;
+  uint64 amount = 6;
+  uint64 validator_set_id = 7;
+}
+
+message MessageObserveEpochMint {
+  bytes observer_address = 1;
+  uint64 epoch = 2;
+  bytes canonical_chain_tx_hash = 3;
+  uint64 validator_set_id = 4;
+}
+
+message MessageQueueServicerStake {
+  bytes owner_address = 1;
+  uint64 target_bond = 2;
+  bool active = 3;
+  bool auto_compound = 4;
+}
+
+message MessageWithdrawUnbonded {
+  bytes owner_address = 1;
+  uint64 sequence = 2;
+}
+
+message MessageSetProducerPayout {
+  bytes owner_address = 1;
+  bytes canonical_chain_address = 2;
+}
+
+message MessageObserveSlashEvidence {
+  bytes observer_address = 1;
+  bytes evidence_id = 2;
+  bytes target_address = 3;
+  string reason = 4;
 }
 
 // FeeParams is the parameter space that defines various amounts for transaction fees

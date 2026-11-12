@@ -36,10 +36,18 @@ func (s *StateMachine) NewFromGenesisFile() (err lib.ErrorI) {
 		if err = resp.Error.E(); err != nil {
 			return err
 		}
+		s.pluginGenesisReady = true
 	}
-	// commit the genesis state to persistence (database)
-	if _, err = s.store.(lib.StoreI).Commit(); err != nil {
-		return
+	// A configured external plugin connects only after the core FSM is created.
+	// Keep core genesis staged so the plugin's genesis writes can be included in
+	// the same version-1 root instead of creating an out-of-band state version.
+	if s.Plugin == nil && s.Config.Plugin != "" {
+		s.genesisCommitReady = false
+	} else {
+		if _, err = s.store.(lib.StoreI).Commit(); err != nil {
+			return
+		}
+		s.genesisCommitReady = true
 	}
 	// log the application
 	s.log.Infof("Applied the genesis file with %d validators", len(genesis.Validators))
@@ -47,6 +55,44 @@ func (s *StateMachine) NewFromGenesisFile() (err lib.ErrorI) {
 	s.height += 1
 	// exit
 	return
+}
+
+// ApplyPluginGenesis completes genesis initialization when the plugin connects
+// after the core state machine was created. Application startup intentionally
+// constructs the core FSM before the controller launches an external plugin;
+// this hook commits the plugin's deterministic genesis writes before mempool
+// and consensus state copies are created.
+func (s *StateMachine) ApplyPluginGenesis() (err lib.ErrorI) {
+	if !s.freshGenesis || s.Plugin == nil || s.pluginGenesisReady {
+		return nil
+	}
+	genesis, err := s.ReadGenesisFromFile()
+	if err != nil {
+		return err
+	}
+	resp, err := s.Plugin.Genesis(s, &lib.PluginGenesisRequest{
+		GenesisJson: lib.MustMarshalJSON(genesis),
+	})
+	if err != nil {
+		return err
+	}
+	if resp == nil {
+		return lib.NewError(lib.NoCode, lib.MainModule, "plugin returned an empty genesis response")
+	}
+	if err = resp.Error.E(); err != nil {
+		return err
+	}
+	store, ok := s.store.(lib.StoreI)
+	if !ok {
+		return ErrWrongStoreType()
+	}
+	if _, err = store.Commit(); err != nil {
+		return err
+	}
+	s.genesisCommitReady = true
+	s.pluginGenesisReady = true
+	s.Reset()
+	return nil
 }
 
 // ReadGenesisFromFile() reads a GenesisState object from a file
@@ -231,6 +277,7 @@ type genesisState struct {
 	Supply        *Supply             `json:"supply"`
 	OrderBooks    *lib.OrderBooks     `protobuf:"bytes,7,opt,name=order_books,json=orderBooks,proto3" json:"orderBooks,omitempty"`
 	DoubleSigners []*lib.DoubleSigner `protobuf:"bytes,6,rep,name=double_signers,json=doubleSigners,proto3" json:"doubleSigners,omitempty"` // only used for export
+	PluginGenesis json.RawMessage     `json:"pluginGenesis,omitempty"`
 }
 
 // MarshalJSON() is the json.Marshaller implementation for the GenesisState object
@@ -249,6 +296,7 @@ func (x *GenesisState) MarshalJSON() ([]byte, error) {
 		Supply:        x.Supply,
 		OrderBooks:    x.OrderBooks,
 		DoubleSigners: x.DoubleSigners,
+		PluginGenesis: x.PluginGenesis,
 	})
 }
 
@@ -268,5 +316,6 @@ func (x *GenesisState) UnmarshalJSON(bz []byte) (err error) {
 	x.Params, x.Pools, x.Supply = ptr.Params, ptr.Pools, ptr.Supply
 	x.Accounts, x.Validators, x.NonSigners = ptr.Accounts, ptr.Validators, ptr.NonSigners
 	x.OrderBooks, x.DoubleSigners = ptr.OrderBooks, ptr.DoubleSigners
+	x.PluginGenesis = append(x.PluginGenesis[:0], ptr.PluginGenesis...)
 	return
 }

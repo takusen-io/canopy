@@ -54,4 +54,7 @@ message GenesisState {
   CommitteesData committees = 10;
   // retired committees: a list of the chain ids that are permanently retired
   repeated uint64 retired_committees = 11; // @gotags: json:"retiredComittees"
+  // plugin_genesis: deterministic plugin-owned genesis documents. The custom
+  // JSON codec exposes this as the raw `pluginGenesis` object.
+  bytes plugin_genesis = 12; // @gotags: json:"-"
 }

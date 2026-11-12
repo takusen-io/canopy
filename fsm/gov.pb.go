@@ -241,7 +241,7 @@ type ConsensusParams struct {
 	Retired uint64 `protobuf:"varint,4,opt,name=retired,proto3" json:"retired,omitempty"`
 	// reset_committee: clears committee data for the provided committee id
 	ResetCommittee uint64 `protobuf:"varint,5,opt,name=reset_committee,json=resetCommittee,proto3" json:"resetCommittee"` // @gotags: json:"resetCommittee"
-	// preserve_non_signer_rewards: when true, missed validator signatures are tracked and penalized without reducing the proposer's allocation.
+	// preserve_non_signer_rewards: when true, missed validator signatures are tracked and penalized without reducing the proposer's allocation
 	PreserveNonSignerRewards bool `protobuf:"varint,6,opt,name=preserve_non_signer_rewards,json=preserveNonSignerRewards,proto3" json:"preserveNonSignerRewards"` // @gotags: json:"preserveNonSignerRewards"
 	unknownFields            protoimpl.UnknownFields
 	sizeCache                protoimpl.SizeCache
@@ -312,7 +312,6 @@ func (x *ConsensusParams) GetResetCommittee() uint64 {
 	return 0
 }
 
-// GetPreserveNonSignerRewards() returns whether missed signatures preserve certificate rewards.
 func (x *ConsensusParams) GetPreserveNonSignerRewards() bool {
 	if x != nil {
 		return x.PreserveNonSignerRewards

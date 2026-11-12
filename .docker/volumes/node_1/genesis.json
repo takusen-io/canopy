@@ -3,15 +3,15 @@
   "accounts": [
     {
       "address": "851e90eaef1fa27debaee2c2591503bdeec1d123",
-      "amount": 1000000
+      "amount": 1000000000000
     },
     {
       "address": "02cd4e5eb53ea665702042a6ed6d31d616054dc5",
-      "amount": 1000000
+      "amount": 1000000000000
     },
     {
       "address": "6f94783856d5ce46d24dd5946215086211d70776",
-      "amount": 1000000
+      "amount": 1000000000
     }
   ],
   "nonSigners": null,
@@ -19,7 +19,9 @@
     {
       "address": "851e90eaef1fa27debaee2c2591503bdeec1d123",
       "publicKey": "b88a5928e54cbf0a36e0b98f5bcf02de9a9a1deba6994739f9160181a609f516eb702936a0cbf4c1f2e7e6be5b8272f2",
-      "committees": [1],
+      "committees": [
+        1
+      ],
       "netAddress": "tcp://node-1",
       "stakedAmount": 1000000000,
       "output": "851e90eaef1fa27debaee2c2591503bdeec1d123"
@@ -27,7 +29,10 @@
     {
       "address": "02cd4e5eb53ea665702042a6ed6d31d616054dc5",
       "publicKey": "98d45087a99bcbfde91993502e77dde869d4485c3778fe46513958320da560823d56a0108f4cf3513393f4d561bc489b",
-      "committees": [1, 2],
+      "committees": [
+        1,
+        2
+      ],
       "netAddress": "tcp://node-2",
       "stakedAmount": 1000000000,
       "output": "02cd4e5eb53ea665702042a6ed6d31d616054dc5"
@@ -76,5 +81,95 @@
       "daoRewardPercentage": 10
     }
   },
-  "supply": null
+  "supply": null,
+  "pluginGenesis": {
+    "takusen": {
+      "revision": "1",
+      "models": [
+        {
+          "model": "openai/gpt-6-luna",
+          "provider": "local-deterministic",
+          "maximumExecutionBudget": "300000",
+          "active": true
+        },
+        {
+          "model": "anthropic/claude-haiku-5.5",
+          "provider": "local-deterministic",
+          "maximumExecutionBudget": "300000",
+          "active": true
+        },
+        {
+          "model": "google/gemini-3.8-flash",
+          "provider": "local-deterministic",
+          "maximumExecutionBudget": "300000",
+          "active": true
+        }
+      ],
+      "approvedPcrs": [
+        {
+          "pcr0": "g3dZS49xWlZgK0wNNkL/MWDgvLIzsc0pGJXX2xgnaQE/mfBnlJRjm8SEQMZ6l5Xf",
+          "pcr1": "S01bNmGz78EpIJAMgOEm5M54PFIt5sAqKlv3rzorkye4Z3bxiOS+HBxAShKdvaST",
+          "pcr2": "z0vxcR2/UntyvUN1HUjEOKRV27AFsvxrDdvXD1pVK+e3clzsuNiJMXVCRTHfMuKD",
+          "active": true
+        }
+      ],
+      "requireNitroAttestation": false,
+      "foundationFeeBps": 500,
+      "servicerMarginBps": 250,
+      "quorumNumerator": 2,
+      "quorumDenominator": 3,
+      "authorizationDeadlineBlocks": "360",
+      "executionTimeoutBlocks": "120",
+      "retryLimit": 3,
+      "minimumServicerBond": "100000",
+      "minimumValidatorBond": "1",
+      "timeoutSlashBps": 100,
+      "invalidReceiptSlashBps": 10000,
+      "epochBlocks": "4800",
+      "validatorHandoffLeadBlocks": "2400",
+      "validatorHandoffNoticeSeconds": "2400",
+      "unbondingEpochs": "24",
+      "emissionPerEpoch": "1000000000",
+      "treasuryAddress": "85/W5RqtiPb0zmq4gnJ5z/+5ImY=",
+      "treasuryBps": 1000,
+      "canonicalChainId": "31337",
+      "canonicalTokenAddress": "pRPm5LjyqSPZgwTsh/ZDU8TVyFM=",
+      "canonicalBridgeAddress": "inkWIN1iYAeb+EncVWetw/L9wxg=",
+      "validatorSetId": "1",
+      "bridgeEpochMintLimit": "18446744073709551615",
+      "bridgeTransferLimit": "18446744073709551615",
+      "settlementIntervalBlocks": "1",
+      "supportedOutputSchemas": [
+        "boolean",
+        "score",
+        "choice",
+        "private_hash"
+      ],
+      "defaultModels": [
+        "openai/gpt-6-luna",
+        "anthropic/claude-haiku-5.5",
+        "google/gemini-3.8-flash"
+      ],
+      "settlementDomains": [
+        {
+          "id": "KklGjCgDfHfIiO3gUuMdI3mCjJ3XWNpdB+UEc0krcI0=",
+          "chainId": "31337",
+          "tokenAddress": "X72yMVZ4r+yzZ/Ay2T9kL2QYCqM=",
+          "escrowAddress": "X8jTJpDMkdTDnZ06vL0WmJ+HVwc=",
+          "verifierAddress": "5/FyXnc0ziiPg2fhuxQ+kLs/BRI=",
+          "foundationTreasuryAddress": "85/W5RqtiPb0zmq4gnJ5z/+5ImY=",
+          "tokenDecimals": 6,
+          "network": "eip155:31337",
+          "depositMechanisms": [
+            "eip3009"
+          ],
+          "authorizationName": "USD Coin",
+          "authorizationVersion": "2",
+          "finalityPolicy": "flashblock",
+          "confirmations": 1,
+          "active": true
+        }
+      ]
+    }
+  }
 }

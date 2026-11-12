@@ -182,10 +182,11 @@ const (
 
 // StateMachineConfig houses FSM level options
 type StateMachineConfig struct {
-	InitialTokensPerBlock uint64   `json:"initialTokensPerBlock"`         // initial micro tokens minted per block (before halvenings)
-	BlocksPerHalvening    uint64   `json:"blocksPerHalvening"`            // number of blocks between block reward halvings
-	FaucetAddress         string   `json:"faucetAddress"`                 // if set: "send" txs from this address will auto-mint on insufficient funds (dev/test only)
-	RestrictedAddresses   []string `json:"restrictedAddresses,omitempty"` // additional locally restricted addresses used when voting on proposals
+	InitialTokensPerBlock uint64   `json:"initialTokensPerBlock"`           // initial micro tokens minted per block (before halvenings)
+	BlocksPerHalvening    uint64   `json:"blocksPerHalvening"`              // number of blocks between block reward halvings
+	BlockRewardsEndHeight uint64   `json:"blockRewardsEndHeight,omitempty"` // optional consensus height at which legacy core block rewards stop
+	FaucetAddress         string   `json:"faucetAddress"`                   // if set: "send" txs from this address will auto-mint on insufficient funds (dev/test only)
+	RestrictedAddresses   []string `json:"restrictedAddresses,omitempty"`   // additional locally restricted addresses used when voting on proposals
 }
 
 // DefaultStateMachineConfig returns FSM defaults
@@ -342,6 +343,8 @@ type StoreConfig struct {
 	BackupDirectory       string `json:"backupDirectory"`       // directory where backups of the database are stored
 	BackupInterval        uint64 `json:"backupInterval"`        // interval in blocks for creating backups of the database (0 to disable automatic backups)
 	CompressionProfile    string `json:"compressionProfile"`    // the pebbledb compression profile to use.
+	BlockCacheSizeMB      int    `json:"blockCacheSizeMB"`      // decompressed Pebble block cache size in MiB (zero uses 256 MiB)
+	SSTableBlockSizeKB    int    `json:"sstableBlockSizeKB"`    // Pebble data block size in KiB (zero uses 64 KiB)
 }
 
 // DefaultDataDirPath() is $USERHOME/.canopy
@@ -371,6 +374,8 @@ func DefaultStoreConfig() StoreConfig {
 		BackupDirectory:           path.Join(DefaultDataDirPath(), "backup"), // backup directory name
 		BackupInterval:            0,                                         // backups disabled by default
 		CompressionProfile:        "zstd",
+		BlockCacheSizeMB:          256,
+		SSTableBlockSizeKB:        64,
 	}
 }
 
@@ -378,21 +383,23 @@ func DefaultStoreConfig() StoreConfig {
 
 // MempoolConfig is the user configuration of the unconfirmed transaction pool
 type MempoolConfig struct {
-	MaxTotalBytes              uint64 `json:"maxTotalBytes"`              // maximum collective bytes in the pool
-	MaxTransactionCount        uint32 `json:"maxTransactionCount"`        // max number of Transactions
-	IndividualMaxTxSize        uint32 `json:"individualMaxTxSize"`        // max bytes of a single Transaction
-	DropPercentage             int    `json:"dropPercentage"`             // percentage that is dropped from the bottom of the queue if limits are reached
-	LazyMempoolCheckFrequencyS int    `json:"lazyMempoolCheckFrequencyS"` // how often the mempool is checked for new transactions besides the mandatory (after Commit) (0) for none
+	MaxTotalBytes               uint64 `json:"maxTotalBytes"`               // maximum collective bytes in the pool
+	MaxTransactionCount         uint32 `json:"maxTransactionCount"`         // max number of Transactions
+	MaxProposalTransactionCount uint32 `json:"maxProposalTransactionCount"` // local proposer execution bound; zero uses the mempool limit
+	IndividualMaxTxSize         uint32 `json:"individualMaxTxSize"`         // max bytes of a single Transaction
+	DropPercentage              int    `json:"dropPercentage"`              // percentage that is dropped from the bottom of the queue if limits are reached
+	LazyMempoolCheckFrequencyS  int    `json:"lazyMempoolCheckFrequencyS"`  // how often the mempool is checked for new transactions besides the mandatory (after Commit) (0) for none
 }
 
 // DefaultMempoolConfig() returns the developer created Mempool options
 func DefaultMempoolConfig() MempoolConfig {
 	return MempoolConfig{
-		MaxTotalBytes:              uint64(64 * units.MB),      // buffer many full 500 ms blocks
-		MaxTransactionCount:        250000,                     // roughly 25 seconds at 10K TPS
-		IndividualMaxTxSize:        uint32(4 * units.Kilobyte), // 4 KB max individual tx size
-		DropPercentage:             35,                         // drop 35% if limits are reached
-		LazyMempoolCheckFrequencyS: 2,                          // check every 2 seconds
+		MaxTotalBytes:               uint64(64 * units.MB),      // buffer many full 500 ms blocks
+		MaxTransactionCount:         250000,                     // roughly 25 seconds at 10K TPS
+		MaxProposalTransactionCount: 0,                          // preserve the governed byte-only limit unless an operator opts in
+		IndividualMaxTxSize:         uint32(4 * units.Kilobyte), // 4 KB max individual tx size
+		DropPercentage:              35,                         // drop 35% if limits are reached
+		LazyMempoolCheckFrequencyS:  2,                          // check every 2 seconds
 	}
 }
 

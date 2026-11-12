@@ -68,8 +68,11 @@ type GenesisState struct {
 	Committees *lib.CommitteesData `protobuf:"bytes,10,opt,name=committees,proto3" json:"committees,omitempty"`
 	// retired committees: a list of the chain ids that are permanently retired
 	RetiredCommittees []uint64 `protobuf:"varint,11,rep,packed,name=retired_committees,json=retiredCommittees,proto3" json:"retiredComittees"` // @gotags: json:"retiredComittees"
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	// plugin_genesis: deterministic plugin-owned genesis documents. The custom
+	// JSON codec exposes this as the raw `pluginGenesis` object.
+	PluginGenesis []byte `protobuf:"bytes,12,opt,name=plugin_genesis,json=pluginGenesis,proto3" json:"-"` // @gotags: json:"-"
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *GenesisState) Reset() {
@@ -179,12 +182,19 @@ func (x *GenesisState) GetRetiredCommittees() []uint64 {
 	return nil
 }
 
+func (x *GenesisState) GetPluginGenesis() []byte {
+	if x != nil {
+		return x.PluginGenesis
+	}
+	return nil
+}
+
 var File_genesis_proto protoreflect.FileDescriptor
 
 const file_genesis_proto_rawDesc = "" +
 	"\n" +
 	"\rgenesis.proto\x12\x05types\x1a\raccount.proto\x1a\x0fvalidator.proto\x1a\x11certificate.proto\x1a\tgov.proto\x1a\n" +
-	"swap.proto\"\xfa\x03\n" +
+	"swap.proto\"\xa1\x04\n" +
 	"\fGenesisState\x12\x12\n" +
 	"\x04time\x18\x01 \x01(\x04R\x04time\x12!\n" +
 	"\x05pools\x18\x02 \x03(\v2\v.types.PoolR\x05pools\x12*\n" +
@@ -203,7 +213,8 @@ const file_genesis_proto_rawDesc = "" +
 	"committees\x18\n" +
 	" \x01(\v2\x15.types.CommitteesDataR\n" +
 	"committees\x12-\n" +
-	"\x12retired_committees\x18\v \x03(\x04R\x11retiredCommitteesB&Z$github.com/canopy-network/canopy/fsmb\x06proto3"
+	"\x12retired_committees\x18\v \x03(\x04R\x11retiredCommittees\x12%\n" +
+	"\x0eplugin_genesis\x18\f \x01(\fR\rpluginGenesisB&Z$github.com/canopy-network/canopy/fsmb\x06proto3"
 
 var (
 	file_genesis_proto_rawDescOnce sync.Once

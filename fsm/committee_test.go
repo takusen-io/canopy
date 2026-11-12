@@ -141,6 +141,21 @@ func TestGetEconomicParameters(t *testing.T) {
 	}
 }
 
+func TestBlockRewardsEndAtConfiguredHeightWithoutChangingHistory(t *testing.T) {
+	sm := newTestStateMachine(t)
+	sm.Config.StateMachineConfig.BlockRewardsEndHeight = 100
+
+	sm.height = 99
+	_, _, total, _, err := sm.GetBlockMintStats(lib.CanopyChainId)
+	require.NoError(t, err)
+	require.NotZero(t, total)
+
+	sm.height = 100
+	_, _, _, _, err = sm.GetBlockMintStats(lib.CanopyChainId)
+	require.Error(t, err)
+	require.Equal(t, lib.CodeNoSubsidizedCommittees, err.Code())
+}
+
 func TestFundCommitteeRewardPools(t *testing.T) {
 	const (
 		minPercentForPaidCommittee = 10

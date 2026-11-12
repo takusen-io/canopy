@@ -133,14 +133,14 @@ func TestApplyBlock(t *testing.T) {
 		{
 			name:            "begin_block error",
 			detail:          "an error occurred in begin block",
-			block:           &lib.Block{BlockHeader: &lib.BlockHeader{}, Transactions: [][]byte{sendTxBytes}},
+			block:           &lib.Block{BlockHeader: &lib.BlockHeader{Time: timestamp}, Transactions: [][]byte{sendTxBytes}},
 			beginBlockError: true,
 			error:           "invalid protocol version",
 		},
 		{
 			name:   "transaction error",
 			detail: "an error occurred in the transaction",
-			block:  &lib.Block{BlockHeader: &lib.BlockHeader{}, Transactions: [][]byte{sendTxBytes}},
+			block:  &lib.Block{BlockHeader: &lib.BlockHeader{Time: timestamp}, Transactions: [][]byte{sendTxBytes}},
 			error:  "insufficient funds",
 		},
 		{
@@ -488,6 +488,40 @@ func newTestStateMachine(t *testing.T) StateMachine {
 	db.Commit()
 	require.NoError(t, sm.SetParams(DefaultParams()))
 	return sm
+}
+
+func TestPluginStateReadRangeCursorPaginatesInBothDirections(t *testing.T) {
+	sm := newTestStateMachine(t)
+	prefix := lib.JoinLenPrefix([]byte{200})
+	keys := make([][]byte, 4)
+	for index := range keys {
+		keys[index] = append(append([]byte(nil), prefix...), lib.JoinLenPrefix([]byte{byte(index + 1)})...)
+		require.NoError(t, sm.Set(keys[index], []byte{byte(index + 1)}))
+	}
+
+	read := func(reverse bool, startAfter []byte) []*lib.PluginStateEntry {
+		response, err := sm.StateRead(&lib.PluginStateReadRequest{Ranges: []*lib.PluginRangeRead{{
+			QueryId: 1, Prefix: prefix, Limit: 2, Reverse: reverse, StartAfter: startAfter,
+		}}})
+		require.NoError(t, err)
+		require.Len(t, response.Results, 1)
+		return response.Results[0].Entries
+	}
+
+	forwardFirst := read(false, nil)
+	require.Equal(t, keys[:2], [][]byte{forwardFirst[0].Key, forwardFirst[1].Key})
+	forwardSecond := read(false, forwardFirst[1].Key)
+	require.Equal(t, keys[2:], [][]byte{forwardSecond[0].Key, forwardSecond[1].Key})
+
+	reverseFirst := read(true, nil)
+	require.Equal(t, [][]byte{keys[3], keys[2]}, [][]byte{reverseFirst[0].Key, reverseFirst[1].Key})
+	reverseSecond := read(true, reverseFirst[1].Key)
+	require.Equal(t, [][]byte{keys[1], keys[0]}, [][]byte{reverseSecond[0].Key, reverseSecond[1].Key})
+
+	_, err := sm.StateRead(&lib.PluginStateReadRequest{Ranges: []*lib.PluginRangeRead{{
+		QueryId: 1, Prefix: prefix, Limit: 2, StartAfter: []byte("outside-prefix"),
+	}}})
+	require.Error(t, err)
 }
 
 func newTestAddress(t *testing.T, variation ...int) crypto.AddressI {

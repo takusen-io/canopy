@@ -78,8 +78,13 @@ message PluginConfig {
   repeated string event_type_urls = 7; // @gotags: json:"eventTypeUrls"
   // custom_state_prefixes: the store key prefixes the plugin owns for its custom records (each entry
   // is the raw prefix bytes, e.g. [100] for faucet). Canopy panics at handshake if any collides with
-  // a core-reserved prefix (1-15), preventing silent state corruption from colliding keyspaces.
+  // a core-reserved prefix (1-16), preventing silent state corruption from colliding keyspaces.
   repeated bytes custom_state_prefixes = 8; // @gotags: json:"customStatePrefixes"
+  // validator_set_epochs: when true, the plugin controls validator-set epoch boundaries.
+  bool validator_set_epochs = 9; // @gotags: json:"validatorSetEpochs"
+  // governance_parameter_spaces: standard Canopy MessageChangeParameter spaces
+  // delegated to this plugin after the native proposal lifecycle approves them.
+  repeated string governance_parameter_spaces = 10; // @gotags: json:"governanceParameterSpaces"
 }
 
 // PluginFSMConfig is the identity information of the plugin that is communicated from the fsm to the plugin
@@ -99,6 +104,12 @@ message PluginBeginRequest {
   // previous_block_hash is the finalized predecessor used by deterministic
   // application assignment. It is supplied by core, never by a transaction.
   bytes previous_block_hash = 2;
+  // validator_set is the exact frozen Canopy committee for this block. Its
+  // compact encoding is version || chain_id || count || members.
+  bytes validator_set = 3;
+  // next_validator_set is the core-frozen next committee once the handoff
+  // cutoff has been reached; empty before preparation.
+  bytes next_validator_set = 4;
 }
 
 // PluginBeginResponse acknowledges begin block execution
@@ -120,8 +131,15 @@ message PluginCheckResponse {
   PluginError error = 99;
 }
 
-// PluginDeliverRequest carries a transaction and its execution height to be processed
-message PluginDeliverRequest {Transaction tx = 1; uint64 height = 2;}
+// PluginDeliverRequest carries either a plugin transaction or a native-governance-approved
+// parameter update. Governance fields are populated only by the core FSM, never from tx calldata.
+message PluginDeliverRequest {
+  Transaction tx = 1;
+  uint64 height = 2;
+  string governance_parameter_space = 3;
+  string governance_parameter_key = 4;
+  bytes governance_parameter_value = 5;
+}
 
 // PluginDeliverResponse acknowledges transaction delivery
 message PluginDeliverResponse {
@@ -133,11 +151,17 @@ message PluginDeliverResponse {
 message PluginEndRequest {
   uint64 height = 1;
   bytes proposer_address = 2;
+  uint64 time_micros = 3;
 }
 
 // PluginEndResponse acknowledges end block execution
 message PluginEndResponse {
   repeated Event events = 1;
+  // validator_set_epoch_end: the current block is the final block of the governed validator-set epoch.
+  bool validator_set_epoch_end = 2; // @gotags: json:"validatorSetEpochEnd"
+  // validator_set_epoch_prepare freezes the next core committee while the
+  // current committee is still authoritative for cross-chain handoff proofs.
+  bool validator_set_epoch_prepare = 3; // @gotags: json:"validatorSetEpochPrepare"
   PluginError error = 99;
 }
 
@@ -194,6 +218,9 @@ message PluginRangeRead {
   uint64 limit = 3;
   // reverse: whether to iterate in reverse order
   bool reverse = 4;
+  // start_after resumes strictly after this full state key in the requested
+  // direction. It must belong to the same prefix.
+  bytes start_after = 5; // @gotags: json:"startAfter"
 }
 
 // PluginStateReadResponse returns the results for the read requests

@@ -40,6 +40,12 @@ func (s *StateMachine) GetBlockMintStats(chainId uint64) (subsidizedChainIds []u
 	if s.Config.BlocksPerHalvening == 0 {
 		return nil, 0, 0, 0, lib.ErrInvalidArgument()
 	}
+	// Networks that settle protocol rewards elsewhere can stop the legacy core
+	// subsidy at an explicit height without changing historical replay. A plain
+	// config change to InitialTokensPerBlock would alter every prior state root.
+	if s.Config.BlockRewardsEndHeight != 0 && s.height >= s.Config.BlockRewardsEndHeight {
+		return nil, 0, 0, 0, lib.ErrNoSubsidizedCommittees(chainId)
+	}
 	// get governance params that are needed to complete this operation
 	govParams, err := s.GetParamsGov()
 	if err != nil {

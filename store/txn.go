@@ -69,6 +69,7 @@ type op uint8
 type TxnReaderI interface {
 	Get(key []byte) ([]byte, lib.ErrorI)
 	NewIterator(prefix []byte, reverse bool, seek bool) (lib.IteratorI, lib.ErrorI)
+	NewIteratorFrom(prefix, startAfter []byte, reverse bool, seek bool) (lib.IteratorI, lib.ErrorI)
 	Close() lib.ErrorI
 }
 
@@ -276,6 +277,24 @@ func (t *Txn) NewIterator(prefix []byte, reverse bool, seek bool) (lib.IteratorI
 	return newTxnIterator(parentIterator, t.txn, prefix, t.prefix, reverse), nil
 }
 
+// NewIteratorFrom creates a merged iterator positioned at the continuation
+// key in both the parent versioned store and this transaction's in-memory
+// index. The caller excludes the cursor itself.
+func (t *Txn) NewIteratorFrom(prefix, startAfter []byte, reverse bool, seek bool) (lib.IteratorI, lib.ErrorI) {
+	parentIterator, err := t.reader.NewIteratorFrom(
+		lib.Append(t.prefix, prefix), lib.Append(t.prefix, startAfter), reverse, seek,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return newTxnIteratorFrom(parentIterator, t.txn, prefix, t.prefix, reverse, startAfter), nil
+}
+
+// IteratorFrom resumes prefix iteration at a full-key cursor.
+func (t *Txn) IteratorFrom(prefix, startAfter []byte, reverse bool) (lib.IteratorI, lib.ErrorI) {
+	return t.NewIteratorFrom(prefix, startAfter, reverse, true)
+}
+
 // newSubtreeStore creates a lightweight store for a parallel SMT subtree.
 // Reads check: (1) the subtree's own ops, (2) the parent Txn's ops, then
 // (3) an independent PebbleDB reader. Writes go only to the subtree's ops.
@@ -429,20 +448,32 @@ type TxnIterator struct {
 
 // newTxnIterator() initializes a new merged iterator for traversing both the in-memory operations and parent store
 func newTxnIterator(parent lib.IteratorI, t *txn, prefix []byte, parentPrefix []byte, reverse bool) *TxnIterator {
+	return newTxnIteratorFrom(parent, t, prefix, parentPrefix, reverse, nil)
+}
+
+func newTxnIteratorFrom(parent lib.IteratorI, t *txn, prefix []byte, parentPrefix []byte, reverse bool, startAfter []byte) *TxnIterator {
+	start := prefix
+	if len(startAfter) != 0 {
+		start = startAfter
+	}
 	tree := NewBTreeIterator(t.sorted.Clone(),
 		&CacheItem{
-			Key: prefix,
+			Key: start,
 		},
 		reverse)
 
-	return (&TxnIterator{
+	iterator := &TxnIterator{
 		parent:       parent,
 		tree:         tree,
 		txn:          t,
 		prefix:       prefix,
 		reverse:      reverse,
 		parentPrefix: parentPrefix,
-	}).First()
+	}
+	if len(startAfter) == 0 {
+		return iterator.First()
+	}
+	return iterator
 }
 
 // First() positions the iterator at the first valid entry based on the traversal direction

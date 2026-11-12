@@ -9,6 +9,7 @@
 *.dylib
 /main
 /signer
+/build/
 .cache
 # Test binary, built with `go test -c`
 *.test

@@ -1,5 +1,12 @@
 <img src="./canopy-logo-white-bg.svg" alt="Canopy Logo" width="500"/>
 
+Takusen's canonical Native Chain state machine is maintained by
+[`takusen-io/canopy`](https://github.com/takusen-io/canopy) on the
+`takusen-integration` branch. Takusen releases must be built from a clean,
+published commit on that branch with `scripts/build-takusen-release.sh`; the
+script performs two independent builds and emits source and artifact hashes.
+The upstream Canopy branches are not Takusen deployment sources.
+
 _Official golang implementation of the Canopy Network Protocol_
 
 [![GoDoc](https://img.shields.io/badge/godoc-reference-white.svg)](https://godoc.org/github.com/canopy-network/canopy)

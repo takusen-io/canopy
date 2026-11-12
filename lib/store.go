@@ -94,6 +94,13 @@ type RStoreI interface {
 	RevIterator(prefix []byte) (IteratorI, ErrorI) // iterate through the date on KV pair at a time in reverse lexicographical order
 }
 
+// CursorRStoreI supports an indexed continuation seek within a prefix. The
+// returned iterator may include startAfter itself; callers exclude it while
+// preserving O(log N + page size) page traversal.
+type CursorRStoreI interface {
+	IteratorFrom(prefix, startAfter []byte, reverse bool) (IteratorI, ErrorI)
+}
+
 // ProveStoreI defines an interface
 type ProveStoreI interface {
 	GetProof(key []byte) (proof []*Node, err ErrorI) // Get gets the bytes for a compact merkle proof

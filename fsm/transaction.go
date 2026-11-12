@@ -57,6 +57,16 @@ func (s *StateMachine) applyTransaction(index uint64, transaction []byte, txHash
 	}()
 	// if the transaction is meant for the plugin
 	if result.plugin && s.Plugin != nil {
+		// Plugin state writes share the transaction's nested store, so charging
+		// before delivery is atomic: a delivery failure discards both fee and
+		// plugin writes, while success flushes both together.
+		deductFeesStartTime := time.Now()
+		if err = s.AccountDeductFees(result.sender, result.tx.Fee); err != nil {
+			return nil, nil, err
+		}
+		if s.Metrics != nil {
+			s.Metrics.ApplyTransactionStageTime.WithLabelValues("deduct_fees", messageType).Observe(time.Since(deductFeesStartTime).Seconds())
+		}
 		// route to plugin
 		pluginDeliverStartTime := time.Now()
 		resp, e := s.Plugin.DeliverTx(s, &lib.PluginDeliverRequest{Tx: result.tx, Height: s.Height()})
@@ -176,6 +186,9 @@ func (s *StateMachine) checkTx(tx *lib.Transaction, txHash string, batchVerifier
 		}
 		// set various result variables
 		authorizedSigners, recipient, plugin = resp.AuthorizedSigners, resp.Recipient, true
+		if err = s.CheckPluginFee(tx.Fee); err != nil {
+			return
+		}
 	} else {
 		// perform basic validations against the message payload
 		msg, err = s.CheckMessage(tx.Msg)
@@ -464,6 +477,24 @@ func (s *StateMachine) CheckFee(fee uint64, msg lib.MessageI) (err lib.ErrorI) {
 	}
 	// exit
 	return
+}
+
+// CheckPluginFee applies the governed send-fee floor to every plugin
+// transaction. A one-unit fail-safe prevents governance from accidentally
+// reopening fee-free state growth by configuring sendFee to zero.
+func (s *StateMachine) CheckPluginFee(fee uint64) lib.ErrorI {
+	params, err := s.GetParamsFee()
+	if err != nil {
+		return err
+	}
+	minimum := params.SendFee
+	if minimum == 0 {
+		minimum = 1
+	}
+	if fee < minimum {
+		return ErrTxFeeBelowStateLimit()
+	}
+	return nil
 }
 
 // HandleSpecialMessageFields() populates special message fields based on the message type

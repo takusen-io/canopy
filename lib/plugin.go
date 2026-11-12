@@ -41,6 +41,8 @@ type Plugin struct {
 	requestFSMs   map[uint64]PluginCompatibleFSM        // maps request IDs to their FSM context for concurrent operations
 	queryProvider PluginQueryProvider                   // serves detached, read-only state queries from the plugin
 	l             sync.Mutex                            // thread safety
+	ready         chan struct{}                         // closed after the plugin config handshake completes
+	readyOnce     sync.Once                             // protects ready from duplicate config messages
 	log           LoggerI                               // the logger associated with the plugin
 	timeout       time.Duration                         // plugin request timeout
 }
@@ -56,6 +58,7 @@ func NewPlugin(conn net.Conn, log LoggerI, timeout time.Duration) (p *Plugin) {
 		pending:     map[uint64]chan isPluginToFSM_Payload{},
 		requestFSMs: map[uint64]PluginCompatibleFSM{},
 		l:           sync.Mutex{},
+		ready:       make(chan struct{}),
 		log:         log,
 		timeout:     timeout,
 	}
@@ -67,6 +70,21 @@ func NewPlugin(conn net.Conn, log LoggerI, timeout time.Duration) (p *Plugin) {
 	log.Debugf("Started plugin listening service for connection: %s", conn.RemoteAddr())
 	// exit
 	return
+}
+
+// WaitForConfig blocks startup until the plugin's schema/config handshake is
+// complete. Calling plugin methods before this point intentionally behaves as
+// if no plugin is configured, which is unsafe for genesis initialization.
+func (p *Plugin) WaitForConfig() ErrorI {
+	if p == nil {
+		return ErrInvalidPluginConfig()
+	}
+	select {
+	case <-p.ready:
+		return nil
+	case <-time.After(p.timeout):
+		return ErrPluginTimeout()
+	}
 }
 
 // SetQueryProvider() registers the provider that serves detached, read-only state queries from the plugin
@@ -241,6 +259,18 @@ func (p *Plugin) SupportsTransaction(name string) bool {
 	return supported
 }
 
+// ManagesValidatorSetEpochs reports whether the plugin supplies the canonical
+// epoch-boundary signal used to freeze consensus membership and voting power.
+func (p *Plugin) ManagesValidatorSetEpochs() bool {
+	return p != nil && p.config != nil && p.config.ValidatorSetEpochs
+}
+
+// SupportsGovernanceParameterSpace reports whether native Canopy governance
+// may delegate an approved parameter update to this plugin.
+func (p *Plugin) SupportsGovernanceParameterSpace(space string) bool {
+	return p != nil && p.config != nil && slices.Contains(p.config.GovernanceParameterSpaces, space)
+}
+
 // ListenForInbound() routes inbound requests from the plugin
 func (p *Plugin) ListenForInbound() {
 	// debug log listener start
@@ -334,6 +364,7 @@ func (p *Plugin) handleConfigMessage(msg *PluginToFSM) ErrorI {
 		p.log.Debugf("handleConfigMessage() error sending config response: %v", err)
 	} else {
 		p.log.Debug("handleConfigMessage() config acknowledgment sent successfully")
+		p.readyOnce.Do(func() { close(p.ready) })
 	}
 	return err
 }
@@ -342,7 +373,7 @@ func (p *Plugin) handleConfigMessage(msg *PluginToFSM) ErrorI {
 // reserves the contiguous single-byte prefixes 1..CoreReservedPrefixMax (accounts, pools, validators,
 // committees, params, ...). Plugins share the FSM keyspace, so their OWN custom records MUST use key
 // prefixes OUTSIDE this range. Kept intentionally in sync with the prefixes defined in fsm/key.go.
-const CoreReservedPrefixMax = 15
+const CoreReservedPrefixMax = 16
 
 // assertNoReservedPrefixCollision panics if the plugin config declares a custom state prefix that
 // collides with a core-reserved prefix. A collision is a single-byte prefix in the range

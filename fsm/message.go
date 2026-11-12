@@ -310,6 +310,23 @@ func (s *StateMachine) HandleMessageChangeParameter(msg *MessageChangeParameter)
 	if err != nil {
 		return err
 	}
+	if s.Plugin != nil && s.Plugin.SupportsGovernanceParameterSpace(msg.ParameterSpace) {
+		value, ok := protoMsg.(*lib.StringWrapper)
+		if !ok {
+			return ErrUnknownParamType(protoMsg)
+		}
+		response, pluginErr := s.Plugin.DeliverTx(s, &lib.PluginDeliverRequest{
+			Height: s.Height(), GovernanceParameterSpace: msg.ParameterSpace,
+			GovernanceParameterKey: msg.ParameterKey, GovernanceParameterValue: []byte(value.Value),
+		})
+		if pluginErr != nil {
+			return pluginErr
+		}
+		if pluginErr = response.Error.E(); pluginErr != nil {
+			return pluginErr
+		}
+		return s.addPluginEvents(response.Events)
+	}
 	// update the parameter
 	return s.UpdateParam(msg.ParameterSpace, msg.ParameterKey, protoMsg)
 }

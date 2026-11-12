@@ -472,10 +472,24 @@ func (s *StateMachine) getValidatorSet(chainId uint64, delegate bool) (vs lib.Va
 		}
 	}
 	defer observeStage("total", startTime)
+	if !delegate {
+		if frozen, found, frozenErr := s.frozenValidatorSet(chainId); found || frozenErr != nil {
+			return frozen, frozenErr
+		}
+	}
+	validators, err := s.getCurrentValidators()
+	if err != nil {
+		return vs, err
+	}
+	return s.deriveValidatorSet(validators, chainId, delegate)
+}
+
+// deriveValidatorSet builds a committee from mutable validator accounting
+// state. Epoch activation persists its result; ordinary reads use the persisted
+// snapshot and cannot observe mid-epoch mutations.
+func (s *StateMachine) deriveValidatorSet(validators []*Validator, chainId uint64, delegate bool) (vs lib.ValidatorSet, err lib.ErrorI) {
 	// get the validator params
-	getParamsStartTime := time.Now()
 	p, err := s.GetParamsVal()
-	observeStage("get_params", getParamsStartTime)
 	if err != nil {
 		return
 	}
@@ -483,14 +497,7 @@ func (s *StateMachine) getValidatorSet(chainId uint64, delegate bool) (vs lib.Va
 	if delegate {
 		maxPerCommittee, delegateFilter = p.MaximumDelegatesPerCommittee, lib.FilterOption_MustBe
 	}
-	iterateUnmarshalStartTime := time.Now()
-	validators, err := s.getCurrentValidators()
-	if err != nil {
-		return vs, err
-	}
-	observeStage("iterate_unmarshal", iterateUnmarshalStartTime)
 	// filter out validators not part of the committee
-	filterStartTime := time.Now()
 	filtered := slices.Collect(func(yield func(*Validator) bool) {
 		for _, v := range validators {
 			// exclude validators not part of the committee
@@ -508,9 +515,7 @@ func (s *StateMachine) getValidatorSet(chainId uint64, delegate bool) (vs lib.Va
 			}
 		}
 	})
-	observeStage("filter", filterStartTime)
 	// sort by highest stake then address
-	sortStartTime := time.Now()
 	slices.SortFunc(filtered, func(a, b *Validator) int {
 		result := cmp.Compare(b.StakedAmount, a.StakedAmount)
 		if result == 0 {
@@ -518,7 +523,6 @@ func (s *StateMachine) getValidatorSet(chainId uint64, delegate bool) (vs lib.Va
 		}
 		return result
 	})
-	observeStage("sort", sortStartTime)
 	// create a variable to hold the committee members
 	members := make([]*lib.ConsensusValidator, 0)
 	// determine slice size — if MaxCommitteeSize == 0, use all
@@ -527,7 +531,6 @@ func (s *StateMachine) getValidatorSet(chainId uint64, delegate bool) (vs lib.Va
 		limit = min(uint64(len(filtered)), maxPerCommittee)
 	}
 	// for each validator up to the limit
-	buildMembersStartTime := time.Now()
 	for _, v := range filtered[:limit] {
 		members = append(members, &lib.ConsensusValidator{
 			PublicKey:   v.PublicKey,
@@ -535,11 +538,8 @@ func (s *StateMachine) getValidatorSet(chainId uint64, delegate bool) (vs lib.Va
 			NetAddress:  v.NetAddress,
 		})
 	}
-	observeStage("build_members", buildMembersStartTime)
 	// convert list to a validator set (includes shared public key)
-	newValidatorSetStartTime := time.Now()
 	vs, err = lib.NewValidatorSet(&lib.ConsensusValidators{ValidatorSet: members}, delegate)
-	observeStage("new_validator_set", newValidatorSetStartTime)
 	return
 }
 

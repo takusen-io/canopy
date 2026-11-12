@@ -42,6 +42,18 @@ func (b *BFT) GetMajorityVote() (m *Message, sig *lib.AggregateSignature, err li
 	return nil, nil, lib.ErrNoMaj23()
 }
 
+// AllVotingPowerReceived reports whether every validator has signed the payload that reached
+// quorum in the preceding phase. It is used only to maximize healthy signer participation; a
+// quorum remains sufficient for safety and liveness once the bounded collection window expires.
+func (b *BFT) AllVotingPowerReceived() bool {
+	for _, voteSet := range b.Votes[b.View.Round][phaseToString(b.View.Phase-1)] {
+		if voteSet.TotalVotedPower >= b.ValidatorSet.TotalPower {
+			return true
+		}
+	}
+	return false
+}
+
 // GetLeadingVote() returns the unique Vote Message that has the most power behind it and the number and percent voted that voted for it
 func (b *BFT) GetLeadingVote() (m *Message, maxVotePercent uint64, maxVotes uint64) {
 	for _, voteSet := range b.Votes[b.View.Round][phaseToString(b.View.Phase-1)] {

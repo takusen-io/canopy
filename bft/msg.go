@@ -255,7 +255,11 @@ func (b *BFT) CheckProposerMessage(x *Message, p *validateMessageParams) (isPart
 	} else {
 		// in PRECOMMIT or COMMIT phase
 		if p.blockHash == nil || p.resultsHash == nil {
-			return false, lib.ErrNoSavedBlockOrResults()
+			// Consensus messages can overtake the larger PROPOSE payload on the wire.
+			// The signature and quorum certificate above authenticate this message;
+			// retain it until the proposal is validated, then
+			// CheckProposerAndProposal compares these hashes before voting or commit.
+			return false, nil
 		}
 		// PROPOSE-VOTE and PRECOMMIT-VOTE Replica message
 		if !bytes.Equal(x.Qc.BlockHash, p.blockHash) {

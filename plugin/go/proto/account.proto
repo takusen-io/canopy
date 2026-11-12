@@ -53,15 +53,23 @@ message EnclaveKey {
   bool active = 9;
 }
 
+message SettlementPayout {
+  bytes settlement_domain_id = 1;
+  bytes address = 2;
+}
+
 message Servicer {
   bytes owner_address = 1;
-  bytes payout_address = 2;
+  repeated SettlementPayout payouts = 2;
   string tee_key_id = 3;
   repeated string models = 4;
   uint64 bond = 5;
   bool active = 6;
   uint64 registered_height = 7;
   uint64 failure_count = 8;
+  bool auto_compound = 9;
+  uint64 accrued_rewards = 10;
+  uint64 total_slashed = 11;
 }
 
 message Assignment {
@@ -70,26 +78,40 @@ message Assignment {
   uint32 attempt = 3;
   bool completed = 4;
   string execution_id = 5;
+  uint64 deadline_height = 6;
+  string tee_key_id = 7;
+  string provider = 8;
+  string terminal_status = 9;
+  uint64 max_provider_cost = 10;
 }
 
 message RequestRecord {
+  reserved 4, 8, 14, 18, 22, 23, 25;
   string request_id = 1;
   bytes input_hash = 2;
   bytes requester = 3;
-  uint64 reserved_budget = 4;
   string output_type = 5;
   repeated string models = 6;
+  // Display-only agreement observation threshold.
   uint32 execution_quorum = 7;
-  bytes base_tx_hash = 8;
   uint64 deadline_height = 9;
   uint64 authorized_height = 10;
   bytes assignment_seed = 11;
   repeated Assignment assignments = 12;
   string status = 13;
-  uint64 spent = 14;
   bytes consensus_output_hash = 15;
   uint32 agreement_count = 16;
-  bytes base_settlement_tx_hash = 17;
+  bytes settlement_tx_hash = 17;
+  uint64 parameter_revision = 19;
+  uint32 foundation_fee_bps = 20;
+  uint32 servicer_margin_bps = 21;
+  bytes authorization_signature_hash = 24;
+  string request_archive_id = 26;
+  bytes settlement_domain_id = 27;
+  int64 output_minimum = 28;
+  int64 output_maximum = 29;
+  repeated string output_choices = 30;
+  bytes schema_hash = 31;
 }
 
 message ExecutionRecord {
@@ -105,22 +127,27 @@ message ExecutionRecord {
   bytes receipt_digest = 10;
   string archive_id = 11;
   uint64 committed_height = 12;
-}
-
-message SettlementRecord {
-  string request_id = 1;
-  repeated ExecutionRecord executions = 2;
-  uint64 total_cost = 3;
-  bytes settlement_digest = 4;
-  uint64 completed_height = 5;
-  string status = 6;
-  bytes base_tx_hash = 7;
+  uint64 provider_cost = 13;
+  uint64 servicer_margin = 14;
+  uint64 foundation_fee = 15;
+  string provider = 16;
+  bytes receipt_signature = 17;
+  bytes settlement_tx_hash = 18;
+  bool settled = 19;
+  bytes settlement_domain_id = 20;
 }
 
 message Observation {
   bytes subject_hash = 1;
   bytes observer_address = 2;
   uint64 observed_height = 3;
+  bytes claim_hash = 4;
+  // Immutable committee snapshot that authorized this vote. Votes from
+  // different epochs or validator sets are never combined.
+  uint64 validator_set_id = 5;
+  uint64 observer_weight = 6;
+  uint64 total_weight = 7;
+  uint64 validator_epoch = 8;
 }
 
 message BlockAnchor {
@@ -128,31 +155,277 @@ message BlockAnchor {
   bytes previous_block_hash = 2;
 }
 
-// QuorumProof is the finalized, Base-consumable BDN proof for one exact
-// domain-separated digest. Public keys and signatures retain Canopy's compact
-// encoding while the EIP-2537 fields use the uncompressed 64-byte-coordinate
-// encoding expected by the Base precompiles.
-message QuorumProofMember {
-  bytes address = 1;
-  bytes public_key = 2;
-  bytes weighted_public_key_eip2537 = 3;
-  uint64 weight = 4;
+message DepositRecord {
+  bytes chain_tx_hash = 1;
+  bytes requester = 2;
+  uint64 amount = 3;
+  uint64 observed_height = 4;
+  string status = 5;
+  uint64 resolved_height = 6;
+  bytes settlement_domain_id = 7;
+  bytes token_amount = 8;
 }
 
+message CreditAccount {
+  bytes requester = 1;
+  uint64 deposited = 2;
+  uint64 reserved = 3;
+  uint64 settled = 4;
+  uint64 released = 5;
+  uint64 provisional = 6;
+  uint64 provisional_reserved = 7;
+  uint64 reorged = 8;
+  bytes settlement_domain_id = 9;
+}
+
+message ReservationRecord {
+  reserved 7, 8, 9;
+  string request_id = 1;
+  bytes requester = 2;
+  uint64 budget = 3;
+  uint64 spent = 4;
+  uint64 released = 5;
+  string status = 6;
+  uint64 reserved_height = 10;
+  uint64 released_height = 11;
+  uint64 authorization_deadline = 12;
+  uint64 provisional_budget = 13;
+  bytes settlement_domain_id = 14;
+}
+
+message SettlementDomain {
+  bytes id = 1;
+  uint64 chain_id = 2;
+  bytes token_address = 3;
+  bytes escrow_address = 4;
+  bytes verifier_address = 5;
+  bytes foundation_treasury_address = 6;
+  uint32 token_decimals = 7;
+  string network = 8;
+  repeated string deposit_mechanisms = 9;
+  string finality_policy = 10;
+  uint32 confirmations = 11;
+  bool active = 12;
+  string authorization_name = 13;
+  string authorization_version = 14;
+}
+
+message ModelParams {
+  string model = 1;
+  string provider = 2;
+  reserved 3, 4;
+  uint64 maximum_execution_budget = 5;
+  bool active = 6;
+}
+
+message PCRPolicy {
+  bytes pcr0 = 1;
+  bytes pcr1 = 2;
+  bytes pcr2 = 3;
+  bool active = 4;
+}
+
+// ProtocolParams is replaced atomically by a validator-quorum governance
+// observation. Revision must increase by exactly one, preventing stale or
+// replayed parameter changes.
+message ProtocolParams {
+  uint64 revision = 1;
+  repeated ModelParams models = 2;
+  repeated PCRPolicy approved_pcrs = 3;
+  uint32 foundation_fee_bps = 4;
+  uint32 servicer_margin_bps = 5;
+  uint32 quorum_numerator = 6;
+  uint32 quorum_denominator = 7;
+  uint64 authorization_deadline_blocks = 8;
+  uint64 execution_timeout_blocks = 9;
+  uint32 retry_limit = 10;
+  uint64 minimum_servicer_bond = 11;
+  uint64 minimum_validator_bond = 12;
+  uint32 timeout_slash_bps = 13;
+  uint32 invalid_receipt_slash_bps = 14;
+  uint64 epoch_blocks = 15;
+  uint64 unbonding_epochs = 16;
+  uint64 emission_per_epoch = 17;
+  bytes treasury_address = 18;
+  uint32 treasury_bps = 19;
+  uint64 canonical_chain_id = 20;
+  bytes canonical_token_address = 21;
+  bytes canonical_bridge_address = 22;
+  uint64 validator_set_id = 23;
+  uint64 bridge_epoch_mint_limit = 24;
+  uint64 bridge_transfer_limit = 25;
+  uint64 settlement_interval_blocks = 26;
+  repeated string supported_output_schemas = 27;
+  repeated string default_models = 28;
+  reserved 29;
+  uint64 validator_handoff_lead_blocks = 30;
+  repeated SettlementDomain settlement_domains = 31;
+  bool require_nitro_attestation = 32;
+  // Wall-clock notice for a changed-roster EVM schedule. This is independent
+  // of Canopy block cadence and must exceed every supported verifier minimum.
+  uint64 validator_handoff_notice_seconds = 33;
+}
+
+message StakeChange {
+  bytes owner_address = 1;
+  uint64 target_bond = 2;
+  bool active = 3;
+  bool auto_compound = 4;
+  uint64 effective_epoch = 5;
+  uint64 locked_increase = 6;
+}
+
+message UnbondingRecord {
+  bytes owner_address = 1;
+  uint64 sequence = 2;
+  uint64 amount = 3;
+  uint64 release_epoch = 4;
+  bool withdrawn = 5;
+}
+
+message SlashEvidence {
+  bytes evidence_id = 1;
+  bytes target_address = 2;
+  string reason = 3;
+  uint64 penalty = 4;
+  uint64 observed_height = 5;
+  uint64 effective_epoch = 6;
+  string status = 7;
+}
+
+message ProducerPayout {
+  bytes owner_address = 1;
+  bytes canonical_chain_address = 2;
+}
+
+message ProducerRecord {
+  uint64 epoch = 1;
+  bytes producer_address = 2;
+  uint64 blocks = 3;
+}
+
+// ProducerIdentity is created only by end-block processing after an address
+// actually proposes a block. It cannot be created by a user transaction.
+message ProducerIdentity {
+  bytes owner_address = 1;
+}
+
+message RewardAllocation {
+  bytes producer_address = 1;
+  bytes canonical_chain_recipient = 2;
+  uint64 blocks = 3;
+  uint64 amount = 4;
+  bool compounded = 5;
+}
+
+message EpochAuthorization {
+  uint64 epoch = 1;
+  uint64 start_height = 2;
+  uint64 end_height = 3;
+  uint64 validator_set_id = 4;
+  repeated RewardAllocation allocations = 5;
+  bytes treasury_address = 6;
+  uint64 treasury_amount = 7;
+  uint64 producer_amount = 8;
+  uint64 total_amount = 9;
+  bytes canonical_chain_digest = 10;
+  string status = 11;
+  uint64 compounded_amount = 12;
+  bytes canonical_chain_mint_tx_hash = 13;
+}
+
+// EpochClock keeps epoch numbering monotonic when governance changes the
+// number of blocks in an epoch. A new duration takes effect at the next epoch
+// boundary instead of reinterpreting historical heights.
+message EpochClock {
+  uint64 current_epoch = 1;
+  uint64 start_height = 2;
+  uint64 end_height = 3;
+  uint64 validator_set_id = 4;
+  // Scheduling values are snapshotted when the epoch begins. Governance
+  // updates affect only the following epoch.
+  uint64 epoch_blocks = 5;
+  uint64 validator_handoff_lead_blocks = 6;
+  bool validator_handoff_prepared = 7;
+  // Unix seconds at which scheduled EVM verifiers permanently stop accepting
+  // the outgoing committee until incoming activation.
+  uint64 validator_handoff_timestamp = 8;
+  // The domain set is frozen with the prepared validator roster. Governance
+  // edits apply to a later handoff and cannot rewrite an in-flight generation.
+  repeated bytes validator_handoff_domains = 9;
+  uint64 validator_handoff_attempt = 10;
+  uint64 consensus_time_seconds = 11;
+  uint64 validator_handoff_notice_seconds = 12;
+}
+
+message BridgeState {
+  uint64 outbound_nonce = 1;
+  uint64 mint_epoch = 2;
+  uint64 minted_in_epoch = 3;
+}
+
+message BridgeMint {
+  bytes canonical_chain_tx_hash = 1;
+  uint64 nonce = 2;
+  bytes canonical_chain_sender = 3;
+  bytes recipient = 4;
+  uint64 amount = 5;
+  uint64 observed_height = 6;
+}
+
+message BridgeBurn {
+  bytes burn_id = 1;
+  uint64 nonce = 2;
+  bytes owner_address = 3;
+  bytes canonical_chain_recipient = 4;
+  uint64 amount = 5;
+  uint64 burned_height = 6;
+  uint64 validator_set_id = 7;
+  bytes canonical_chain_digest = 8;
+  string status = 9;
+  bytes canonical_chain_release_tx_hash = 10;
+  uint64 release_validator_set_id = 11;
+}
+
+message ReplayMarker {
+  bytes id = 1;
+}
+
+// SettlementDomainLifecycleIntent is created only by Canopy's standard
+// changeParameter governance lifecycle. Observer credentials cannot create or
+// modify it; they may sign only the exact action while this intent is live.
+message SettlementDomainLifecycleIntent {
+  bytes id = 1;
+  bytes settlement_domain_id = 2;
+  bytes deactivation_generation = 3;
+  string action = 4;
+  uint64 nonce = 5;
+  uint64 expires_at_epoch = 6;
+}
+
+// QuorumProof is the finalized, EVM-consumable BDN proof for one exact
+// domain-separated digest. Public keys and signatures retain Canopy's compact
+// encoding while the EIP-2537 fields use the uncompressed 64-byte-coordinate
+// encoding expected by the EIP-2537 precompiles.
 message QuorumProof {
+  reserved 4, 6, 7, 9, 15;
   string proof_kind = 1;
   bytes proof_id = 2;
   bytes digest = 3;
-  bytes message = 4;
   uint64 validator_set_id = 5;
-  bytes validator_set_hash = 6;
-  repeated QuorumProofMember members = 7;
   bytes signer_bitmap = 8;
-  bytes aggregate_signature = 9;
   bytes aggregate_signature_eip2537 = 10;
   uint64 signed_weight = 11;
   uint64 total_weight = 12;
   uint64 completed_height = 13;
+  uint64 new_validator_set_id = 14;
+  uint64 rotation_nonce = 16;
+  bytes settlement_domain_id = 17;
+  bytes handoff_generation = 18;
+  uint64 handoff_timestamp = 19;
+  uint64 control_block_number = 20;
+  bytes control_block_hash = 21;
+  bytes lifecycle_intent_id = 22;
 }
 
 message QuorumSignatureShare {

@@ -54,12 +54,15 @@ func TestBDNEIP2537CrossLanguageVector(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(proof.Members) != 2 || len(proof.Members[0].WeightedPublicKeyEip2537) != 128 ||
-		len(proof.AggregateSignatureEip2537) != 256 || hex.EncodeToString(proof.SignerBitmap) != "03" {
+	if len(proof.AggregateSignatureEip2537) != 256 || hex.EncodeToString(proof.SignerBitmap) != "03" {
 		t.Fatalf("invalid exported proof shape: %+v", proof)
 	}
 	t.Logf("digest=%s", hex.EncodeToString(digest[:]))
-	t.Logf("key0=%s", hex.EncodeToString(proof.Members[0].WeightedPublicKeyEip2537))
-	t.Logf("key1=%s", hex.EncodeToString(proof.Members[1].WeightedPublicKeyEip2537))
 	t.Logf("signature=%s", hex.EncodeToString(proof.AggregateSignatureEip2537))
+}
+
+func TestRequestFinalizationProofKindIsAllowed(t *testing.T) {
+	if !allowedProofKinds["request-finalization"] {
+		t.Fatal("request-finalization quorum certificates must be accepted")
+	}
 }

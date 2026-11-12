@@ -1,6 +1,7 @@
 package fsm
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
 	"fmt"
@@ -30,6 +31,7 @@ type StateMachine struct {
 	ProtocolVersion    uint64                                  // the version of the protocol this node is running
 	NetworkID          uint32                                  // the id of the network this node is configured to be on
 	height             uint64                                  // the 'version' of the state based on number of blocks currently on
+	blockTimeMicros    uint64                                  // consensus timestamp of the block currently being applied
 	totalVDFIterations uint64                                  // the number of 'verifiable delay iterations' in the blockchain up to this version
 	slashTracker       *SlashTracker                           // tracks total slashes across multiple blocks
 	proposeVoteConfig  GovProposalVoteConfig                   // the configuration of how the state machine behaves with governance proposals
@@ -40,6 +42,9 @@ type StateMachine struct {
 	cache              *cache                                  // the state machine cache
 	LastValidatorSet   map[uint64]map[uint64]*lib.ValidatorSet // reference to the last validator set saved in the controller
 	Plugin             *lib.Plugin                             // extensible plugin for the FSM
+	freshGenesis       bool                                    // true until controller startup finishes genesis initialization
+	genesisCommitReady bool                                    // false while core genesis waits for the configured plugin
+	pluginGenesisReady bool                                    // true once the configured plugin applied its genesis document
 }
 
 type rootCacheStateStore interface {
@@ -100,7 +105,10 @@ func newStateMachine(c lib.Config, store lib.StoreI, plugin *lib.Plugin, metrics
 	}
 	// if genesis - reset the store
 	if genesis {
-		sm.Reset()
+		sm.freshGenesis = true
+		if sm.genesisCommitReady {
+			sm.Reset()
+		}
 	}
 	// initialize the state machine and exit
 	return sm, nil
@@ -159,6 +167,10 @@ func (s *StateMachine) ApplyBlock(ctx context.Context, b *lib.Block, allowOversi
 	if !ok {
 		return nil, nil, ErrWrongStoreType()
 	}
+	if b == nil || b.BlockHeader == nil || b.BlockHeader.Time == 0 {
+		return nil, nil, lib.ErrNilBlockTime()
+	}
+	s.blockTimeMicros = b.BlockHeader.Time
 	// automated execution at the 'beginning of a block'
 	beginBlockStartTime := time.Now()
 	events, err := s.BeginBlock()
@@ -874,9 +886,18 @@ func (s *StateMachine) StateRead(request *lib.PluginStateReadRequest) (response 
 	}
 	// for each 'iteration' request
 	for _, r := range request.Ranges {
+		if len(r.StartAfter) != 0 && !bytes.HasPrefix(r.StartAfter, r.Prefix) {
+			return response, lib.ErrInvalidArgument()
+		}
 		var it lib.IteratorI
 		// execute the 'iteration'
-		if r.Reverse {
+		if len(r.StartAfter) != 0 {
+			cursorStore, ok := s.Store().(lib.CursorRStoreI)
+			if !ok {
+				return response, lib.ErrInvalidArgument()
+			}
+			it, err = cursorStore.IteratorFrom(r.Prefix, r.StartAfter, r.Reverse)
+		} else if r.Reverse {
 			it, err = s.RevIterator(r.Prefix)
 		} else {
 			it, err = s.Iterator(r.Prefix)
@@ -887,12 +908,24 @@ func (s *StateMachine) StateRead(request *lib.PluginStateReadRequest) (response 
 		}
 		// calculate entries
 		var entries []*lib.PluginStateEntry
-		// apply the default range limit
-		if r.Limit == 0 {
-			r.Limit = defaultPluginStateReadLimit
+		// Bound every transport page even if a plugin requests an excessive
+		// limit. Complete scans must use the deterministic continuation cursor.
+		limit := r.Limit
+		if limit == 0 || limit > defaultPluginStateReadLimit {
+			limit = defaultPluginStateReadLimit
+		}
+		// The store iterator is prefix-bounded. Advance past the caller's full-key
+		// cursor before collecting this page; the comparison is direction-aware
+		// and excludes the cursor itself, preventing duplicates between pages.
+		for it.Valid() && len(r.StartAfter) != 0 {
+			comparison := bytes.Compare(it.Key(), r.StartAfter)
+			if (!r.Reverse && comparison > 0) || (r.Reverse && comparison < 0) {
+				break
+			}
+			it.Next()
 		}
 		// while the iterator is valid and the limit is not reached
-		for i := uint64(0); i < r.Limit && it.Valid(); i++ {
+		for i := uint64(0); i < limit && it.Valid(); i++ {
 			entries = append(entries, &lib.PluginStateEntry{
 				Key:   it.Key(),
 				Value: it.Value(),
@@ -967,6 +1000,7 @@ var corePrefixNames = map[byte]string{
 	orderBookPrefix[0]:        "order-book",
 	retiredCommitteePrefix[0]: "retired-committees",
 	dexPrefix[0]:              "dex",
+	activeCommitteePrefix[0]:  "active-committees",
 }
 
 // assertPluginKeyWritable panics if a plugin write targets a reserved core prefix it must not touch.
@@ -983,7 +1017,7 @@ func assertPluginKeyWritable(key []byte) {
 		return
 	}
 	prefix := segments[0][0]
-	// only reserved core prefixes are enforced; plugin-owned prefixes (outside 1-15) are always fine
+	// only reserved core prefixes are enforced; plugin-owned prefixes outside the core range are always fine
 	name, isCore := corePrefixNames[prefix]
 	if !isCore {
 		return
@@ -995,7 +1029,7 @@ func assertPluginKeyWritable(key []byte) {
 	panic(fmt.Sprintf(
 		"plugin attempted to write to reserved core state prefix %d (%s); plugins share the FSM "+
 			"keyspace and may only write to accounts/pools or use key prefixes OUTSIDE the "+
-			"core-reserved range (1-15) for their own records — see plugin TUTORIAL.md "+
+			"core-reserved range (1-16) for their own records — see plugin TUTORIAL.md "+
 			"'avoid prefix collisions'", prefix, name,
 	))
 }

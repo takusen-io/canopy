@@ -66,6 +66,118 @@ func TestGetValidator(t *testing.T) {
 	}
 }
 
+func TestValidatorSetEpochSnapshotDefersPauseSlashAndJoin(t *testing.T) {
+	sm := newTestStateMachine(t)
+	validators := make([]*Validator, 4)
+	for i := range validators {
+		validators[i] = &Validator{
+			Address:      newTestAddressBytes(t, i),
+			PublicKey:    newTestPublicKeyBytes(t, i),
+			NetAddress:   "tcp://validator",
+			StakedAmount: 100,
+			Committees:   []uint64{lib.CanopyChainId},
+		}
+	}
+	supply, err := sm.GetSupply()
+	require.NoError(t, err)
+	require.NoError(t, sm.SetValidators(validators, supply))
+	require.NoError(t, sm.SetSupply(supply))
+	require.NoError(t, sm.ActivateValidatorSets())
+
+	active, err := sm.GetCommitteeMembers(lib.CanopyChainId)
+	require.NoError(t, err)
+	require.Len(t, active.ValidatorSet.ValidatorSet, 4)
+	initialRoot, err := active.ValidatorSet.Root()
+	require.NoError(t, err)
+	for _, member := range active.ValidatorSet.ValidatorSet {
+		require.Equal(t, uint64(100), member.VotingPower)
+	}
+
+	// Pause and slash accounting are committed immediately, but the consensus
+	// roster and its weights remain those authorized for the current epoch.
+	require.NoError(t, sm.SetValidatorPaused(newTestAddress(t, 0), validators[0], sm.Height()+100))
+	params, err := sm.GetParamsVal()
+	require.NoError(t, err)
+	require.NoError(t, sm.SlashValidator(validators[1], lib.CanopyChainId, 10, params))
+	joining := &Validator{
+		Address: newTestAddressBytes(t, 4), PublicKey: newTestPublicKeyBytes(t, 4),
+		NetAddress: "tcp://joining", StakedAmount: 200, Committees: []uint64{lib.CanopyChainId},
+	}
+	require.NoError(t, sm.SetValidator(joining))
+
+	active, err = sm.GetCommitteeMembers(lib.CanopyChainId)
+	require.NoError(t, err)
+	require.Len(t, active.ValidatorSet.ValidatorSet, 4)
+	root, err := active.ValidatorSet.Root()
+	require.NoError(t, err)
+	require.Equal(t, initialRoot, root)
+	for _, member := range active.ValidatorSet.ValidatorSet {
+		require.Equal(t, uint64(100), member.VotingPower)
+	}
+
+	// The single epoch transition applies every pending membership and weight
+	// change together: paused validator out, slashed weight reduced, joiner in.
+	require.NoError(t, sm.ActivateValidatorSets())
+	active, err = sm.GetCommitteeMembers(lib.CanopyChainId)
+	require.NoError(t, err)
+	require.Len(t, active.ValidatorSet.ValidatorSet, 4)
+	root, err = active.ValidatorSet.Root()
+	require.NoError(t, err)
+	require.NotEqual(t, initialRoot, root)
+	powers := make(map[string]uint64)
+	for _, member := range active.ValidatorSet.ValidatorSet {
+		powers[string(member.PublicKey)] = member.VotingPower
+	}
+	require.NotContains(t, powers, string(validators[0].PublicKey))
+	require.Equal(t, uint64(90), powers[string(validators[1].PublicKey)])
+	require.Equal(t, uint64(200), powers[string(joining.PublicKey)])
+}
+
+func TestPreparedValidatorSetDefersChangesAfterHandoffCutoff(t *testing.T) {
+	sm := newTestStateMachine(t)
+	initial := make([]*Validator, 2)
+	for i := range initial {
+		initial[i] = &Validator{
+			Address: newTestAddressBytes(t, i), PublicKey: newTestPublicKeyBytes(t, i),
+			NetAddress: "tcp://validator", StakedAmount: 100, Committees: []uint64{lib.CanopyChainId},
+		}
+	}
+	supply, err := sm.GetSupply()
+	require.NoError(t, err)
+	require.NoError(t, sm.SetValidators(initial, supply))
+	require.NoError(t, sm.SetSupply(supply))
+	require.NoError(t, sm.ActivateValidatorSets())
+
+	preparedJoin := &Validator{
+		Address: newTestAddressBytes(t, 2), PublicKey: newTestPublicKeyBytes(t, 2),
+		NetAddress: "tcp://prepared", StakedAmount: 100, Committees: []uint64{lib.CanopyChainId},
+	}
+	require.NoError(t, sm.SetValidator(preparedJoin))
+	require.NoError(t, sm.PrepareValidatorSets())
+	encoded, err := sm.EncodePreparedValidatorSet()
+	require.NoError(t, err)
+	require.NotEmpty(t, encoded)
+
+	lateJoin := &Validator{
+		Address: newTestAddressBytes(t, 3), PublicKey: newTestPublicKeyBytes(t, 3),
+		NetAddress: "tcp://late", StakedAmount: 100, Committees: []uint64{lib.CanopyChainId},
+	}
+	require.NoError(t, sm.SetValidator(lateJoin))
+	require.NoError(t, sm.ActivateValidatorSets())
+	active, err := sm.GetCommitteeMembers(lib.CanopyChainId)
+	require.NoError(t, err)
+	require.Len(t, active.ValidatorSet.ValidatorSet, 3)
+	for _, member := range active.ValidatorSet.ValidatorSet {
+		require.NotEqual(t, lateJoin.PublicKey, member.PublicKey)
+	}
+
+	require.NoError(t, sm.PrepareValidatorSets())
+	require.NoError(t, sm.ActivateValidatorSets())
+	active, err = sm.GetCommitteeMembers(lib.CanopyChainId)
+	require.NoError(t, err)
+	require.Len(t, active.ValidatorSet.ValidatorSet, 4)
+}
+
 func TestGetValidatorExists(t *testing.T) {
 	tests := []struct {
 		name   string

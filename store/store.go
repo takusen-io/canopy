@@ -95,10 +95,18 @@ func New(config lib.Config, metrics *lib.Metrics, l lib.LoggerI) (lib.StoreI, li
 
 // NewStore() creates a new instance of a disk DB˙
 func NewStore(config lib.Config, path string, metrics *lib.Metrics, log lib.LoggerI) (lib.StoreI, lib.ErrorI) {
-	cache := pebble.NewCache(256 << 20) // 256 MB cache
+	cacheSizeMB := config.StoreConfig.BlockCacheSizeMB
+	if cacheSizeMB <= 0 {
+		cacheSizeMB = 256
+	}
+	blockSizeKB := config.StoreConfig.SSTableBlockSizeKB
+	if blockSizeKB <= 0 {
+		blockSizeKB = 64
+	}
+	cache := pebble.NewCache(int64(cacheSizeMB) << 20)
 	defer cache.Unref()
 	lvl := pebble.LevelOptions{
-		BlockSize:      64 << 10, // 64 KB data blocks
+		BlockSize:      blockSizeKB << 10,
 		IndexBlockSize: 32 << 10, // 32 KB index blocks
 		Compression: func() *sstable.CompressionProfile {
 			profile := getCompressionProfile(config.CompressionProfile)
@@ -492,6 +500,10 @@ func (s *Store) Iterator(p []byte) (lib.IteratorI, lib.ErrorI) { return s.ss.Ite
 // RevIterator() returns an object for scanning the StateStore starting from the provided prefix.
 // The iterator allows backward traversal of key-value pairs that match the prefix.
 func (s *Store) RevIterator(p []byte) (lib.IteratorI, lib.ErrorI) { return s.ss.RevIterator(p) }
+
+func (s *Store) IteratorFrom(prefix, startAfter []byte, reverse bool) (lib.IteratorI, lib.ErrorI) {
+	return s.ss.IteratorFrom(prefix, startAfter, reverse)
+}
 
 // GetProof() uses the StateCommitStore to prove membership and non-membership
 func (s *Store) GetProof(key []byte) ([]*lib.Node, lib.ErrorI) { return s.sc.GetMerkleProof(key) }

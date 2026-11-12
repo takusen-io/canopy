@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"sync"
 	"time"
 
@@ -21,13 +22,15 @@ import (
 
 // Plugin defines the 'VM-less' extension of the Finite State Machine
 type Plugin struct {
-	fsmConfig       *PluginFSMConfig                      // the FSM configuration
-	pluginConfig    *PluginConfig                         // the plugin configuration
-	conn            net.Conn                              // the underlying unix sock file connection
-	pending         map[uint64]chan isFSMToPlugin_Payload // the outstanding requests from the contract
-	requestContract map[uint64]*Contract                  // maps request IDs to their contract context for concurrent operations
-	l               sync.Mutex                            // thread safety
-	config          Config                                // general app config
+	fsmConfig        *PluginFSMConfig                      // the FSM configuration
+	pluginConfig     *PluginConfig                         // the plugin configuration
+	conn             net.Conn                              // the underlying unix sock file connection
+	pending          map[uint64]chan isFSMToPlugin_Payload // the outstanding requests from the contract
+	requestContract  map[uint64]*Contract                  // maps request IDs to their contract context for concurrent operations
+	l                sync.Mutex                            // thread safety
+	config           Config                                // general app config
+	eventMu          sync.Mutex
+	eventSubscribers map[chan struct{}]struct{}
 }
 
 // socketPath is the name of the plugin socket exposed by the base SDK
@@ -59,12 +62,13 @@ func StartPlugin(c Config) *Plugin {
 	}
 	// constructs the new plugin
 	p := &Plugin{
-		pluginConfig:    ContractConfig,
-		conn:            conn,
-		pending:         map[uint64]chan isFSMToPlugin_Payload{},
-		requestContract: map[uint64]*Contract{},
-		l:               sync.Mutex{},
-		config:          c,
+		pluginConfig:     ContractConfig,
+		conn:             conn,
+		pending:          map[uint64]chan isFSMToPlugin_Payload{},
+		requestContract:  map[uint64]*Contract{},
+		l:                sync.Mutex{},
+		config:           c,
+		eventSubscribers: map[chan struct{}]struct{}{},
 	}
 	// begin the listening service
 	go p.ListenForInbound()
@@ -161,6 +165,7 @@ func (p *Plugin) ListenForInbound() {
 			if err := func() *PluginError {
 				// create a new instance of a contract
 				response, c := isPluginToFSM_Payload(nil), &Contract{Config: p.config, FSMConfig: p.fsmConfig, plugin: p, fsmId: msg.Id}
+				endBlock := false
 				// route the message
 				switch payload := msg.Payload.(type) {
 				// response to a request made by the Contract
@@ -183,17 +188,56 @@ func (p *Plugin) ListenForInbound() {
 				case *FSMToPlugin_End:
 					log.Println("Received end request from FSM")
 					response = &PluginToFSM_End{c.EndBlock(msg.GetEnd())}
+					endBlock = true
 				default:
 					return ErrInvalidFSMToPluginMMessage(reflect.TypeOf(payload))
 				}
-				return p.sendProtoMsg(&PluginToFSM{
+				if err := p.sendProtoMsg(&PluginToFSM{
 					Id:      msg.Id,
 					Payload: response,
-				})
+				}); err != nil {
+					return err
+				}
+				if endBlock {
+					// Core commits immediately after accepting EndBlock. Delay the
+					// edge slightly so subscribers query the newly committed root.
+					time.AfterFunc(5*time.Millisecond, p.notifyBlock)
+				}
+				return nil
 			}(); err != nil {
 				log.Fatal(err.Error())
 			}
 		}()
+	}
+}
+
+func (p *Plugin) subscribeBlocks() (chan struct{}, func(), bool) {
+	updates := make(chan struct{}, 1)
+	p.eventMu.Lock()
+	if len(p.eventSubscribers) >= max(1, p.config.RPCMaxSubscribers) {
+		p.eventMu.Unlock()
+		return nil, func() {}, false
+	}
+	if p.eventSubscribers == nil {
+		p.eventSubscribers = map[chan struct{}]struct{}{}
+	}
+	p.eventSubscribers[updates] = struct{}{}
+	p.eventMu.Unlock()
+	return updates, func() {
+		p.eventMu.Lock()
+		delete(p.eventSubscribers, updates)
+		p.eventMu.Unlock()
+	}, true
+}
+
+func (p *Plugin) notifyBlock() {
+	p.eventMu.Lock()
+	defer p.eventMu.Unlock()
+	for subscriber := range p.eventSubscribers {
+		select {
+		case subscriber <- struct{}{}:
+		default:
+		}
 	}
 }
 
@@ -438,16 +482,28 @@ type Config struct {
 	ChainId     uint64 `json:"chainId"`
 	DataDirPath string `json:"dataDirPath"`
 	// RPCAddress is the listen address for the plugin's own HTTP server that exposes custom RPC endpoints
-	RPCAddress string `json:"rpcAddress"`
+	RPCAddress        string `json:"rpcAddress"`
+	RPCAuthToken      string `json:"-"`
+	RPCMaxConnections int    `json:"-"`
+	RPCMaxConcurrent  int    `json:"-"`
+	RPCMaxSubscribers int    `json:"-"`
 }
 
 // DefaultConfig() returns the default configuration
 func DefaultConfig() Config {
+	rpcAddress := strings.TrimSpace(os.Getenv("TAKUSEN_PLUGIN_RPC_ADDRESS"))
+	if rpcAddress == "" {
+		rpcAddress = "127.0.0.1:50010"
+	}
 	// return the default configuration
 	return Config{
-		ChainId:     1,
-		DataDirPath: filepath.Join("/tmp/plugin/"),
-		RPCAddress:  "0.0.0.0:50010",
+		ChainId:           1,
+		DataDirPath:       filepath.Join("/tmp/plugin/"),
+		RPCAddress:        rpcAddress,
+		RPCAuthToken:      strings.TrimSpace(os.Getenv("TAKUSEN_PLUGIN_RPC_TOKEN")),
+		RPCMaxConnections: 256,
+		RPCMaxConcurrent:  128,
+		RPCMaxSubscribers: 64,
 	}
 }
 

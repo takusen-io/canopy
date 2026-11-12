@@ -57,7 +57,8 @@ type BFT struct {
 
 	PhaseTimer *time.Timer // ensures the node waits for a configured duration (Round x phaseTimeout) to allow for full voter participation
 
-	roundDeadline time.Time // coordinated absolute deadline for the current round
+	roundDeadline            time.Time // coordinated absolute deadline for the current round
+	commitCollectionDeadline time.Time // bounded window for collecting signatures after commit quorum
 	// A manual round jump starts a coordinated timeout schedule at the requested time, with these fields mapping its actual round to the requested backoff level.
 	roundScheduleStart   uint64
 	timeoutScheduleStart uint64
@@ -178,6 +179,13 @@ func (b *BFT) Start() {
 				// Hold a ready commit until its agreed timestamp; every other timer expiry is the single deadline for the entire round.
 				if b.Phase == CommitProcess && b.GetProposal() != nil {
 					b.HandlePhase()
+					return
+				}
+				// A deterministic proposer briefly keeps collecting precommit votes after reaching quorum.
+				// The collection timer expires before the block timestamp, leaving the configured lead
+				// time to disseminate the final certificate without sacrificing liveness.
+				if b.Phase == Commit && b.PhaseHas23Maj() {
+					b.advanceReadyPhases()
 					return
 				}
 				b.RoundInterrupt()
@@ -932,12 +940,29 @@ func (b *BFT) PhaseHas23Maj() bool {
 		}
 		_, _, err := b.GetMajorityVote()
 		if err == nil {
+			if deterministic && b.Phase == Commit && !b.AllVotingPowerReceived() {
+				return b.commitCollectionWindowElapsed()
+			}
 			return true
 		}
 		// Let a replica cross a no-op leader phase immediately when it has already received the leader's message.
 		return deterministic && b.getProposalAtPhase(b.Round, b.Phase) != nil
 	}
 	return false
+}
+
+// commitCollectionWindowElapsed preserves a bounded participation window after +2/3 precommit
+// quorum. Full participation advances immediately; partial quorum advances no later than the
+// agreed block timestamp minus the configured consensus lead time.
+func (b *BFT) commitCollectionWindowElapsed() bool {
+	if b.commitCollectionDeadline.IsZero() {
+		b.commitCollectionDeadline = b.roundDeadline.Add(-b.Config.ConsensusConfig.BlockConsensusLeadTime())
+		if wait := time.Until(b.commitCollectionDeadline); wait > 0 {
+			b.SetWaitTimers(wait)
+			return false
+		}
+	}
+	return !time.Now().Before(b.commitCollectionDeadline)
 }
 
 // CheckProposerAndProposal() ensures the Leader message has the correct sender public key and correct ProposalHash
@@ -970,6 +995,7 @@ func (b *BFT) NewRound(newHeight bool) {
 	b.RefreshRootChainInfo()
 	// reset ProposerKey, Proposal, and Sortition data
 	b.ProposerKey = nil
+	b.commitCollectionDeadline = time.Time{}
 	b.Block, b.BlockHash, b.Results = nil, nil, nil
 	b.SortitionData = nil
 	b.VDFCache = []*Message{}
@@ -1019,7 +1045,21 @@ func (b *BFT) StartRound() {
 	b.Phase = Propose
 	b.phase.Store(int32(b.Phase))
 	b.roundDeadline = b.RoundDeadline(b.Round)
-	b.SetWaitTimers(time.Until(b.roundDeadline))
+	waitUntil := b.roundDeadline
+	// Proposal construction can briefly exceed the nominal round-zero slot when
+	// a busy mempool must be executed synchronously. This build-only grace does
+	// not change roundDeadline: once a proposal arrives, its authenticated block
+	// timestamp remains the commit and signature-collection deadline.
+	if b.Round == 0 {
+		if estimator, ok := b.Controller.(interface {
+			ProposalBuildDeadline(time.Time) time.Time
+		}); ok {
+			if deadline := estimator.ProposalBuildDeadline(waitUntil); deadline.After(waitUntil) {
+				waitUntil = deadline
+			}
+		}
+	}
+	b.SetWaitTimers(time.Until(waitUntil))
 	if len(b.ProposerKey) == 0 {
 		b.log.Error("unable to select deterministic proposer")
 		return

@@ -1226,3 +1226,14 @@ func TestCheckFee(t *testing.T) {
 		})
 	}
 }
+
+func TestCheckPluginFeeUsesGovernedSendFeeWithPositiveFloor(t *testing.T) {
+	sm := newTestStateMachine(t)
+	require.NoError(t, sm.UpdateParam("fee", ParamSendFee, &lib.UInt64Wrapper{Value: 10}))
+	require.Error(t, sm.CheckPluginFee(9))
+	require.NoError(t, sm.CheckPluginFee(10))
+
+	require.NoError(t, sm.UpdateParam("fee", ParamSendFee, &lib.UInt64Wrapper{Value: 0}))
+	require.Error(t, sm.CheckPluginFee(0))
+	require.NoError(t, sm.CheckPluginFee(1))
+}

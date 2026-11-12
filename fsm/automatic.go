@@ -13,8 +13,20 @@ func (s *StateMachine) BeginBlock() (lib.Events, lib.ErrorI) {
 		s.Metrics.RestrictedTxCount.Set(0)
 	}
 	s.events.Refer(lib.EventStageBeginBlock)
+	// Epoch-managed networks persist the active consensus roster. Initialize it
+	// before processing certificate evidence so a pause or slash in this block
+	// cannot change membership or voting power until the governed boundary.
+	if s.Plugin != nil && s.Plugin.ManagesValidatorSetEpochs() {
+		if err := s.EnsureActiveValidatorSets(); err != nil {
+			return nil, err
+		}
+	}
 	// execute plugin begin block if enabled
 	if s.Plugin != nil {
+		validatorSet, err := s.EncodeActiveValidatorSet()
+		if err != nil {
+			return nil, err
+		}
 		previousBlockHash := nonEmptyHash(nil)
 		if s.Height() > 1 {
 			previousBlock, err := s.LoadBlock(s.Height() - 1)
@@ -23,9 +35,15 @@ func (s *StateMachine) BeginBlock() (lib.Events, lib.ErrorI) {
 			}
 			previousBlockHash = nonEmptyHash(previousBlock.BlockHeader.Hash)
 		}
+		nextValidatorSet, err := s.EncodePreparedValidatorSet()
+		if err != nil {
+			return nil, err
+		}
 		resp, err := s.Plugin.BeginBlock(s, &lib.PluginBeginRequest{
 			Height:            s.height,
 			PreviousBlockHash: previousBlockHash,
+			ValidatorSet:      validatorSet,
+			NextValidatorSet:  nextValidatorSet,
 		})
 		if err != nil {
 			return nil, err
@@ -109,6 +127,7 @@ func (s *StateMachine) EndBlock(proposerAddress []byte) (events lib.Events, err 
 		resp, e := s.Plugin.EndBlock(s, &lib.PluginEndRequest{
 			Height:          s.height,
 			ProposerAddress: proposerAddress,
+			TimeMicros:      s.blockTimeMicros,
 		})
 		if e != nil {
 			return nil, e
@@ -119,6 +138,16 @@ func (s *StateMachine) EndBlock(proposerAddress []byte) (events lib.Events, err 
 			}
 			if err = s.addPluginEvents(resp.Events); err != nil {
 				return nil, err
+			}
+			if resp.ValidatorSetEpochPrepare {
+				if err = s.PrepareValidatorSets(); err != nil {
+					return nil, err
+				}
+			}
+			if resp.ValidatorSetEpochEnd {
+				if err = s.ActivateValidatorSets(); err != nil {
+					return nil, err
+				}
 			}
 		}
 	}

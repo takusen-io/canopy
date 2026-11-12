@@ -40,15 +40,26 @@ func TestHandleTransactionsOnlyMarksDirtyOnSuccessfulNewTx(t *testing.T) {
 	require.NoError(t, errI)
 
 	m := &Mempool{
-		Mempool: lib.NewMempool(lib.DefaultMempoolConfig()),
-		L:       &sync.Mutex{},
+		Mempool:      lib.NewMempool(lib.DefaultMempoolConfig()),
+		L:            &sync.Mutex{},
+		proposalWake: make(chan struct{}, 1),
 	}
 
 	require.NoError(t, m.HandleTransactions(txBytes))
 	require.EqualValues(t, 1, m.dirtyVersion.Load())
+	select {
+	case <-m.proposalWake:
+	default:
+		t.Fatal("new transaction did not wake the proposal builder")
+	}
 
 	require.NoError(t, m.HandleTransactions(txBytes))
 	require.EqualValues(t, 1, m.dirtyVersion.Load())
+	select {
+	case <-m.proposalWake:
+		t.Fatal("duplicate transaction woke the proposal builder")
+	default:
+	}
 
 	require.Error(t, m.HandleTransactions([]byte("bad-tx")))
 	require.EqualValues(t, 1, m.dirtyVersion.Load())

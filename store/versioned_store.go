@@ -215,6 +215,10 @@ func (vs *VersionedStore) NewIterator(prefix []byte, reverse bool, seek bool) (l
 	return vs.newVersionedIterator(prefix, reverse, seek)
 }
 
+func (vs *VersionedStore) NewIteratorFrom(prefix, startAfter []byte, reverse bool, seek bool) (lib.IteratorI, lib.ErrorI) {
+	return vs.newVersionedIteratorFrom(prefix, startAfter, reverse, seek)
+}
+
 // Iterator returns an iterator for all keys with the given prefix
 func (vs *VersionedStore) Iterator(prefix []byte) (lib.IteratorI, lib.ErrorI) {
 	return vs.newVersionedIterator(prefix, false, true)
@@ -223,6 +227,10 @@ func (vs *VersionedStore) Iterator(prefix []byte) (lib.IteratorI, lib.ErrorI) {
 // RevIterator returns a reverse iterator for all keys with the given prefix
 func (vs *VersionedStore) RevIterator(prefix []byte) (lib.IteratorI, lib.ErrorI) {
 	return vs.newVersionedIterator(prefix, true, true)
+}
+
+func (vs *VersionedStore) IteratorFrom(prefix, startAfter []byte, reverse bool) (lib.IteratorI, lib.ErrorI) {
+	return vs.newVersionedIteratorFrom(prefix, startAfter, reverse, true)
 }
 
 // ArchiveIterator returns an iterator for all keys with the given prefix
@@ -261,6 +269,11 @@ func (vs *VersionedStore) ArchiveIterator(prefix []byte) (lib.IteratorI, lib.Err
 // <= store.version for each unique user key within the prefix range.
 func (vs *VersionedStore) newVersionedIterator(prefix []byte, reverse bool, seek bool) (
 	*VersionedIterator, lib.ErrorI) {
+	return vs.newVersionedIteratorFrom(prefix, nil, reverse, seek)
+}
+
+func (vs *VersionedStore) newVersionedIteratorFrom(prefix, startAfter []byte, reverse bool, seek bool) (
+	*VersionedIterator, lib.ErrorI) {
 	// validate prefix
 	_ = lib.DecodeLengthPrefixed(prefix)
 	// use property filter if possible
@@ -290,11 +303,12 @@ func (vs *VersionedStore) newVersionedIterator(prefix []byte, reverse bool, seek
 		return nil, ErrStoreGet(fmt.Errorf("failed to create iterator: %v", err))
 	}
 	return &VersionedIterator{
-		iter:    iter,
-		store:   vs,
-		prefix:  prefix,
-		reverse: reverse,
-		seek:    seek,
+		iter:     iter,
+		store:    vs,
+		prefix:   prefix,
+		startKey: bytes.Clone(startAfter),
+		reverse:  reverse,
+		seek:     seek,
 	}, nil
 }
 
@@ -303,6 +317,7 @@ type VersionedIterator struct {
 	iter          *pebble.Iterator
 	store         *VersionedStore
 	prefix        []byte
+	startKey      []byte
 	key           []byte
 	value         []byte
 	reverse       bool
@@ -357,16 +372,25 @@ func (vi *VersionedIterator) first() {
 	// seek is used to take advantage of block property filters to skip
 	// sst blocks with versions outside the store version range
 	if vi.reverse {
-		// position at the last key strictly below UpperBound
+		// Position at the last versioned key at or below the continuation
+		// user key, or the end of the prefix for an initial page.
 		ub := prefixEnd(vi.prefix)
+		if len(vi.startKey) != 0 {
+			ub = prefixEnd(vi.startKey)
+		}
 		if !vi.iter.SeekLT(ub) {
 			// nothing below ub, iterator invalid
 			vi.isValid = false
 			return
 		}
 	} else {
-		// position at first key >= LowerBound (prefix)
-		if !vi.iter.SeekGE(vi.prefix) {
+		// Position at the continuation user key (which the caller excludes),
+		// or the prefix lower bound for an initial page.
+		lower := vi.prefix
+		if len(vi.startKey) != 0 {
+			lower = vi.startKey
+		}
+		if !vi.iter.SeekGE(lower) {
 			vi.isValid = false
 			return
 		}

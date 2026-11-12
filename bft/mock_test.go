@@ -4,6 +4,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/canopy-network/canopy/lib"
 	"github.com/canopy-network/canopy/lib/crypto"
@@ -490,11 +491,18 @@ type testController struct {
 	sendToProposerChan  chan lib.Signable
 	sendToReplicasChan  chan lib.Signable
 
-	rootHeight           uint64
-	committeeData        *lib.CommitteeData
-	loadCommitteeErr     lib.ErrorI
-	loadCommitteeDataErr lib.ErrorI
-	proposalTime         uint64
+	rootHeight            uint64
+	committeeData         *lib.CommitteeData
+	loadCommitteeErr      lib.ErrorI
+	loadCommitteeDataErr  lib.ErrorI
+	proposalTime          uint64
+	proposalBuildDelay    time.Duration
+	proposalDeadlineCalls int
+}
+
+func (t *testController) ProposalBuildDeadline(nominal time.Time) time.Time {
+	t.proposalDeadlineCalls++
+	return nominal.Add(t.proposalBuildDelay)
 }
 
 func (t *testController) CommitCertificate(qc *lib.QuorumCertificate, block *lib.Block, blockResult *lib.BlockResult, ts uint64) (err lib.ErrorI) {

@@ -22,7 +22,15 @@ import (
 
 /* This file implements logic for transaction sending and handling as well as memory pooling */
 
-const slowProposalBuildThreshold = 2 * time.Second
+const (
+	slowProposalBuildThreshold = 2 * time.Second
+	proposalBuildDebounce      = 100 * time.Millisecond
+	// Speculative execution is useful when the pool is nearly empty, but under
+	// load it makes every validator repeatedly replay an ever-growing prefix.
+	// The elected proposer still builds synchronously and replicas validate the
+	// proposal, so skipping large speculative builds changes no consensus rule.
+	maxSpeculativeProposalTxs = 8
+)
 
 // SendTxMsgs() routes generated transaction messages to the listener for processing + gossiping
 func (c *Controller) SendTxMsgs(txs [][]byte) lib.ErrorI {
@@ -99,15 +107,43 @@ func (c *Controller) GetProposalBlockFromMempool() (p *CachedProposal, ok bool) 
 // - P2P Gossip out any transactions that weren't previously gossiped
 func (c *Controller) CheckMempool() {
 	deDupe, _ := lru.New[string, struct{}](100_000)
-	// if configured to not check mempool besides right after CommitBlock
-	if c.Config.LazyMempoolCheckFrequencyS == 0 {
-		return
+	// New transactions wake the proposal builder immediately. The periodic
+	// timer remains a repair path for missed notifications and stale state.
+	var periodic <-chan time.Time
+	var ticker *time.Ticker
+	if c.Config.LazyMempoolCheckFrequencyS > 0 {
+		ticker = time.NewTicker(time.Duration(c.Config.LazyMempoolCheckFrequencyS) * time.Second)
+		defer ticker.Stop()
+		periodic = ticker.C
 	}
-	checkTimer := time.Duration(c.Config.LazyMempoolCheckFrequencyS) * time.Second
 	for {
+		select {
+		case <-c.Mempool.proposalWake:
+			// Transaction gossip commonly delivers several cohorts back-to-back. Give
+			// that burst a small quiet period so the speculative builder executes the
+			// resulting mempool once instead of replaying an ever-growing prefix for
+			// every individual arrival. ProduceProposal still performs its own
+			// synchronous freshness check, so this only affects background CPU work.
+			timer := time.NewTimer(proposalBuildDebounce)
+		debounce:
+			for {
+				select {
+				case <-c.Mempool.proposalWake:
+					if !timer.Stop() {
+						select {
+						case <-timer.C:
+						default:
+						}
+					}
+					timer.Reset(proposalBuildDebounce)
+				case <-timer.C:
+					break debounce
+				}
+			}
+		case <-periodic:
+		}
 		// skip mempool checks while syncing
 		if c.isSyncing.Load() {
-			time.Sleep(checkTimer)
 			continue
 		}
 		// keep a list of transaction needing to be gossipped
@@ -116,12 +152,16 @@ func (c *Controller) CheckMempool() {
 		func() {
 			c.Mempool.L.Lock()
 			defer c.Mempool.L.Unlock()
+			// Gossip does not require stateful execution. Collect the pool before
+			// deciding whether this node should spend CPU warming a proposal.
+			toGossip = c.Mempool.GetTransactions(math.MaxUint64)
 			// get the proposal block
 			p, ok := c.GetProposalBlockFromMempool()
 			// check for stale proposal
 			stale := !ok || p.dirtyVersion != c.Mempool.dirtyVersion.Load() || p.proposalVoteConfig != c.currentProposalVoteConfig()
 			// if the cached proposal is current or rebuilding is deferred during propose vote
-			if !stale || c.Consensus != nil && c.Consensus.CurrentPhase() == lib.Phase_PROPOSE_VOTE {
+			if !stale || c.Consensus != nil && c.Consensus.CurrentPhase() == lib.Phase_PROPOSE_VOTE ||
+				c.Mempool.TxCount() > maxSpeculativeProposalTxs {
 				return
 			}
 			// be mempool strict on proposals
@@ -136,8 +176,6 @@ func (c *Controller) CheckMempool() {
 			if err != nil {
 				return
 			}
-			// get the transactions to gossip
-			toGossip = c.Mempool.GetTransactions(math.MaxUint64)
 		}()
 		// for each transaction to gossip
 		var dedupedTxs [][]byte
@@ -158,8 +196,6 @@ func (c *Controller) CheckMempool() {
 				c.log.Error(fmt.Sprintf("unable to gossip tx with err: %s", err.Error()))
 			}
 		}
-		// sleep until the next periodic check
-		time.Sleep(checkTimer)
 	}
 }
 
@@ -182,6 +218,7 @@ type Mempool struct {
 	cachedProposal  atomic.Value       // the cached block proposal set when mempool is 'checked'
 	dirtyVersion    atomic.Uint64      // a monotonic version tracking proposal inputs that invalidate the cache
 	proposalGate    sync.RWMutex       // gives a consensus-critical leader priority over new transaction admission
+	proposalWake    chan struct{}      // coalesces immediate proposal rebuild requests when transactions arrive
 	cancelL         sync.Mutex         // protects the active proposal-build cancellation function
 	stop            context.CancelFunc // the cancellable context of the mempool
 	log             lib.LoggerI        // the logger
@@ -222,6 +259,7 @@ func NewMempool(fsm *fsm.StateMachine, address crypto.AddressI, config lib.Mempo
 		cachedFailedTxs: lib.NewFailedTxCache(),
 		metrics:         metrics,
 		address:         address,
+		proposalWake:    make(chan struct{}, 1),
 		log:             log,
 	}
 	// make an 'mempool (ephemeral copy) state' so the mempool can maintain only 'valid' transactions despite dependencies and conflicts
@@ -249,15 +287,24 @@ func (m *Mempool) handleTransactions(verifyRetained bool, replace []byte, tx ...
 	m.proposalGate.RLock()
 	defer m.proposalGate.RUnlock()
 	m.L.Lock()
-	defer m.L.Unlock()
+	changed := false
+	defer func() {
+		m.L.Unlock()
+		if changed {
+			select {
+			case m.proposalWake <- struct{}{}:
+			default:
+			}
+		}
+	}()
 	// add a transaction to the mempool
-	recheck, err := m.AddTransactions(tx...)
+	changed, err = m.AddTransactions(tx...)
 	if err != nil {
 		// exit with the error
 		return
 	}
 	// invalidate the cached proposal version when the mempool changed
-	if recheck {
+	if changed {
 		m.dirtyVersion.Add(1)
 	}
 	if verifyRetained && !m.Contains(crypto.HashString(tx[0])) {
@@ -327,9 +374,13 @@ func (m *Mempool) CheckMempool() (err lib.ErrorI) {
 	)
 	for {
 		buildVersion = m.dirtyVersion.Load()
+		transactions := m.GetTransactions(maxBlockSize)
+		if limit := m.controller.Config.MaxProposalTransactionCount; limit != 0 && uint32(len(transactions)) > limit {
+			transactions = transactions[:limit]
+		}
 		block = &lib.Block{
 			BlockHeader:  &lib.BlockHeader{Time: uint64(time.Now().UnixMicro()), ProposerAddress: m.address.Bytes()},
-			Transactions: m.GetTransactions(maxBlockSize),
+			Transactions: transactions,
 		}
 		if rootDexBatch != nil {
 			m.FSM.SetRootDexCache(rootDexBatch)

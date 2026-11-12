@@ -4,17 +4,20 @@ services:
     build:
       context: ../..
       dockerfile: plugin/go/Dockerfile
+    environment:
+      TAKUSEN_PLUGIN_RPC_ADDRESS: 0.0.0.0:50010
+      TAKUSEN_PLUGIN_RPC_TOKEN: ${CANOPY_PLUGIN_TOKEN:-local-compose-plugin-token-000000000000}
     ports:
       - "50002:50002"
       - "50003:50003"
-      - "50010:50010"
+      - "127.0.0.1:50010:50010"
     volumes:
       - ../../.docker/volumes/node_1:/root/.canopy
     networks:
       takusen-canopy:
         aliases: [node-1]
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:50010/health"]
+      test: ["CMD-SHELL", "wget -qO- --header='Authorization: Bearer '$$TAKUSEN_PLUGIN_RPC_TOKEN http://127.0.0.1:50010/health"]
       interval: 3s
       timeout: 2s
       retries: 40
@@ -24,17 +27,20 @@ services:
     build:
       context: ../..
       dockerfile: plugin/go/Dockerfile
+    environment:
+      TAKUSEN_PLUGIN_RPC_ADDRESS: 0.0.0.0:50010
+      TAKUSEN_PLUGIN_RPC_TOKEN: ${CANOPY_PLUGIN_TOKEN:-local-compose-plugin-token-000000000000}
     ports:
       - "40002:40002"
       - "40003:40003"
-      - "50011:50010"
+      - "127.0.0.1:50011:50010"
     volumes:
       - ../../.docker/volumes/node_2:/root/.canopy
     networks:
       takusen-canopy:
         aliases: [node-2]
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:50010/health"]
+      test: ["CMD-SHELL", "wget -qO- --header='Authorization: Bearer '$$TAKUSEN_PLUGIN_RPC_TOKEN http://127.0.0.1:50010/health"]
       interval: 3s
       timeout: 2s
       retries: 40

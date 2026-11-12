@@ -1,0 +1,37 @@
+name: takusen-release-provenance
+
+on:
+  push:
+    branches: [takusen-integration]
+  pull_request:
+    branches: [takusen-integration]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native-chain:
+    if: github.repository == 'takusen-io/canopy'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: "1.27.4"
+          cache: true
+      - run: go test ./fsm ./controller ./bft ./store
+      - run: go test ./...
+        working-directory: plugin/go
+      - if: github.event_name != 'pull_request'
+        run: ./scripts/build-takusen-release.sh
+      - if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@330a01c490752aa252a24a79f57a34c468add91a # v4
+        with:
+          name: takusen-native-chain-linux-amd64-${{ github.sha }}
+          path: build/takusen-release
+          if-no-files-found: error
+          retention-days: 30

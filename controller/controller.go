@@ -57,13 +57,6 @@ func New(fsm *fsm.StateMachine, c lib.Config, valKey crypto.PrivateKeyI, metrics
 		// exit with error
 		return
 	}
-	// initialize the mempool using the FSM copy and the mempool config
-	mempool, err := NewMempool(fsm, address, c.MempoolConfig, metrics, l)
-	// if an error occurred when creating a new mempool
-	if err != nil {
-		// exit with error
-		return
-	}
 	// create the controller
 	controller = &Controller{
 		Address:    address.Bytes(),
@@ -72,7 +65,7 @@ func New(fsm *fsm.StateMachine, c lib.Config, valKey crypto.PrivateKeyI, metrics
 		Config:     c,
 		Metrics:    metrics,
 		FSM:        fsm,
-		Mempool:    mempool,
+		Mempool:    nil,
 		Consensus:  nil,
 		P2P:        p2p.New(valKey, maxMembersPerCommittee, metrics, c, l),
 		isSyncing:  &atomic.Bool{},
@@ -86,8 +79,20 @@ func New(fsm *fsm.StateMachine, c lib.Config, valKey crypto.PrivateKeyI, metrics
 		if err = controller.PluginExecute(c.Plugin); err != nil {
 			return nil, err
 		}
-		controller.PluginConnectSync()
+		if err = controller.PluginConnectSync(); err != nil {
+			return nil, err
+		}
+		if err = fsm.ApplyPluginGenesis(); err != nil {
+			return nil, err
+		}
 	}
+	// Create the mempool copy only after plugin genesis is committed so the
+	// ephemeral FSM begins from exactly the same authoritative state.
+	mempool, err := NewMempool(fsm, address, c.MempoolConfig, metrics, l)
+	if err != nil {
+		return nil, err
+	}
+	controller.Mempool = mempool
 	// initialize the consensus in the controller, passing a reference to itself
 	controller.Consensus, err = bft.New(c, valKey, fsm.Height(), fsm.Height()-1, controller, c.RunVDF, metrics, l)
 	// initialize the mempool controller
@@ -319,20 +324,20 @@ func (c *Controller) PluginStop(plugin string) lib.ErrorI {
 }
 
 // PluginConnectSync() blocking: enables a unix socket file where plugins can interact with the Canopy FSM
-func (c *Controller) PluginConnectSync() {
+func (c *Controller) PluginConnectSync() lib.ErrorI {
 	sockPath := filepath.Join(socketDir, socketFile)
 	// make the path
 	if err := os.MkdirAll(socketDir, 0777); err != nil {
-		c.log.Fatalf("Failed to make the plugin socket path %s: %v", sockPath, err)
+		return lib.NewError(lib.NoCode, lib.MainModule, fmt.Sprintf("failed to make plugin socket path %s: %v", sockPath, err))
 	}
 	// clean old socket
 	if err := os.RemoveAll(sockPath); err != nil {
-		c.log.Fatalf("Failed to remove plugin socket %s: %v", sockPath, err)
+		return lib.NewError(lib.NoCode, lib.MainModule, fmt.Sprintf("failed to remove plugin socket %s: %v", sockPath, err))
 	}
 	// create a unix listener
 	l, err := net.Listen("unix", sockPath)
 	if err != nil {
-		c.log.Fatalf("Failed to listen on socket: %v", err)
+		return lib.NewError(lib.NoCode, lib.MainModule, fmt.Sprintf("failed to listen on plugin socket: %v", err))
 	}
 	defer l.Close()
 	// log the listener
@@ -340,14 +345,21 @@ func (c *Controller) PluginConnectSync() {
 	// wait for a connection
 	conn, e := l.Accept()
 	if e != nil {
-		c.log.Fatalf("Failed to accept plugin connection: %v", e)
+		return lib.NewError(lib.NoCode, lib.MainModule, fmt.Sprintf("failed to accept plugin connection: %v", e))
 	}
 	// create plugin object
 	c.Plugin = lib.NewPlugin(conn, c.log, time.Duration(c.Config.PluginTimeoutMS)*time.Millisecond)
+	if err := c.Plugin.WaitForConfig(); err != nil {
+		return err
+	}
 	// register the detached, read-only query provider so plugins can serve custom RPC endpoints
 	c.Plugin.SetQueryProvider(&pluginQueryProvider{controller: c})
 	// set plugin in FSM and mempool FSM
-	c.FSM.Plugin, c.Mempool.FSM.Plugin = c.Plugin, c.Plugin
+	c.FSM.Plugin = c.Plugin
+	if c.Mempool != nil && c.Mempool.FSM != nil {
+		c.Mempool.FSM.Plugin = c.Plugin
+	}
+	return nil
 }
 
 // pluginQueryProvider serves detached, read-only state queries from the plugin by backing them

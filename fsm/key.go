@@ -43,8 +43,9 @@ var (
 	orderBookPrefix        = []byte{13} // store key prefix for 'sell orders' before they are bid on
 	retiredCommitteePrefix = []byte{14} // store key prefix for 'retired' (dead) committees
 	dexPrefix              = []byte{15} // store key prefix for 'dex' functionality
-	lockedBatchSegment = []byte{1}
-	nextBatchSement    = []byte{2}
+	activeCommitteePrefix  = []byte{16} // epoch-frozen consensus validator sets
+	lockedBatchSegment     = []byte{1}
+	nextBatchSement        = []byte{2}
 )
 
 /*
@@ -71,6 +72,8 @@ func CommitteePrefix(id uint64) []byte  { return lib.JoinLenPrefix(committeePref
 func DelegatePrefix(id uint64) []byte   { return lib.JoinLenPrefix(delegatePrefix, formatUint64(id)) }
 func CommitteesDataPrefix() []byte      { return lib.JoinLenPrefix(committeesDataPrefix) }
 func RetiredCommitteesPrefix() []byte   { return lib.JoinLenPrefix(retiredCommitteePrefix) }
+func ActiveCommitteesPrefix() []byte    { return lib.JoinLenPrefix(activeCommitteePrefix, []byte{1}) }
+func PreparedCommitteesPrefix() []byte  { return lib.JoinLenPrefix(activeCommitteePrefix, []byte{2}) }
 func KeyForPool(n uint64) []byte        { return lib.JoinLenPrefix(poolPrefix, formatUint64(n)) }
 func KeyForNonSigner(a []byte) []byte   { return lib.JoinLenPrefix(nonSignerPrefix, a) }
 func OrderBookPrefix(cId uint64) []byte { return lib.JoinLenPrefix(orderBookPrefix, formatUint64(cId)) }
@@ -92,6 +95,18 @@ func KeyForDelegate(chainId uint64, addr crypto.AddressI, stake uint64) []byte {
 }
 func KeyForRetiredCommittee(cId uint64) []byte {
 	return lib.JoinLenPrefix(retiredCommitteePrefix, formatUint64(cId))
+}
+func KeyForActiveCommittee(chainId uint64) []byte {
+	return lib.JoinLenPrefix(activeCommitteePrefix, []byte{1}, formatUint64(chainId))
+}
+func KeyForPreparedCommittee(chainId uint64) []byte {
+	return lib.JoinLenPrefix(activeCommitteePrefix, []byte{2}, formatUint64(chainId))
+}
+func KeyForActiveCommitteeEpoch() []byte {
+	return lib.JoinLenPrefix(activeCommitteePrefix, []byte{0})
+}
+func KeyForPreparedCommitteeEpoch() []byte {
+	return lib.JoinLenPrefix(activeCommitteePrefix, []byte{3})
 }
 func KeyForAccount(addr crypto.AddressI) []byte {
 	return lib.JoinLenPrefix(accountPrefix, addr.Bytes())

@@ -1,5 +1,7 @@
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
+github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.1 h1:5RVFMOWjMyRy8cARdy79nAmgYw3hK/4HUq48LQ6Wwqo=
+github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.1/go.mod h1:ZXNYxsqcloTdSy/rNShjYzMhyjf0LaoftYK0p+A3h40=
 github.com/drand/kyber v1.3.2 h1:Cf3NNcb5bV3eODopr3XVHzImjDK40GiObhFUFG93Zeo=
 github.com/drand/kyber v1.3.2/go.mod h1:ciDFWoC7ajb89niGJnS4C1Xeo4lSJMmbi+km5w8juAI=
 github.com/drand/kyber-bls12381 v0.3.4 h1:rrmYcRcXmtOAvKWVBxRQxi22qNMVcS2Jz7MAebZQJxI=

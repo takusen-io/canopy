@@ -502,10 +502,16 @@ type PluginConfig struct {
 	EventTypeUrls []string `protobuf:"bytes,7,rep,name=event_type_urls,json=eventTypeUrls,proto3" json:"eventTypeUrls"` // @gotags: json:"eventTypeUrls"
 	// custom_state_prefixes: the store key prefixes the plugin owns for its custom records (each entry
 	// is the raw prefix bytes, e.g. [100] for faucet). Canopy panics at handshake if any collides with
-	// a core-reserved prefix (1-15), preventing silent state corruption from colliding keyspaces.
+	// a core-reserved prefix (1-16), preventing silent state corruption from colliding keyspaces.
 	CustomStatePrefixes [][]byte `protobuf:"bytes,8,rep,name=custom_state_prefixes,json=customStatePrefixes,proto3" json:"customStatePrefixes"` // @gotags: json:"customStatePrefixes"
-	unknownFields       protoimpl.UnknownFields
-	sizeCache           protoimpl.SizeCache
+	// validator_set_epochs: when true, the plugin controls validator-set epoch boundaries.
+	// Core freezes consensus membership and voting power between boundary notifications.
+	ValidatorSetEpochs bool `protobuf:"varint,9,opt,name=validator_set_epochs,json=validatorSetEpochs,proto3" json:"validatorSetEpochs"` // @gotags: json:"validatorSetEpochs"
+	// governance_parameter_spaces: standard Canopy MessageChangeParameter spaces
+	// delegated to this plugin after the native proposal lifecycle approves them.
+	GovernanceParameterSpaces []string `protobuf:"bytes,10,rep,name=governance_parameter_spaces,json=governanceParameterSpaces,proto3" json:"governanceParameterSpaces"` // @gotags: json:"governanceParameterSpaces"
+	unknownFields             protoimpl.UnknownFields
+	sizeCache                 protoimpl.SizeCache
 }
 
 func (x *PluginConfig) Reset() {
@@ -590,6 +596,20 @@ func (x *PluginConfig) GetEventTypeUrls() []string {
 func (x *PluginConfig) GetCustomStatePrefixes() [][]byte {
 	if x != nil {
 		return x.CustomStatePrefixes
+	}
+	return nil
+}
+
+func (x *PluginConfig) GetValidatorSetEpochs() bool {
+	if x != nil {
+		return x.ValidatorSetEpochs
+	}
+	return false
+}
+
+func (x *PluginConfig) GetGovernanceParameterSpaces() []string {
+	if x != nil {
+		return x.GovernanceParameterSpaces
 	}
 	return nil
 }
@@ -736,8 +756,15 @@ type PluginBeginRequest struct {
 	state             protoimpl.MessageState `protogen:"open.v1"`
 	Height            uint64                 `protobuf:"varint,1,opt,name=height,proto3" json:"height,omitempty"`
 	PreviousBlockHash []byte                 `protobuf:"bytes,2,opt,name=previous_block_hash,json=previousBlockHash,proto3" json:"previous_block_hash,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	// validator_set is the exact frozen Canopy committee for this block. Core
+	// supplies the canonical roster so plugins never reconstruct consensus
+	// membership from mutable validator accounting.
+	ValidatorSet []byte `protobuf:"bytes,3,opt,name=validator_set,json=validatorSet,proto3" json:"validator_set,omitempty"`
+	// next_validator_set is the core-frozen next committee once the handoff
+	// cutoff has been reached; empty before preparation.
+	NextValidatorSet []byte `protobuf:"bytes,4,opt,name=next_validator_set,json=nextValidatorSet,proto3" json:"next_validator_set,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *PluginBeginRequest) Reset() {
@@ -780,6 +807,20 @@ func (x *PluginBeginRequest) GetHeight() uint64 {
 func (x *PluginBeginRequest) GetPreviousBlockHash() []byte {
 	if x != nil {
 		return x.PreviousBlockHash
+	}
+	return nil
+}
+
+func (x *PluginBeginRequest) GetValidatorSet() []byte {
+	if x != nil {
+		return x.ValidatorSet
+	}
+	return nil
+}
+
+func (x *PluginBeginRequest) GetNextValidatorSet() []byte {
+	if x != nil {
+		return x.NextValidatorSet
 	}
 	return nil
 }
@@ -954,13 +995,17 @@ func (x *PluginCheckResponse) GetError() *PluginError {
 	return nil
 }
 
-// PluginDeliverRequest carries a transaction and its execution height to be processed
+// PluginDeliverRequest carries either a plugin transaction or a native-governance-approved
+// parameter update. Governance fields are populated only by the core FSM, never from tx calldata.
 type PluginDeliverRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Tx            *Transaction           `protobuf:"bytes,1,opt,name=tx,proto3" json:"tx,omitempty"`
-	Height        uint64                 `protobuf:"varint,2,opt,name=height,proto3" json:"height,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state                    protoimpl.MessageState `protogen:"open.v1"`
+	Tx                       *Transaction           `protobuf:"bytes,1,opt,name=tx,proto3" json:"tx,omitempty"`
+	Height                   uint64                 `protobuf:"varint,2,opt,name=height,proto3" json:"height,omitempty"`
+	GovernanceParameterSpace string                 `protobuf:"bytes,3,opt,name=governance_parameter_space,json=governanceParameterSpace,proto3" json:"governance_parameter_space,omitempty"`
+	GovernanceParameterKey   string                 `protobuf:"bytes,4,opt,name=governance_parameter_key,json=governanceParameterKey,proto3" json:"governance_parameter_key,omitempty"`
+	GovernanceParameterValue []byte                 `protobuf:"bytes,5,opt,name=governance_parameter_value,json=governanceParameterValue,proto3" json:"governance_parameter_value,omitempty"`
+	unknownFields            protoimpl.UnknownFields
+	sizeCache                protoimpl.SizeCache
 }
 
 func (x *PluginDeliverRequest) Reset() {
@@ -1005,6 +1050,27 @@ func (x *PluginDeliverRequest) GetHeight() uint64 {
 		return x.Height
 	}
 	return 0
+}
+
+func (x *PluginDeliverRequest) GetGovernanceParameterSpace() string {
+	if x != nil {
+		return x.GovernanceParameterSpace
+	}
+	return ""
+}
+
+func (x *PluginDeliverRequest) GetGovernanceParameterKey() string {
+	if x != nil {
+		return x.GovernanceParameterKey
+	}
+	return ""
+}
+
+func (x *PluginDeliverRequest) GetGovernanceParameterValue() []byte {
+	if x != nil {
+		return x.GovernanceParameterValue
+	}
+	return nil
 }
 
 // PluginDeliverResponse acknowledges transaction delivery
@@ -1065,6 +1131,7 @@ type PluginEndRequest struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
 	Height          uint64                 `protobuf:"varint,1,opt,name=height,proto3" json:"height,omitempty"`
 	ProposerAddress []byte                 `protobuf:"bytes,2,opt,name=proposer_address,json=proposerAddress,proto3" json:"proposer_address,omitempty"`
+	TimeMicros      uint64                 `protobuf:"varint,3,opt,name=time_micros,json=timeMicros,proto3" json:"time_micros,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -1113,13 +1180,26 @@ func (x *PluginEndRequest) GetProposerAddress() []byte {
 	return nil
 }
 
+func (x *PluginEndRequest) GetTimeMicros() uint64 {
+	if x != nil {
+		return x.TimeMicros
+	}
+	return 0
+}
+
 // PluginEndResponse acknowledges end block execution
 type PluginEndResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Events        []*Event               `protobuf:"bytes,1,rep,name=events,proto3" json:"events,omitempty"`
-	Error         *PluginError           `protobuf:"bytes,99,opt,name=error,proto3" json:"error,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	Events []*Event               `protobuf:"bytes,1,rep,name=events,proto3" json:"events,omitempty"`
+	// validator_set_epoch_end: the current block is the final block of the governed
+	// validator-set epoch. Core activates the next frozen set for the following block.
+	ValidatorSetEpochEnd bool `protobuf:"varint,2,opt,name=validator_set_epoch_end,json=validatorSetEpochEnd,proto3" json:"validatorSetEpochEnd"` // @gotags: json:"validatorSetEpochEnd"
+	// validator_set_epoch_prepare freezes the next core committee while the
+	// current committee is still authoritative for cross-chain handoff proofs.
+	ValidatorSetEpochPrepare bool         `protobuf:"varint,3,opt,name=validator_set_epoch_prepare,json=validatorSetEpochPrepare,proto3" json:"validatorSetEpochPrepare"` // @gotags: json:"validatorSetEpochPrepare"
+	Error                    *PluginError `protobuf:"bytes,99,opt,name=error,proto3" json:"error,omitempty"`
+	unknownFields            protoimpl.UnknownFields
+	sizeCache                protoimpl.SizeCache
 }
 
 func (x *PluginEndResponse) Reset() {
@@ -1157,6 +1237,20 @@ func (x *PluginEndResponse) GetEvents() []*Event {
 		return x.Events
 	}
 	return nil
+}
+
+func (x *PluginEndResponse) GetValidatorSetEpochEnd() bool {
+	if x != nil {
+		return x.ValidatorSetEpochEnd
+	}
+	return false
+}
+
+func (x *PluginEndResponse) GetValidatorSetEpochPrepare() bool {
+	if x != nil {
+		return x.ValidatorSetEpochPrepare
+	}
+	return false
 }
 
 func (x *PluginEndResponse) GetError() *PluginError {
@@ -1457,7 +1551,10 @@ type PluginRangeRead struct {
 	// limit of the range
 	Limit uint64 `protobuf:"varint,3,opt,name=limit,proto3" json:"limit,omitempty"`
 	// reverse order
-	Reverse       bool `protobuf:"varint,4,opt,name=reverse,proto3" json:"reverse,omitempty"`
+	Reverse bool `protobuf:"varint,4,opt,name=reverse,proto3" json:"reverse,omitempty"`
+	// start_after resumes strictly after this full state key in the requested
+	// direction. It must belong to the same prefix.
+	StartAfter    []byte `protobuf:"bytes,5,opt,name=start_after,json=startAfter,proto3" json:"startAfter"` // @gotags: json:"startAfter"
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1518,6 +1615,13 @@ func (x *PluginRangeRead) GetReverse() bool {
 		return x.Reverse
 	}
 	return false
+}
+
+func (x *PluginRangeRead) GetStartAfter() []byte {
+	if x != nil {
+		return x.StartAfter
+	}
+	return nil
 }
 
 // PluginStateReadResponse returns the results for the read requests
@@ -1921,7 +2025,7 @@ const file_plugin_proto_rawDesc = "" +
 	"stateWrite\x121\n" +
 	"\x05query\x18\n" +
 	" \x01(\v2\x19.types.PluginQueryRequestH\x00R\x05queryB\t\n" +
-	"\apayload\"\xc9\x02\n" +
+	"\apayload\"\xbb\x03\n" +
 	"\fPluginConfig\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x0e\n" +
 	"\x02id\x18\x02 \x01(\x04R\x02id\x12\x18\n" +
@@ -1930,16 +2034,21 @@ const file_plugin_proto_rawDesc = "" +
 	"\x16file_descriptor_protos\x18\x05 \x03(\fR\x14fileDescriptorProtos\x122\n" +
 	"\x15transaction_type_urls\x18\x06 \x03(\tR\x13transactionTypeUrls\x12&\n" +
 	"\x0fevent_type_urls\x18\a \x03(\tR\reventTypeUrls\x122\n" +
-	"\x15custom_state_prefixes\x18\b \x03(\fR\x13customStatePrefixes\">\n" +
+	"\x15custom_state_prefixes\x18\b \x03(\fR\x13customStatePrefixes\x120\n" +
+	"\x14validator_set_epochs\x18\t \x01(\bR\x12validatorSetEpochs\x12>\n" +
+	"\x1bgovernance_parameter_spaces\x18\n" +
+	" \x03(\tR\x19governanceParameterSpaces\">\n" +
 	"\x0fPluginFSMConfig\x12+\n" +
 	"\x06config\x18\x01 \x01(\v2\x13.types.PluginConfigR\x06config\"9\n" +
 	"\x14PluginGenesisRequest\x12!\n" +
 	"\fgenesis_json\x18\x01 \x01(\fR\vgenesisJson\"A\n" +
 	"\x15PluginGenesisResponse\x12(\n" +
-	"\x05error\x18c \x01(\v2\x12.types.PluginErrorR\x05error\"\\\n" +
+	"\x05error\x18c \x01(\v2\x12.types.PluginErrorR\x05error\"\xaf\x01\n" +
 	"\x12PluginBeginRequest\x12\x16\n" +
 	"\x06height\x18\x01 \x01(\x04R\x06height\x12.\n" +
-	"\x13previous_block_hash\x18\x02 \x01(\fR\x11previousBlockHash\"e\n" +
+	"\x13previous_block_hash\x18\x02 \x01(\fR\x11previousBlockHash\x12#\n" +
+	"\rvalidator_set\x18\x03 \x01(\fR\fvalidatorSet\x12,\n" +
+	"\x12next_validator_set\x18\x04 \x01(\fR\x10nextValidatorSet\"e\n" +
 	"\x13PluginBeginResponse\x12$\n" +
 	"\x06events\x18\x01 \x03(\v2\f.types.EventR\x06events\x12(\n" +
 	"\x05error\x18c \x01(\v2\x12.types.PluginErrorR\x05error\"P\n" +
@@ -1949,18 +2058,25 @@ const file_plugin_proto_rawDesc = "" +
 	"\x13PluginCheckResponse\x12-\n" +
 	"\x12authorized_signers\x18\x01 \x03(\fR\x11authorizedSigners\x12\x1c\n" +
 	"\trecipient\x18\x02 \x01(\fR\trecipient\x12(\n" +
-	"\x05error\x18c \x01(\v2\x12.types.PluginErrorR\x05error\"R\n" +
+	"\x05error\x18c \x01(\v2\x12.types.PluginErrorR\x05error\"\x88\x02\n" +
 	"\x14PluginDeliverRequest\x12\"\n" +
 	"\x02tx\x18\x01 \x01(\v2\x12.types.TransactionR\x02tx\x12\x16\n" +
-	"\x06height\x18\x02 \x01(\x04R\x06height\"g\n" +
+	"\x06height\x18\x02 \x01(\x04R\x06height\x12<\n" +
+	"\x1agovernance_parameter_space\x18\x03 \x01(\tR\x18governanceParameterSpace\x128\n" +
+	"\x18governance_parameter_key\x18\x04 \x01(\tR\x16governanceParameterKey\x12<\n" +
+	"\x1agovernance_parameter_value\x18\x05 \x01(\fR\x18governanceParameterValue\"g\n" +
 	"\x15PluginDeliverResponse\x12$\n" +
 	"\x06events\x18\x01 \x03(\v2\f.types.EventR\x06events\x12(\n" +
-	"\x05error\x18c \x01(\v2\x12.types.PluginErrorR\x05error\"U\n" +
+	"\x05error\x18c \x01(\v2\x12.types.PluginErrorR\x05error\"v\n" +
 	"\x10PluginEndRequest\x12\x16\n" +
 	"\x06height\x18\x01 \x01(\x04R\x06height\x12)\n" +
-	"\x10proposer_address\x18\x02 \x01(\fR\x0fproposerAddress\"c\n" +
+	"\x10proposer_address\x18\x02 \x01(\fR\x0fproposerAddress\x12\x1f\n" +
+	"\vtime_micros\x18\x03 \x01(\x04R\n" +
+	"timeMicros\"\xd9\x01\n" +
 	"\x11PluginEndResponse\x12$\n" +
-	"\x06events\x18\x01 \x03(\v2\f.types.EventR\x06events\x12(\n" +
+	"\x06events\x18\x01 \x03(\v2\f.types.EventR\x06events\x125\n" +
+	"\x17validator_set_epoch_end\x18\x02 \x01(\bR\x14validatorSetEpochEnd\x12=\n" +
+	"\x1bvalidator_set_epoch_prepare\x18\x03 \x01(\bR\x18validatorSetEpochPrepare\x12(\n" +
 	"\x05error\x18c \x01(\v2\x12.types.PluginErrorR\x05error\"K\n" +
 	"\vPluginError\x12\x12\n" +
 	"\x04code\x18\x01 \x01(\x04R\x04code\x12\x16\n" +
@@ -1977,12 +2093,14 @@ const file_plugin_proto_rawDesc = "" +
 	"\x06ranges\x18\x02 \x03(\v2\x16.types.PluginRangeReadR\x06ranges\"<\n" +
 	"\rPluginKeyRead\x12\x19\n" +
 	"\bquery_id\x18\x01 \x01(\x04R\aqueryId\x12\x10\n" +
-	"\x03key\x18\x02 \x01(\fR\x03key\"t\n" +
+	"\x03key\x18\x02 \x01(\fR\x03key\"\x95\x01\n" +
 	"\x0fPluginRangeRead\x12\x19\n" +
 	"\bquery_id\x18\x01 \x01(\x04R\aqueryId\x12\x16\n" +
 	"\x06prefix\x18\x02 \x01(\fR\x06prefix\x12\x14\n" +
 	"\x05limit\x18\x03 \x01(\x04R\x05limit\x12\x18\n" +
-	"\areverse\x18\x04 \x01(\bR\areverse\"v\n" +
+	"\areverse\x18\x04 \x01(\bR\areverse\x12\x1f\n" +
+	"\vstart_after\x18\x05 \x01(\fR\n" +
+	"startAfter\"v\n" +
 	"\x17PluginStateReadResponse\x121\n" +
 	"\aresults\x18\x01 \x03(\v2\x17.types.PluginReadResultR\aresults\x12(\n" +
 	"\x05error\x18c \x01(\v2\x12.types.PluginErrorR\x05error\"`\n" +

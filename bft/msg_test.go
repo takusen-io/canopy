@@ -246,6 +246,32 @@ func TestProposerMessageQCRejectsWrongRootHeightForPartialQC(t *testing.T) {
 	require.ErrorContains(t, c.bft.HandleMessage(msg), "wrong phase")
 }
 
+// TestProposerMessageDefersHashCheckUntilProposalValidation covers a smaller
+// consensus certificate overtaking the larger proposal payload on the wire.
+func TestProposerMessageDefersHashCheckUntilProposalValidation(t *testing.T) {
+	c := newTestConsensus(t, Precommit, 3)
+	c.simPrecommitPhase(t, 0)
+	msg := c.bft.Proposals[0][phaseToString(Precommit)][0]
+
+	// The certificate is authenticated and may be retained before the proposal
+	// arrives, but it must not bypass the consistency check once local state is
+	// available.
+	c.bft.Block, c.bft.Results = nil, nil
+	params, errI := c.bft.GetValidateMessageParams(msg)
+	require.NoError(t, errI)
+	partial, errI := c.bft.CheckProposerMessage(msg, params)
+	require.NoError(t, errI)
+	require.False(t, partial)
+
+	_, _, c.bft.Results, _ = c.proposal(t)
+	c.bft.Block, c.bft.BlockHash = c.cont.NewTestBlock2(), nil
+	params, errI = c.bft.GetValidateMessageParams(msg)
+	require.NoError(t, errI)
+	_, errI = c.bft.CheckProposerMessage(msg, params)
+	require.Error(t, errI)
+	require.Equal(t, lib.CodeMismatchConsBlockHash, errI.Code())
+}
+
 func TestHandleMessageNilSignatureReturnsError(t *testing.T) {
 	c := newTestConsensus(t, ProposeVote, 3)
 	msg := &Message{

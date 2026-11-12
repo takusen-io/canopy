@@ -193,6 +193,15 @@ func TestNewFromGenesisFile(t *testing.T) {
 	}
 }
 
+func TestGenesisPluginDataJSONRoundTrip(t *testing.T) {
+	original := &GenesisState{PluginGenesis: json.RawMessage(`{"takusen":{"revision":"1"}}`)}
+	encoded, err := json.Marshal(original)
+	require.NoError(t, err)
+	decoded := new(GenesisState)
+	require.NoError(t, json.Unmarshal(encoded, decoded))
+	require.JSONEq(t, string(original.PluginGenesis), string(decoded.PluginGenesis))
+}
+
 func TestReadGenesisFromFile(t *testing.T) {
 	tests := []struct {
 		name     string

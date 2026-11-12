@@ -80,6 +80,18 @@ func TestRoundDeadlinesAreTimestampAnchoredAndBackOff(t *testing.T) {
 	require.Equal(t, anchor.Add(6750*time.Millisecond), c.bft.RoundDeadline(2))
 }
 
+func TestProposalBuildGraceDoesNotMoveConsensusDeadline(t *testing.T) {
+	c := newTestConsensus(t, Propose, 4)
+	c.bft.Config.RoundRobinBlockIntervalMS = 750
+	c.cont.proposalBuildDelay = 750 * time.Millisecond
+	c.bft.SetHeightAnchor(time.Now())
+
+	c.bft.StartRound()
+	require.WithinDuration(t, c.bft.BFTStartTime.Add(750*time.Millisecond), c.bft.roundDeadline, time.Millisecond)
+	require.Equal(t, 1, c.cont.proposalDeadlineCalls)
+	c.bft.PhaseTimer.Stop()
+}
+
 // TestForcedRoundDeadlineUsesRequestedTimeoutSchedule() verifies forced rounds use the requested timeout schedule.
 func TestForcedRoundDeadlineUsesRequestedTimeoutSchedule(t *testing.T) {
 	c := newTestConsensus(t, Propose, 1)
@@ -761,6 +773,43 @@ func TestStartCommitPhase(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestDeterministicCommitCollectsHealthyLateSigner(t *testing.T) {
+	c := newTestConsensus(t, Commit, 4)
+	c.bft.roundDeadline = time.Now().Add(500 * time.Millisecond)
+	_, blockHash, resultsHash := c.simPrecommitVotePhase(t, 0)
+
+	require.False(t, c.bft.PhaseHas23Maj(), "a bare quorum should retain the bounded participation window")
+	require.False(t, c.bft.commitCollectionDeadline.IsZero())
+	require.WithinDuration(t,
+		c.bft.roundDeadline.Add(-c.bft.Config.ConsensusConfig.BlockConsensusLeadTime()),
+		c.bft.commitCollectionDeadline,
+		time.Millisecond,
+	)
+
+	lateVote := &Message{Qc: &QC{
+		Header:      c.view(PrecommitVote, 0),
+		BlockHash:   blockHash,
+		ResultsHash: resultsHash,
+		ProposerKey: c.bft.ProposerKey,
+	}}
+	require.NoError(t, lateVote.Sign(c.valKeys[3]))
+	require.NoError(t, c.bft.AddVote(lateVote))
+	require.True(t, c.bft.AllVotingPowerReceived())
+	require.True(t, c.bft.PhaseHas23Maj(), "full participation should advance without waiting for the cutoff")
+	c.bft.PhaseTimer.Stop()
+}
+
+func TestDeterministicCommitDoesNotWaitPastCollectionDeadline(t *testing.T) {
+	c := newTestConsensus(t, Commit, 4)
+	c.bft.roundDeadline = time.Now().Add(500 * time.Millisecond)
+	c.simPrecommitVotePhase(t, 0)
+	c.bft.commitCollectionDeadline = time.Now().Add(-time.Millisecond)
+
+	require.False(t, c.bft.AllVotingPowerReceived())
+	require.True(t, c.bft.PhaseHas23Maj(), "quorum must retain liveness when one validator is unavailable")
+	c.bft.PhaseTimer.Stop()
 }
 
 func TestStartCommitProcessPhase(t *testing.T) {

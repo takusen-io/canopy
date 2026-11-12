@@ -38,6 +38,13 @@ func TestNextProposalTimeUsesImmediateNextSlotWhenReady(t *testing.T) {
 	require.True(t, now.Add(interval).Equal(nextProposalTime(previous, now, interval, config.BlockConsensusLeadTime())))
 }
 
+func TestProposalConsensusLeadTimeScalesWithProposalWork(t *testing.T) {
+	configured := 200 * time.Millisecond
+	require.Equal(t, configured, proposalConsensusLeadTime(configured, 0))
+	require.Equal(t, 400*time.Millisecond, proposalConsensusLeadTime(configured, 8))
+	require.Equal(t, 1800*time.Millisecond, proposalConsensusLeadTime(configured, 64))
+}
+
 // TestValidateProposalTimeRequiresMonotonicTimestamp() verifies proposal timestamps increase monotonically.
 func TestValidateProposalTimeRequiresMonotonicTimestamp(t *testing.T) {
 	previous := &lib.BlockResult{BlockHeader: &lib.BlockHeader{Time: 1_000}}
