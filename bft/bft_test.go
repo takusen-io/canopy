@@ -1035,6 +1035,7 @@ func TestScheduleForceRound(t *testing.T) {
 // TestRefreshRootChainInfoPublishesCommitteeSnapshotAtomically() verifies root-chain committee snapshots are published atomically.
 func TestRefreshRootChainInfoPublishesCommitteeSnapshotAtomically(t *testing.T) {
 	c := newTestConsensus(t, Propose, 1)
+	oldHeight := c.bft.Height
 	oldValidators := c.bft.ValidatorSet.ValidatorSet
 	oldCommitteeData := &lib.CommitteeData{LastRootHeightUpdated: 7}
 	c.bft.RootHeight = 7
@@ -1047,23 +1048,60 @@ func TestRefreshRootChainInfoPublishesCommitteeSnapshotAtomically(t *testing.T) 
 	c.cont.committeeData = newCommitteeData
 
 	c.cont.loadCommitteeErr = lib.ErrNoValidators()
-	c.bft.RefreshRootChainInfo()
+	require.Error(t, c.bft.RefreshRootChainInfo())
+	require.Equal(t, oldHeight, c.bft.Height)
 	require.Equal(t, uint64(7), c.bft.RootHeight)
 	require.Same(t, oldValidators, c.bft.ValidatorSet.ValidatorSet)
 	require.Same(t, oldCommitteeData, c.bft.CommitteeData)
 
 	c.cont.loadCommitteeErr = nil
 	c.cont.loadCommitteeDataErr = lib.ErrNoValidators()
-	c.bft.RefreshRootChainInfo()
+	require.Error(t, c.bft.RefreshRootChainInfo())
+	require.Equal(t, oldHeight, c.bft.Height)
 	require.Equal(t, uint64(7), c.bft.RootHeight)
 	require.Same(t, oldValidators, c.bft.ValidatorSet.ValidatorSet)
 	require.Same(t, oldCommitteeData, c.bft.CommitteeData)
 
 	c.cont.loadCommitteeDataErr = nil
-	c.bft.RefreshRootChainInfo()
+	require.NoError(t, c.bft.RefreshRootChainInfo())
+	require.Equal(t, uint64(8), c.bft.Height)
 	require.Equal(t, uint64(8), c.bft.RootHeight)
 	require.Same(t, newValidators.ValidatorSet, c.bft.ValidatorSet.ValidatorSet)
 	require.Same(t, newCommitteeData, c.bft.CommitteeData)
+}
+
+func TestNewHeightLoadFailurePreservesLiveRound(t *testing.T) {
+	c := newTestConsensus(t, Propose, 1)
+	c.bft.Round = 3
+	c.bft.round.Store(3)
+	c.bft.Votes = VotesForHeight{3: {phaseToString(ProposeVote): {"vote": &VoteSet{}}}}
+	c.bft.Proposals = ProposalsForHeight{3: {phaseToString(Propose): {&Message{}}}}
+	c.bft.PacemakerMessages = PacemakerMessages{"validator": &Message{}}
+	c.bft.forcedRound = 9
+	oldVotes, oldProposals, oldPacemaker := c.bft.Votes, c.bft.Proposals, c.bft.PacemakerMessages
+	c.cont.rootHeight = c.bft.Height + 1
+	c.cont.loadCommitteeErr = lib.ErrNoValidators()
+
+	require.Error(t, c.bft.NewHeight())
+	require.Equal(t, uint64(3), c.bft.Round)
+	require.Equal(t, oldVotes, c.bft.Votes)
+	require.Equal(t, oldProposals, c.bft.Proposals)
+	require.Equal(t, oldPacemaker, c.bft.PacemakerMessages)
+	require.Equal(t, uint64(9), c.bft.forcedRound)
+}
+
+func TestSnapshotRetryCannotResetNewerExternalReset(t *testing.T) {
+	c := newTestConsensus(t, Propose, 1)
+	firstGeneration, current := c.bft.currentResetGeneration(ResetBFT{})
+	require.True(t, current)
+
+	staleRetry := ResetBFT{snapshotRetry: true, resetGeneration: firstGeneration}
+	newerGeneration, current := c.bft.currentResetGeneration(ResetBFT{StartTime: time.Now()})
+	require.True(t, current)
+	require.Greater(t, newerGeneration, firstGeneration)
+
+	_, current = c.bft.currentResetGeneration(staleRetry)
+	require.False(t, current)
 }
 
 func TestPhaseHas23Maj(t *testing.T) {

@@ -123,7 +123,10 @@ func (c *Contract) endBlock(request *PluginEndRequest) *PluginEndResponse {
 			if cancelErr != nil {
 				return &PluginEndResponse{Error: cancelErr}
 			}
-			if cancelled && clock.ConsensusTimeSeconds < clock.ValidatorHandoffTimestamp {
+			// A finalized cancellation event can only have been produced before T.
+			// Native certification may arrive later, but the complete snapshotted
+			// domain evidence still proves that no domain switched authority.
+			if cancelled {
 				attemptDeletes, startErr := startValidatorHandoffAttempt(clock)
 				if startErr != nil {
 					return &PluginEndResponse{Error: startErr}

@@ -202,7 +202,7 @@ func (c *Contract) BeginBlock(request *PluginBeginRequest) *PluginBeginResponse 
 		}
 		deletes = append(deletes, nextDeletes...)
 	}
-	for key, record := range c.consumeAuxiliaryCertificates(request.Height, request.AuxiliaryCertificates) {
+	for key, record := range c.consumeAuxiliaryCertificates(request.Height, request.AuxiliaryCertificates, request.AuxiliaryValidatorSet) {
 		records[key] = record
 	}
 	if cursorErr := c.advanceTimeoutCandidateCursor(records); cursorErr != nil {

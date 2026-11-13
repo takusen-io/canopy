@@ -179,6 +179,9 @@ func (c *Controller) ProduceProposal(evidence *bft.ByzantineEvidence, vdf *crypt
 					if p.CertResults != nil && p.CertResults.RootDexBatch != nil {
 						c.Mempool.FSM.SetRootDexCache(p.CertResults.RootDexBatch)
 					}
+					if prepareErr := c.prepareAuxiliaryValidatorSet(c.Mempool.FSM); prepareErr != nil {
+						return false, prepareErr
+					}
 					rebuilt := &lib.Block{
 						BlockHeader: &lib.BlockHeader{
 							Time:            finalTime,
@@ -431,8 +434,18 @@ func (c *Controller) CommitCertificate(qc *lib.QuorumCertificate, block *lib.Blo
 			return
 		}
 	}
-	if auxErr := c.validateAuxiliaryCertificates(qc, c.Consensus.ValidatorSet); auxErr != nil {
-		return auxErr
+	// The consensus cache may already describe the next committee (or may still
+	// describe the previous one during fast sync). Auxiliary signatures belong
+	// to the exact historical committee named by this QC, just like the QC's
+	// ordinary aggregate signature.
+	if len(qc.AuxiliaryCertificates) != 0 {
+		auxValidatorSet, auxErr := c.LoadCommittee(c.LoadRootChainId(qc.Header.Height), qc.Header.RootHeight)
+		if auxErr != nil {
+			return auxErr
+		}
+		if auxErr = c.validateAuxiliaryCertificates(qc, auxValidatorSet); auxErr != nil {
+			return auxErr
+		}
 	}
 	// log indexing the quorum certificate
 	c.log.Debugf("Indexing certificate for height %d", qc.Header.Height)
@@ -550,8 +563,14 @@ func (c *Controller) CommitCertificateParallel(qc *lib.QuorumCertificate, block 
 			return
 		}
 	}
-	if auxErr := c.validateAuxiliaryCertificates(qc, c.Consensus.ValidatorSet); auxErr != nil {
-		return auxErr
+	if len(qc.AuxiliaryCertificates) != 0 {
+		auxValidatorSet, auxErr := c.LoadCommittee(c.LoadRootChainId(qc.Header.Height), qc.Header.RootHeight)
+		if auxErr != nil {
+			return auxErr
+		}
+		if auxErr = c.validateAuxiliaryCertificates(qc, auxValidatorSet); auxErr != nil {
+			return auxErr
+		}
 	}
 	// log indexing the quorum certificate
 	c.log.Debugf("Indexing certificate for height %d", qc.Header.Height)
@@ -838,6 +857,7 @@ func (c *Controller) handlePeerBlock(msg *lib.BlockMessage, syncing, verifyQC bo
 // CheckAndSetLastCertificate() validates the last quorum certificate included in the block and sets it in the ephemeral indexer
 // NOTE: This must come before ApplyBlock in order to have the proposers 'lastCertificate' which is used for distributing rewards
 func (c *Controller) CheckAndSetLastCertificate(candidate *lib.BlockHeader) lib.ErrorI {
+	c.FSM.SetAuxiliaryValidatorSet(nil)
 	if candidate.Height > 1 {
 		// load the last quorum certificate from state
 		lastCertificate, err := c.FSM.LoadCertificateHashesOnly(candidate.Height - 1)
@@ -856,12 +876,10 @@ func (c *Controller) CheckAndSetLastCertificate(candidate *lib.BlockHeader) lib.
 		// committee for that QC. Validate before ApplyBlock can expose it to the
 		// application; never sanitize an invalid proposer-supplied certificate.
 		auxQC := candidate.LastQuorumCertificate
-		auxVS, auxErr := c.LoadCommittee(c.LoadRootChainId(auxQC.Header.Height), auxQC.Header.RootHeight)
-		if auxErr != nil {
-			return auxErr
-		}
-		if auxErr = c.validateAuxiliaryCertificates(auxQC, auxVS); auxErr != nil {
-			return auxErr
+		if len(auxQC.AuxiliaryCertificates) != 0 {
+			if auxErr := c.setAuxiliaryValidatorSet(c.FSM, auxQC); auxErr != nil {
+				return auxErr
+			}
 		}
 		// the synced blocks were already validated during consensus, no need to validate again
 		if !c.Syncing().Load() {
@@ -894,6 +912,44 @@ func (c *Controller) CheckAndSetLastCertificate(candidate *lib.BlockHeader) lib.
 		}
 	}
 	// exit
+	return nil
+}
+
+// prepareAuxiliaryValidatorSet installs the predecessor QC's historical signer
+// roster before proposal execution. Proposal construction does not pass through
+// CheckAndSetLastCertificate, so it must prepare the same transient BeginBlock
+// input explicitly or proposer and replica plugin roots can diverge.
+func (c *Controller) prepareAuxiliaryValidatorSet(state *fsm.StateMachine) lib.ErrorI {
+	state.SetAuxiliaryValidatorSet(nil)
+	if state.Height() <= 1 {
+		return nil
+	}
+	certificate, err := state.LoadCertificate(state.Height() - 1)
+	if err != nil {
+		return err
+	}
+	if len(certificate.AuxiliaryCertificates) == 0 {
+		return nil
+	}
+	return c.setAuxiliaryValidatorSet(state, certificate)
+}
+
+// setAuxiliaryValidatorSet validates and serializes the root-chain-aware
+// committee that signed a QC for deterministic plugin BeginBlock processing.
+func (c *Controller) setAuxiliaryValidatorSet(state *fsm.StateMachine, certificate *lib.QuorumCertificate) lib.ErrorI {
+	validatorSet, err := c.LoadCommittee(
+		c.LoadRootChainId(certificate.Header.Height), certificate.Header.RootHeight)
+	if err != nil {
+		return err
+	}
+	if err = c.validateAuxiliaryCertificates(certificate, validatorSet); err != nil {
+		return err
+	}
+	encoded, err := state.EncodeValidatorSet(validatorSet)
+	if err != nil {
+		return err
+	}
+	state.SetAuxiliaryValidatorSet(encoded)
 	return nil
 }
 

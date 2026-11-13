@@ -61,18 +61,26 @@ func TestAuxiliaryCertificatePersistsStrictQuorumWithoutAffectingConsensus(t *te
 	params := defaultProtocolParams()
 	params.ValidatorSetId = 7
 	store.put(t, KeyForProtocolParams(), params)
-	store.put(t, KeyForEpochClock(), &EpochClock{CurrentEpoch: 1, ValidatorSetId: 7, StartHeight: 1, EndHeight: 100})
+	// BeginBlock is already in N+1, but the predecessor QC was signed by N.
+	store.put(t, KeyForEpochClock(), &EpochClock{CurrentEpoch: 2, ValidatorSetId: 8, StartHeight: 13, EndHeight: 100})
+	for index := byte(3); index <= 4; index++ {
+		address := bytes.Repeat([]byte{index}, addressSize)
+		store.put(t, KeyForEpochValidator(2, address), &Validator{
+			Address: address, PublicKey: testBDNPublicKey(int64(index)), StakedAmount: 100, Committees: []uint64{1},
+		})
+	}
 
 	digest := bytes.Repeat([]byte{0x42}, 32)
 	suite := drandbls.NewBLS12381Suite()
 	candidate := &AuxiliaryCandidate{Kind: "test-native", Key: uint64Bytes(9), Digest: digest, Payload: []byte("bounded")}
-	validators, _, stateErr := contract.activeValidators()
+	encodedValidatorSet := epochEndRequestWithWeights(12, 12, bytes.Repeat([]byte{1}, 20), 100, 100).NextValidatorSet
+	validators, stateErr := decodeActiveValidatorSet(encodedValidatorSet, contract.Config.ChainId)
 	if stateErr != nil {
 		t.Fatal(stateErr)
 	}
 	ordered := make([]*Validator, 0, len(validators))
-	for _, validator := range validators {
-		ordered = append(ordered, validator)
+	for _, message := range validators {
+		ordered = append(ordered, message.(*Validator))
 	}
 	sortValidatorsByConsensusOrder(ordered)
 	points := make([]kyber.Point, len(ordered))
@@ -111,10 +119,10 @@ func TestAuxiliaryCertificatePersistsStrictQuorumWithoutAffectingConsensus(t *te
 		Candidate: candidate,
 		Signature: &AuxiliaryAggregateSignature{Signature: encodedSignature, Bitmap: mask.Mask()},
 	}}
-	records := contract.consumeAuxiliaryCertificates(12, certificates)
+	records := contract.consumeAuxiliaryCertificates(13, certificates, encodedValidatorSet)
 	record, ok := records[string(KeyForConsensusCertificate(candidate.Kind, candidate.Key, candidate.Digest))].(*ConsensusCertificate)
 	if !ok || record.ValidatorSetId != 7 || record.ValidatorEpoch != 1 || record.SignedWeight != 200 ||
-		record.TotalWeight != 200 || record.CompletedHeight != 12 || len(record.AggregateSignatureEip2537) != 256 {
+		record.TotalWeight != 200 || record.CompletedHeight != 13 || len(record.AggregateSignatureEip2537) != 256 {
 		t.Fatalf("unexpected persisted certificate: %+v", record)
 	}
 
@@ -123,13 +131,35 @@ func TestAuxiliaryCertificatePersistsStrictQuorumWithoutAffectingConsensus(t *te
 	mutated := proto.Clone(candidate).(*AuxiliaryCandidate)
 	mutated.Payload = []byte("forged deposit payload")
 	certificates[0].Candidate = mutated
-	if got := contract.consumeAuxiliaryCertificates(13, certificates); len(got) != 0 {
+	if got := contract.consumeAuxiliaryCertificates(13, certificates, encodedValidatorSet); len(got) != 0 {
 		t.Fatal("aggregate signature over another candidate envelope was accepted")
 	}
 	certificates[0].Candidate = candidate
 
 	certificates[0].Signature.Bitmap = []byte{0x01}
-	if got := contract.consumeAuxiliaryCertificates(13, certificates); len(got) != 0 {
+	if got := contract.consumeAuxiliaryCertificates(13, certificates, encodedValidatorSet); len(got) != 0 {
 		t.Fatal("certificate without strict two-thirds weight was persisted")
+	}
+}
+
+func TestUnchangedRosterPredecessorCertificateRetainsSignerEpoch(t *testing.T) {
+	contract, store, _, _ := newMemoryContract(t)
+	params := defaultProtocolParams()
+	params.ValidatorSetId = 7
+	store.put(t, KeyForProtocolParams(), params)
+	store.put(t, KeyForEpochClock(), &EpochClock{CurrentEpoch: 2, ValidatorSetId: 7, StartHeight: 13, EndHeight: 100})
+	for index := byte(1); index <= 2; index++ {
+		address := bytes.Repeat([]byte{index}, addressSize)
+		store.put(t, KeyForEpochValidator(2, address), &Validator{
+			Address: address, PublicKey: testBDNPublicKey(int64(index)), StakedAmount: 100, Committees: []uint64{1},
+		})
+	}
+	encodedValidatorSet := epochEndRequestWithWeights(12, 12, bytes.Repeat([]byte{1}, 20), 100, 100).NextValidatorSet
+	snapshot, err := contract.auxiliaryValidatorSnapshot(13, encodedValidatorSet)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snapshot.epoch != 1 || snapshot.validatorSetID != 7 {
+		t.Fatalf("snapshot epoch=%d set=%d, want epoch=1 set=7", snapshot.epoch, snapshot.validatorSetID)
 	}
 }

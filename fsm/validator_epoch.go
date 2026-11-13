@@ -25,6 +25,24 @@ func (s *StateMachine) EncodeActiveValidatorSet() ([]byte, lib.ErrorI) {
 	return encodeValidatorSet(s.Config.ChainId, committee.ValidatorSet.ValidatorSet)
 }
 
+// EncodeValidatorSet serializes an explicitly loaded historical committee for
+// plugin verification. Unlike EncodeActiveValidatorSet, it does not consult
+// the committee currently active in ephemeral state.
+func (s *StateMachine) EncodeValidatorSet(set lib.ValidatorSet) ([]byte, lib.ErrorI) {
+	return encodeValidatorSet(s.Config.ChainId, set.ValidatorSet.ValidatorSet)
+}
+
+// SetAuxiliaryValidatorSet installs the root-chain-aware committee resolved by
+// the controller for the predecessor QC. The FSM cannot safely reconstruct it
+// from a nested chain's local historical height.
+func (s *StateMachine) SetAuxiliaryValidatorSet(encoded []byte) {
+	s.auxiliaryValidatorSet = slices.Clone(encoded)
+}
+
+func (s *StateMachine) AuxiliaryValidatorSet() []byte {
+	return slices.Clone(s.auxiliaryValidatorSet)
+}
+
 // EncodePreparedValidatorSet serializes the committee frozen for the next
 // epoch. It is empty until the plugin requests preparation at its handoff
 // cutoff, allowing the active committee to authorize the exact next roster.

@@ -1586,6 +1586,26 @@ func TestAbortRequiresFinalizedCancellationBeforeNewAttempt(t *testing.T) {
 	if found, err := contract.read(KeyForEpochClock(), clock); err != nil || !found || clock.ValidatorHandoffAttempt != 1 {
 		t.Fatalf("unresolved cancellation incorrectly created a new attempt: found=%v err=%v clock=%#v", found, err, clock)
 	}
+	// The EVM event itself proves cancellation finalized before T. Native may
+	// certify that event later without turning a successful abort into a
+	// permanent epoch extension.
+	generation := validatorHandoffGeneration(clock)
+	for _, domain := range clock.ValidatorHandoffDomains {
+		proofID := hashFields([]byte("cancelled-rotation"), domain, uint64Bytes(clock.ValidatorSetId))
+		store.put(t, KeyForQuorumProof(proofID), &QuorumProof{
+			ProofKind: "validator-set-rotation-cancelled", ProofId: proofID,
+			ValidatorSetId: clock.ValidatorSetId, NewValidatorSetId: clock.ValidatorSetId + 1,
+			CompletedHeight: 12, SettlementDomainId: domain,
+			HandoffGeneration: generation, HandoffTimestamp: clock.ValidatorHandoffTimestamp,
+		})
+		store.put(t, KeyForRotationResolutionIndex(domain, clock.ValidatorSetId, clock.ValidatorSetId+1), &ReplayMarker{Id: proofID})
+	}
+	if response := contract.endBlock(epochEndRequestAt(13, 12_500, proposer)); response.Error != nil || response.ValidatorSetEpochEnd {
+		t.Fatalf("late Native cancellation certification did not recover: %#v", response)
+	}
+	if found, err := contract.read(KeyForEpochClock(), clock); err != nil || !found || clock.ValidatorHandoffAttempt != 2 || clock.ValidatorHandoffCancelling {
+		t.Fatalf("late cancellation did not start attempt two: found=%v err=%v clock=%#v", found, err, clock)
+	}
 }
 
 func TestEpochBoundaryFailsClosedUntilRotationProofExists(t *testing.T) {

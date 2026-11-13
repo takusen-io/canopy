@@ -1,6 +1,7 @@
 package contract
 
 import (
+	"bytes"
 	"math/big"
 
 	"google.golang.org/protobuf/proto"
@@ -17,17 +18,17 @@ func auxiliaryCandidateSignBytes(candidate *AuxiliaryCandidate) []byte {
 }
 
 // consumeAuxiliaryCertificates persists only certificates whose signer bitmap
-// still proves strict >2/3 against the immutable active epoch snapshot. Core
+// still proves strict >2/3 against the immutable predecessor-QC snapshot. Core
 // already verifies every aggregate signature before committing the QC; this
 // second, deterministic weight check protects the application boundary and
 // gives public RPC durable restart/replay state. Malformed auxiliary material
 // is ignored so it can never halt ordinary Native consensus.
-func (c *Contract) consumeAuxiliaryCertificates(height uint64, certificates []*AuxiliaryCertificate) map[string]proto.Message {
+func (c *Contract) consumeAuxiliaryCertificates(height uint64, certificates []*AuxiliaryCertificate, encodedValidatorSet []byte) map[string]proto.Message {
 	records := make(map[string]proto.Message)
 	if len(certificates) == 0 || len(certificates) > maxAuxiliaryCertificatesPerBlock {
 		return records
 	}
-	snapshot, err := c.activeValidatorSnapshot()
+	snapshot, err := c.auxiliaryValidatorSnapshot(height, encodedValidatorSet)
 	if err != nil {
 		return records
 	}
@@ -60,7 +61,7 @@ func (c *Contract) consumeAuxiliaryCertificates(height uint64, certificates []*A
 		if !valid || left.Cmp(right) <= 0 {
 			continue
 		}
-		if verifyErr := c.verifyValidatorCertificate(auxiliaryCandidateSignBytes(candidate), snapshot.validatorSetID, signature.Bitmap, signature.Signature); verifyErr != nil {
+		if verifyErr := verifyValidatorCertificateWithSnapshot(auxiliaryCandidateSignBytes(candidate), snapshot.validatorSetID, signature.Bitmap, signature.Signature, snapshot); verifyErr != nil {
 			continue
 		}
 		eipSignature, conversionErr := g2CompressedToEIP2537(signature.Signature)
@@ -83,4 +84,63 @@ func (c *Contract) consumeAuxiliaryCertificates(height uint64, certificates []*A
 		records[string(key)] = record
 	}
 	return records
+}
+
+// auxiliaryValidatorSnapshot binds predecessor-QC certificates to the roster
+// supplied by core. At the first block of a new epoch that roster is N while
+// the active application snapshot is already N+1.
+func (c *Contract) auxiliaryValidatorSnapshot(height uint64, encoded []byte) (*activeValidatorSnapshot, *PluginError) {
+	decoded, err := decodeActiveValidatorSet(encoded, c.Config.ChainId)
+	if err != nil {
+		return nil, err
+	}
+	validators := make(map[string]*Validator, len(decoded))
+	ordered := make([]*Validator, 0, len(decoded))
+	var total uint64
+	for _, message := range decoded {
+		validator := message.(*Validator)
+		if ^uint64(0)-total < validator.StakedAmount {
+			return nil, ErrState("auxiliary validator stake overflow")
+		}
+		total += validator.StakedAmount
+		validators[string(validator.Address)] = validator
+		ordered = append(ordered, validator)
+	}
+	params, paramsErr := c.currentProtocolParams()
+	if paramsErr != nil {
+		return nil, paramsErr
+	}
+	clock, clockErr := c.currentEpochClock(params)
+	if clockErr != nil {
+		return nil, clockErr
+	}
+	rosterHash := validatorRosterHash(ordered)
+	activeHash, hashErr := c.epochValidatorRosterHash(clock.CurrentEpoch)
+	if hashErr != nil {
+		return nil, hashErr
+	}
+	// The predecessor QC at the first block of an epoch always belongs to the
+	// previous epoch, even when the weighted roster (and therefore set ID) did
+	// not change across the boundary.
+	if height == clock.StartHeight && clock.CurrentEpoch > 1 {
+		previousHash, previousErr := c.epochValidatorRosterHash(clock.CurrentEpoch - 1)
+		if previousErr != nil {
+			return nil, previousErr
+		}
+		if !bytes.Equal(rosterHash, previousHash) {
+			return nil, ErrState("auxiliary validator set does not match the predecessor QC")
+		}
+		validatorSetID := clock.ValidatorSetId
+		if !bytes.Equal(previousHash, activeHash) {
+			if validatorSetID <= 1 {
+				return nil, ErrState("auxiliary validator set identifier underflow")
+			}
+			validatorSetID--
+		}
+		return &activeValidatorSnapshot{validators: validators, totalStake: total, epoch: clock.CurrentEpoch - 1, validatorSetID: validatorSetID}, nil
+	}
+	if !bytes.Equal(rosterHash, activeHash) {
+		return nil, ErrState("auxiliary validator set does not match the active QC epoch")
+	}
+	return &activeValidatorSnapshot{validators: validators, totalStake: total, epoch: clock.CurrentEpoch, validatorSetID: clock.ValidatorSetId}, nil
 }

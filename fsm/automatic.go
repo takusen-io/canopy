@@ -53,6 +53,7 @@ func (s *StateMachine) BeginBlock() (lib.Events, lib.ErrorI) {
 			ValidatorSet:          validatorSet,
 			NextValidatorSet:      nextValidatorSet,
 			AuxiliaryCertificates: auxiliaryCertificates,
+			AuxiliaryValidatorSet: s.AuxiliaryValidatorSet(),
 		})
 		if err != nil {
 			return nil, err

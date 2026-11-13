@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"runtime/debug"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -28,23 +29,24 @@ const (
 type StateMachine struct {
 	store lib.RWStoreI
 
-	ProtocolVersion    uint64                                  // the version of the protocol this node is running
-	NetworkID          uint32                                  // the id of the network this node is configured to be on
-	height             uint64                                  // the 'version' of the state based on number of blocks currently on
-	blockTimeMicros    uint64                                  // consensus timestamp of the block currently being applied
-	totalVDFIterations uint64                                  // the number of 'verifiable delay iterations' in the blockchain up to this version
-	slashTracker       *SlashTracker                           // tracks total slashes across multiple blocks
-	proposeVoteConfig  GovProposalVoteConfig                   // the configuration of how the state machine behaves with governance proposals
-	Config             lib.Config                              // the main configuration as defined by the 'config.json' file
-	Metrics            *lib.Metrics                            // the telemetry module
-	events             *lib.EventsTracker                      // a simple event tracker for 'per-transaction' events
-	log                lib.LoggerI                             // the logger for standard output and debugging
-	cache              *cache                                  // the state machine cache
-	LastValidatorSet   map[uint64]map[uint64]*lib.ValidatorSet // reference to the last validator set saved in the controller
-	Plugin             *lib.Plugin                             // extensible plugin for the FSM
-	freshGenesis       bool                                    // true until controller startup finishes genesis initialization
-	genesisCommitReady bool                                    // false while core genesis waits for the configured plugin
-	pluginGenesisReady bool                                    // true once the configured plugin applied its genesis document
+	ProtocolVersion       uint64                                  // the version of the protocol this node is running
+	NetworkID             uint32                                  // the id of the network this node is configured to be on
+	height                uint64                                  // the 'version' of the state based on number of blocks currently on
+	blockTimeMicros       uint64                                  // consensus timestamp of the block currently being applied
+	totalVDFIterations    uint64                                  // the number of 'verifiable delay iterations' in the blockchain up to this version
+	slashTracker          *SlashTracker                           // tracks total slashes across multiple blocks
+	proposeVoteConfig     GovProposalVoteConfig                   // the configuration of how the state machine behaves with governance proposals
+	Config                lib.Config                              // the main configuration as defined by the 'config.json' file
+	Metrics               *lib.Metrics                            // the telemetry module
+	events                *lib.EventsTracker                      // a simple event tracker for 'per-transaction' events
+	log                   lib.LoggerI                             // the logger for standard output and debugging
+	cache                 *cache                                  // the state machine cache
+	LastValidatorSet      map[uint64]map[uint64]*lib.ValidatorSet // reference to the last validator set saved in the controller
+	Plugin                *lib.Plugin                             // extensible plugin for the FSM
+	freshGenesis          bool                                    // true until controller startup finishes genesis initialization
+	genesisCommitReady    bool                                    // false while core genesis waits for the configured plugin
+	pluginGenesisReady    bool                                    // true once the configured plugin applied its genesis document
+	auxiliaryValidatorSet []byte                                  // root-chain-aware predecessor-QC signer roster for plugin BeginBlock
 }
 
 type rootCacheStateStore interface {
@@ -692,17 +694,18 @@ func (s *StateMachine) Copy() (*StateMachine, lib.ErrorI) {
 	}
 	// return the clone state machine object reference
 	return &StateMachine{
-		store:              storeCopy,
-		ProtocolVersion:    s.ProtocolVersion,
-		NetworkID:          s.NetworkID,
-		height:             s.height,
-		totalVDFIterations: s.totalVDFIterations,
-		slashTracker:       NewSlashTracker(),
-		proposeVoteConfig:  s.proposeVoteConfig,
-		events:             new(lib.EventsTracker),
-		Config:             s.Config,
-		Plugin:             s.Plugin,
-		log:                s.log,
+		store:                 storeCopy,
+		ProtocolVersion:       s.ProtocolVersion,
+		NetworkID:             s.NetworkID,
+		height:                s.height,
+		totalVDFIterations:    s.totalVDFIterations,
+		slashTracker:          NewSlashTracker(),
+		proposeVoteConfig:     s.proposeVoteConfig,
+		events:                new(lib.EventsTracker),
+		Config:                s.Config,
+		Plugin:                s.Plugin,
+		log:                   s.log,
+		auxiliaryValidatorSet: slices.Clone(s.auxiliaryValidatorSet),
 		cache: &cache{
 			accounts:     make(map[uint64]*Account),
 			pools:        make(map[uint64]*Pool),
@@ -822,6 +825,7 @@ func (s *StateMachine) Reset() {
 	s.slashTracker = NewSlashTracker()
 	// reset caches
 	s.ResetCaches()
+	s.auxiliaryValidatorSet = nil
 	// reset the state store
 	s.store.(lib.StoreI).Reset()
 }

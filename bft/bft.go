@@ -44,10 +44,11 @@ type BFT struct {
 	futureHeight uint64
 	futureBytes  int
 
-	syncing    *atomic.Bool  // if chain for this committee is currently catching up to latest height
-	phase      atomic.Int32  // atomic mirror of View.Phase for external readers
-	round      atomic.Uint64 // atomic mirror of View.Round for external readers
-	deadlineMs atomic.Int64  // atomic proposal vote mode deadline in unix milliseconds for external readers
+	syncing         *atomic.Bool  // if chain for this committee is currently catching up to latest height
+	phase           atomic.Int32  // atomic mirror of View.Phase for external readers
+	round           atomic.Uint64 // atomic mirror of View.Round for external readers
+	deadlineMs      atomic.Int64  // atomic proposal vote mode deadline in unix milliseconds for external readers
+	resetGeneration atomic.Uint64 // invalidates a scheduled snapshot-refresh retry when a newer external reset is consumed
 
 	forcedRound        uint64    // admin-scheduled round; 0 means none
 	forcedRoundAt      time.Time // earliest time at which forcedRound may be entered
@@ -144,7 +145,14 @@ func (b *BFT) usesDeterministicProposers() bool {
 //   - (b) Target chainId <mission accomplished, move to next height>
 func (b *BFT) Start() {
 	// Publish the initial root height, validator set, and committee metadata as one snapshot, just as on later height/round refreshes.
-	b.RefreshRootChainInfo()
+	for {
+		if err := b.RefreshRootChainInfo(); err != nil {
+			b.log.Errorf("initial consensus snapshot refresh failed; retrying: %s", err.Error())
+			time.Sleep(time.Second)
+			continue
+		}
+		break
+	}
 	for {
 		select {
 		case <-b.forceRoundTimer.C:
@@ -194,7 +202,13 @@ func (b *BFT) Start() {
 		// RESET BFT
 		// - This triggers when receiving a new Commit Block (QC) from either root-chainId (a) or the Target-ChainId (b)
 		case resetBFT := <-b.ResetBFT:
+			resetGeneration, current := b.currentResetGeneration(resetBFT)
+			if !current {
+				b.log.Info("Skipping stale consensus snapshot refresh retry")
+				continue
+			}
 			var deferred []*Message
+			var refreshErr lib.ErrorI
 			func() {
 				b.Controller.Lock()
 				defer b.Controller.Unlock()
@@ -203,7 +217,11 @@ func (b *BFT) Start() {
 				} else {
 					b.log.Info("Reset BFT (NEW_HEIGHT)")
 				}
-				b.NewHeight(resetBFT.IsRootChainUpdate)
+				if err := b.NewHeight(resetBFT.IsRootChainUpdate); err != nil {
+					b.log.Errorf("consensus snapshot refresh failed: %s", err.Error())
+					refreshErr = err
+					return
+				}
 				if b.usesDeterministicProposers() {
 					b.SetHeightAnchor(resetBFT.StartTime)
 					b.StartRound()
@@ -220,6 +238,18 @@ func (b *BFT) Start() {
 				}
 				deferred = b.takeFutureMessages(b.Height)
 			}()
+			if refreshErr != nil {
+				retry := resetBFT
+				retry.snapshotRetry = true
+				retry.resetGeneration = resetGeneration
+				time.AfterFunc(time.Second, func() {
+					// Repeated failures schedule exactly one successor without stopping
+					// the BFT loop. The tagged generation lets the consumer discard this
+					// retry if a newer external reset was queued ahead of it.
+					b.ResetBFT <- retry
+				})
+				continue
+			}
 			// Replay a next-height consensus message that overtook its finalized block only after the atomic height/committee reset is visible.
 			for _, msg := range deferred {
 				if err := b.HandleMessage(msg); err != nil {
@@ -234,6 +264,19 @@ func (b *BFT) Start() {
 			}
 		}
 	}
+}
+
+// currentResetGeneration tags external resets at consumption and leaves retry
+// messages on the generation that originally failed. Since ResetBFT is FIFO, a
+// newer external reset already buffered ahead of an older retry increments the
+// generation first and makes the retry stale without reinstalling old timing or
+// clearing newly collected votes.
+func (b *BFT) currentResetGeneration(reset ResetBFT) (uint64, bool) {
+	if !reset.snapshotRetry {
+		return b.resetGeneration.Add(1), true
+	}
+	current := b.resetGeneration.Load()
+	return current, current == reset.resetGeneration
 }
 
 func validProcessTime(start time.Time, maxAge time.Duration) time.Duration {
@@ -779,7 +822,10 @@ func (b *BFT) RoundInterrupt() {
 // - joins the highest round supported by more than one third of voting power
 func (b *BFT) Pacemaker() bool {
 	b.log.Info(b.View.ToString())
-	b.NewRound(false)
+	if err := b.NewRound(false); err != nil {
+		b.log.Errorf("consensus snapshot refresh failed: %s", err.Error())
+		return false
+	}
 	// if +1/3rd Round is larger than local Round - advance to the +1/3rd Round to better join the Majority
 	if pacemakerRound, ok := b.TimeoutCatchUpRound(); ok && pacemakerRound > b.Round {
 		b.log.Infof("Pacemaker peers set round: %d", pacemakerRound)
@@ -985,7 +1031,15 @@ func (b *BFT) CheckProposerAndProposal(msg *Message) (interrupt bool) {
 
 // NewRound() initializes the VoteSet and Proposals cache for the next round
 // - increments the round count if not NewHeight (goes to Round 0)
-func (b *BFT) NewRound(newHeight bool) {
+func (b *BFT) NewRound(newHeight bool) lib.ErrorI {
+	// Height and committee snapshots change only through NewHeight/root-chain
+	// resets. Ordinary round changes must not add a fallible committee load to
+	// the pacemaker path.
+	b.resetRound(newHeight)
+	return nil
+}
+
+func (b *BFT) resetRound(newHeight bool) {
 	if newHeight {
 		b.Round = 0
 	} else {
@@ -994,7 +1048,6 @@ func (b *BFT) NewRound(newHeight bool) {
 		b.ByzantineEvidence = &ByzantineEvidence{DSE: DoubleSignEvidences{}}
 	}
 	b.round.Store(b.Round)
-	b.RefreshRootChainInfo()
 	// reset ProposerKey, Proposal, and Sortition data
 	b.ProposerKey = nil
 	b.commitCollectionDeadline = time.Time{}
@@ -1079,7 +1132,10 @@ func (b *BFT) EnterRound(round uint64) {
 		return
 	}
 	b.Round = round - 1
-	b.NewRound(false)
+	if err := b.NewRound(false); err != nil {
+		b.log.Errorf("consensus snapshot refresh failed: %s", err.Error())
+		return
+	}
 	b.StartRound()
 }
 
@@ -1098,29 +1154,35 @@ func (b *BFT) SendNewView() {
 	})
 }
 
-// RefreshRootChainInfo() updates the cached root chain info with the latest known
-func (b *BFT) RefreshRootChainInfo() {
-	// Target-chain height is independent of the root-chain committee snapshot.
-	b.Height = b.Controller.ChainHeight()
+// RefreshRootChainInfo loads and publishes one complete consensus snapshot.
+func (b *BFT) RefreshRootChainInfo() lib.ErrorI {
+	// Height is part of the snapshot: publishing it before either dependent load
+	// succeeds can combine H+1 with H's committee and metadata.
+	height := b.Controller.ChainHeight()
 	rootHeight := b.Controller.RootChainHeight()
-	// Load the full root-chain snapshot before publishing it so a transient RPC failure cannot erase or mislabel the last authenticated snapshot.
-	validatorSet, err := b.Controller.LoadCommittee(b.LoadRootChainId(b.Height), rootHeight)
+	validatorSet, err := b.Controller.LoadCommittee(b.LoadRootChainId(height), rootHeight)
 	if err != nil {
-		b.log.Errorf("LoadCommittee() failed with err: %s", err.Error())
-		return
+		return err
 	}
 	committeeData, err := b.Controller.LoadCommitteeData()
 	if err != nil {
-		b.log.Errorf("LoadCommitteeData() failed with err: %s", err.Error())
-		return
+		return err
 	}
+	b.Height = height
 	b.RootHeight = rootHeight
 	b.ValidatorSet = validatorSet
 	b.CommitteeData = committeeData
+	return nil
 }
 
 // NewHeight() initializes / resets consensus variables preparing for the NewHeight
-func (b *BFT) NewHeight(keepLocks ...bool) {
+func (b *BFT) NewHeight(keepLocks ...bool) lib.ErrorI {
+	// Load and publish the complete next snapshot before clearing any state for
+	// the current height. A transient load failure leaves the live round intact
+	// while Start schedules a bounded retry.
+	if err := b.RefreshRootChainInfo(); err != nil {
+		return err
+	}
 	keepLock := len(keepLocks) != 0 && keepLocks[0]
 	// A force-round recovery is scoped to the height on which it was requested.
 	b.forcedRound = 0
@@ -1136,7 +1198,7 @@ func (b *BFT) NewHeight(keepLocks ...bool) {
 	// reset PacemakerMessages
 	b.PacemakerMessages = make(PacemakerMessages)
 	// initialize Round 0
-	b.NewRound(true)
+	b.resetRound(true)
 	// Deterministic mode enters PROPOSE directly while legacy mode retains the VRF election protocol.
 	b.Phase = Election
 	if b.usesDeterministicProposers() {
@@ -1154,6 +1216,7 @@ func (b *BFT) NewHeight(keepLocks ...bool) {
 		b.HighQC = nil
 		b.RCBuildHeight = 0
 	}
+	return nil
 }
 
 // SafeNode is the codified Hotstuff SafeNodePredicate:
@@ -1448,6 +1511,8 @@ type (
 type ResetBFT struct {
 	IsRootChainUpdate bool
 	StartTime         time.Time
+	snapshotRetry     bool
+	resetGeneration   uint64
 }
 
 const (

@@ -17,7 +17,10 @@ import (
 	"github.com/canopy-network/canopy/lib/crypto"
 	"github.com/canopy-network/canopy/p2p"
 	"github.com/canopy-network/canopy/store"
+	"google.golang.org/protobuf/proto"
 )
+
+const maxAuxiliaryCandidateOutbox = 4096
 
 const (
 	// Maximum size of the block sync request queue
@@ -568,7 +571,7 @@ func (c *Controller) SubmitAuxiliaryCandidate(candidate *lib.AuxiliaryCandidate)
 	// Watchers use deterministic historical checkpoints. Permit a later local
 	// checkpoint to replace an uncertified observation for the same logical
 	// fact; this prevents one stale in-memory candidate from pinning the pool.
-	if len(c.auxiliaryCandidates) >= 32 && c.auxiliaryCandidates[logical] == nil {
+	if len(c.auxiliaryCandidates) >= maxAuxiliaryCandidateOutbox && c.auxiliaryCandidates[logical] == nil {
 		return fmt.Errorf("auxiliary candidate pool is full")
 	}
 	previous, existed := c.auxiliaryCandidates[logical]
@@ -589,7 +592,14 @@ func (c *Controller) consumeAuxiliaryCertificates(certificates []*lib.AuxiliaryC
 	defer c.auxiliaryMu.Unlock()
 	for _, certificate := range certificates {
 		if candidate := certificate.GetCandidate(); candidate != nil {
-			delete(c.auxiliaryCandidates, candidate.Kind+string(candidate.Key))
+			logical := candidate.Kind + string(candidate.Key)
+			// A validator-local observation may advance to a newer finalized
+			// checkpoint before the older envelope is certified. Only consume the
+			// exact envelope carried by the applied certificate; an old certificate
+			// must never delete its replacement.
+			if stored := c.auxiliaryCandidates[logical]; proto.Equal(stored, candidate) {
+				delete(c.auxiliaryCandidates, logical)
+			}
 		}
 	}
 	if err := c.persistAuxiliaryCandidatesLocked(); err != nil {
@@ -612,8 +622,8 @@ func (c *Controller) loadAuxiliaryCandidates() error {
 	if err = json.Unmarshal(encoded, &candidates); err != nil {
 		return err
 	}
-	if len(candidates) > 32 {
-		return fmt.Errorf("auxiliary candidate outbox exceeds 32 entries")
+	if len(candidates) > maxAuxiliaryCandidateOutbox {
+		return fmt.Errorf("auxiliary candidate outbox exceeds %d entries", maxAuxiliaryCandidateOutbox)
 	}
 	for _, candidate := range candidates {
 		if candidate == nil || len(candidate.Kind) == 0 || len(candidate.Key) == 0 || len(candidate.Digest) != 32 {

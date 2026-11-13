@@ -433,23 +433,19 @@ func bdnPublicKey(compressed []byte) (kyber.Point, error) {
 }
 
 func (c *Contract) verifyValidatorCertificate(digest []byte, validatorSetID uint64, bitmap, aggregate []byte) *PluginError {
-	params, err := c.currentProtocolParams()
+	snapshot, err := c.activeValidatorSnapshot()
 	if err != nil {
 		return err
 	}
-	currentSetID, setErr := c.currentValidatorSetID(params)
-	if setErr != nil {
-		return setErr
-	}
-	if validatorSetID == 0 || validatorSetID != currentSetID || len(aggregate) != bdnSignatureSize {
+	return verifyValidatorCertificateWithSnapshot(digest, validatorSetID, bitmap, aggregate, snapshot)
+}
+
+func verifyValidatorCertificateWithSnapshot(digest []byte, validatorSetID uint64, bitmap, aggregate []byte, snapshot *activeValidatorSnapshot) *PluginError {
+	if snapshot == nil || validatorSetID == 0 || validatorSetID != snapshot.validatorSetID || len(aggregate) != bdnSignatureSize {
 		return ErrUnauthorized("certificate does not use the governed validator set")
 	}
-	validatorsByAddress, totalWeight, stateErr := c.activeValidators()
-	if stateErr != nil {
-		return stateErr
-	}
-	validators := make([]*Validator, 0, len(validatorsByAddress))
-	for _, validator := range validatorsByAddress {
+	validators := make([]*Validator, 0, len(snapshot.validators))
+	for _, validator := range snapshot.validators {
 		validators = append(validators, validator)
 	}
 	sortValidatorsByConsensusOrder(validators)
@@ -477,7 +473,7 @@ func (c *Contract) verifyValidatorCertificate(digest []byte, validatorSetID uint
 		signedWeight += validator.StakedAmount
 	}
 	left := new(big.Int).Mul(new(big.Int).SetUint64(signedWeight), big.NewInt(3))
-	right := new(big.Int).Mul(new(big.Int).SetUint64(totalWeight), big.NewInt(2))
+	right := new(big.Int).Mul(new(big.Int).SetUint64(snapshot.totalStake), big.NewInt(2))
 	if left.Cmp(right) <= 0 {
 		return ErrUnauthorized("certificate does not contain strict two-thirds stake")
 	}
