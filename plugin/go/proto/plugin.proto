@@ -100,6 +100,7 @@ message PluginGenesisResponse {PluginError error = 99;}
 
 // PluginBeginRequest signals start of a new block
 message PluginBeginRequest {
+  reserved 6;
   uint64 height = 1;
   // previous_block_hash is the finalized predecessor used by deterministic
   // application assignment. It is supplied by core, never by a transaction.
@@ -111,9 +112,6 @@ message PluginBeginRequest {
   // cutoff has been reached; empty before preparation.
   bytes next_validator_set = 4;
   repeated AuxiliaryCertificate auxiliary_certificates = 5;
-  // auxiliary_validator_set is the historical committee named by the
-  // predecessor QC. It can differ from validator_set at an epoch boundary.
-  bytes auxiliary_validator_set = 6;
 }
 
 message AuxiliaryCandidate {

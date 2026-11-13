@@ -75,9 +75,6 @@ func New(fsm *fsm.StateMachine, c lib.Config, valKey crypto.PrivateKeyI, metrics
 		auxiliaryCandidates: make(map[string]*lib.AuxiliaryCandidate),
 		Mutex:               &sync.Mutex{},
 	}
-	if loadErr := controller.loadAuxiliaryCandidates(); loadErr != nil {
-		return nil, lib.NewError(lib.NoCode, lib.MainModule, fmt.Sprintf("load auxiliary candidate outbox: %v", loadErr))
-	}
 	// load checkpoints from file (if provided)
 	controller.loadCheckpointsFile()
 	// setup plugin if enabled

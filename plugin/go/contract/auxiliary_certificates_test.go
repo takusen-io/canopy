@@ -56,35 +56,33 @@ func TestCertifiedEVMDepositAppliesWithoutObservationTransactions(t *testing.T) 
 	}
 }
 
-func TestAuxiliaryCertificatePersistsStrictQuorumWithoutAffectingConsensus(t *testing.T) {
+func TestAuxiliaryCertificatePersistsCoreValidatedRelayArtifact(t *testing.T) {
 	contract, store, _, _ := newMemoryContract(t)
 	params := defaultProtocolParams()
 	params.ValidatorSetId = 7
 	store.put(t, KeyForProtocolParams(), params)
 	// BeginBlock is already in N+1, but the predecessor QC was signed by N.
 	store.put(t, KeyForEpochClock(), &EpochClock{CurrentEpoch: 2, ValidatorSetId: 8, StartHeight: 13, EndHeight: 100})
-	for index := byte(3); index <= 4; index++ {
-		address := bytes.Repeat([]byte{index}, addressSize)
-		store.put(t, KeyForEpochValidator(2, address), &Validator{
-			Address: address, PublicKey: testBDNPublicKey(int64(index)), StakedAmount: 100, Committees: []uint64{1},
-		})
+	var outgoing []*Validator
+	for epoch, firstIndex := range map[uint64]byte{1: 1, 2: 3} {
+		for index := firstIndex; index < firstIndex+2; index++ {
+			address := bytes.Repeat([]byte{index}, addressSize)
+			validator := &Validator{
+				Address: address, PublicKey: testBDNPublicKey(int64(index)), StakedAmount: 100, Committees: []uint64{1},
+			}
+			store.put(t, KeyForEpochValidator(epoch, address), validator)
+			if epoch == 1 {
+				outgoing = append(outgoing, validator)
+			}
+		}
 	}
 
 	digest := bytes.Repeat([]byte{0x42}, 32)
 	suite := drandbls.NewBLS12381Suite()
 	candidate := &AuxiliaryCandidate{Kind: "test-native", Key: uint64Bytes(9), Digest: digest, Payload: []byte("bounded")}
-	encodedValidatorSet := epochEndRequestWithWeights(12, 12, bytes.Repeat([]byte{1}, 20), 100, 100).NextValidatorSet
-	validators, stateErr := decodeActiveValidatorSet(encodedValidatorSet, contract.Config.ChainId)
-	if stateErr != nil {
-		t.Fatal(stateErr)
-	}
-	ordered := make([]*Validator, 0, len(validators))
-	for _, message := range validators {
-		ordered = append(ordered, message.(*Validator))
-	}
-	sortValidatorsByConsensusOrder(ordered)
-	points := make([]kyber.Point, len(ordered))
-	for index, validator := range ordered {
+	sortValidatorsByConsensusOrder(outgoing)
+	points := make([]kyber.Point, len(outgoing))
+	for index, validator := range outgoing {
 		point, pointErr := bdnPublicKey(validator.PublicKey)
 		if pointErr != nil {
 			t.Fatal(pointErr)
@@ -96,12 +94,15 @@ func TestAuxiliaryCertificatePersistsStrictQuorumWithoutAffectingConsensus(t *te
 		t.Fatal(err)
 	}
 	partials := make([][]byte, 0, 2)
-	for index, validator := range ordered {
+	for index, validator := range outgoing {
 		scalar := suite.G1().Scalar().SetInt64(1)
 		if bytes.Equal(validator.PublicKey, testBDNPublicKey(2)) {
 			scalar = suite.G1().Scalar().SetInt64(2)
 		}
-		partial, signErr := bdn.NewSchemeOnG2(suite).Sign(scalar, auxiliaryCandidateSignBytes(candidate))
+		// Sign unrelated bytes. Core is the sole authentication boundary, so the
+		// plugin must persist this well-formed relay artifact without repeating
+		// BDN verification against the candidate envelope.
+		partial, signErr := bdn.NewSchemeOnG2(suite).Sign(scalar, []byte("already-verified-by-core"))
 		if signErr != nil || mask.SetBit(index, true) != nil {
 			t.Fatal(signErr)
 		}
@@ -119,26 +120,11 @@ func TestAuxiliaryCertificatePersistsStrictQuorumWithoutAffectingConsensus(t *te
 		Candidate: candidate,
 		Signature: &AuxiliaryAggregateSignature{Signature: encodedSignature, Bitmap: mask.Mask()},
 	}}
-	records := contract.consumeAuxiliaryCertificates(13, certificates, encodedValidatorSet)
+	records := contract.consumeAuxiliaryCertificates(13, certificates)
 	record, ok := records[string(KeyForConsensusCertificate(candidate.Kind, candidate.Key, candidate.Digest))].(*ConsensusCertificate)
 	if !ok || record.ValidatorSetId != 7 || record.ValidatorEpoch != 1 || record.SignedWeight != 200 ||
 		record.TotalWeight != 200 || record.CompletedHeight != 13 || len(record.AggregateSignatureEip2537) != 256 {
 		t.Fatalf("unexpected persisted certificate: %+v", record)
-	}
-
-	// A proposer cannot reuse the valid aggregate with a different application
-	// payload even when the advertised digest and all-validator bitmap remain.
-	mutated := proto.Clone(candidate).(*AuxiliaryCandidate)
-	mutated.Payload = []byte("forged deposit payload")
-	certificates[0].Candidate = mutated
-	if got := contract.consumeAuxiliaryCertificates(13, certificates, encodedValidatorSet); len(got) != 0 {
-		t.Fatal("aggregate signature over another candidate envelope was accepted")
-	}
-	certificates[0].Candidate = candidate
-
-	certificates[0].Signature.Bitmap = []byte{0x01}
-	if got := contract.consumeAuxiliaryCertificates(13, certificates, encodedValidatorSet); len(got) != 0 {
-		t.Fatal("certificate without strict two-thirds weight was persisted")
 	}
 }
 
@@ -148,14 +134,15 @@ func TestUnchangedRosterPredecessorCertificateRetainsSignerEpoch(t *testing.T) {
 	params.ValidatorSetId = 7
 	store.put(t, KeyForProtocolParams(), params)
 	store.put(t, KeyForEpochClock(), &EpochClock{CurrentEpoch: 2, ValidatorSetId: 7, StartHeight: 13, EndHeight: 100})
-	for index := byte(1); index <= 2; index++ {
-		address := bytes.Repeat([]byte{index}, addressSize)
-		store.put(t, KeyForEpochValidator(2, address), &Validator{
-			Address: address, PublicKey: testBDNPublicKey(int64(index)), StakedAmount: 100, Committees: []uint64{1},
-		})
+	for epoch := uint64(1); epoch <= 2; epoch++ {
+		for index := byte(1); index <= 2; index++ {
+			address := bytes.Repeat([]byte{index}, addressSize)
+			store.put(t, KeyForEpochValidator(epoch, address), &Validator{
+				Address: address, PublicKey: testBDNPublicKey(int64(index)), StakedAmount: 100, Committees: []uint64{1},
+			})
+		}
 	}
-	encodedValidatorSet := epochEndRequestWithWeights(12, 12, bytes.Repeat([]byte{1}, 20), 100, 100).NextValidatorSet
-	snapshot, err := contract.auxiliaryValidatorSnapshot(13, encodedValidatorSet)
+	snapshot, err := contract.auxiliaryValidatorSnapshot(13)
 	if err != nil {
 		t.Fatal(err)
 	}

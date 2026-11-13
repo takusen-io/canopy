@@ -764,9 +764,6 @@ type PluginBeginRequest struct {
 	// cutoff has been reached; empty before preparation.
 	NextValidatorSet      []byte                  `protobuf:"bytes,4,opt,name=next_validator_set,json=nextValidatorSet,proto3" json:"next_validator_set,omitempty"`
 	AuxiliaryCertificates []*AuxiliaryCertificate `protobuf:"bytes,5,rep,name=auxiliary_certificates,json=auxiliaryCertificates,proto3" json:"auxiliary_certificates,omitempty"`
-	// auxiliary_validator_set is the historical committee named by the
-	// predecessor QC. It can differ from validator_set at an epoch boundary.
-	AuxiliaryValidatorSet []byte `protobuf:"bytes,6,opt,name=auxiliary_validator_set,json=auxiliaryValidatorSet,proto3" json:"auxiliary_validator_set,omitempty"`
 	unknownFields         protoimpl.UnknownFields
 	sizeCache             protoimpl.SizeCache
 }
@@ -832,13 +829,6 @@ func (x *PluginBeginRequest) GetNextValidatorSet() []byte {
 func (x *PluginBeginRequest) GetAuxiliaryCertificates() []*AuxiliaryCertificate {
 	if x != nil {
 		return x.AuxiliaryCertificates
-	}
-	return nil
-}
-
-func (x *PluginBeginRequest) GetAuxiliaryValidatorSet() []byte {
-	if x != nil {
-		return x.AuxiliaryValidatorSet
 	}
 	return nil
 }
@@ -2089,14 +2079,13 @@ const file_plugin_proto_rawDesc = "" +
 	"\x14PluginGenesisRequest\x12!\n" +
 	"\fgenesis_json\x18\x01 \x01(\fR\vgenesisJson\"A\n" +
 	"\x15PluginGenesisResponse\x12(\n" +
-	"\x05error\x18c \x01(\v2\x12.types.PluginErrorR\x05error\"\xbb\x02\n" +
+	"\x05error\x18c \x01(\v2\x12.types.PluginErrorR\x05error\"\x89\x02\n" +
 	"\x12PluginBeginRequest\x12\x16\n" +
 	"\x06height\x18\x01 \x01(\x04R\x06height\x12.\n" +
 	"\x13previous_block_hash\x18\x02 \x01(\fR\x11previousBlockHash\x12#\n" +
 	"\rvalidator_set\x18\x03 \x01(\fR\fvalidatorSet\x12,\n" +
 	"\x12next_validator_set\x18\x04 \x01(\fR\x10nextValidatorSet\x12R\n" +
-	"\x16auxiliary_certificates\x18\x05 \x03(\v2\x1b.types.AuxiliaryCertificateR\x15auxiliaryCertificates\x126\n" +
-	"\x17auxiliary_validator_set\x18\x06 \x01(\fR\x15auxiliaryValidatorSet\"e\n" +
+	"\x16auxiliary_certificates\x18\x05 \x03(\v2\x1b.types.AuxiliaryCertificateR\x15auxiliaryCertificatesJ\x04\b\x06\x10\a\"e\n" +
 	"\x13PluginBeginResponse\x12$\n" +
 	"\x06events\x18\x01 \x03(\v2\f.types.EventR\x06events\x12(\n" +
 	"\x05error\x18c \x01(\v2\x12.types.PluginErrorR\x05error\"P\n" +

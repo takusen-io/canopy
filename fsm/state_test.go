@@ -497,20 +497,6 @@ func newTestStateMachine(t *testing.T) StateMachine {
 	return sm
 }
 
-func TestStateMachineCopyPreservesAuxiliaryValidatorSet(t *testing.T) {
-	state := newTestStateMachine(t)
-	original := []byte("predecessor-qc-roster")
-	state.SetAuxiliaryValidatorSet(original)
-
-	copyState, err := state.Copy()
-	require.NoError(t, err)
-	defer copyState.Discard()
-	require.Equal(t, original, copyState.AuxiliaryValidatorSet())
-
-	original[0] = 'X'
-	require.Equal(t, []byte("predecessor-qc-roster"), copyState.AuxiliaryValidatorSet())
-}
-
 func TestPluginStateReadRangeCursorPaginatesInBothDirections(t *testing.T) {
 	sm := newTestStateMachine(t)
 	prefix := lib.JoinLenPrefix([]byte{200})

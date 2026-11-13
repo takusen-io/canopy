@@ -385,10 +385,6 @@ func (m *Mempool) CheckMempool() (err lib.ErrorI) {
 		if rootDexBatch != nil {
 			m.FSM.SetRootDexCache(rootDexBatch)
 		}
-		if err = m.controller.prepareAuxiliaryValidatorSet(m.FSM); err != nil {
-			m.log.Warnf("Check Mempool predecessor auxiliary roster error: %s", err.Error())
-			return err
-		}
 		// Apply one block-sized prefix, evict failures, reset speculative state, and refill before caching.
 		applyBlockStartTime := time.Now()
 		block.BlockHeader, result, err = m.FSM.ApplyBlock(ctx, block, true)

@@ -120,6 +120,7 @@ message PluginGenesisResponse {PluginError error = 99;}
 // hash lets deterministic applications derive assignments without trusting a
 // transaction-supplied chain anchor.
 message PluginBeginRequest {
+  reserved 6;
   uint64 height = 1;
   bytes previous_block_hash = 2;
   // validator_set is the exact frozen Canopy committee for this block. Core
@@ -130,9 +131,6 @@ message PluginBeginRequest {
   // cutoff has been reached; empty before preparation.
   bytes next_validator_set = 4;
   repeated AuxiliaryCertificate auxiliary_certificates = 5;
-  // auxiliary_validator_set is the historical committee named by the
-  // predecessor QC. It can differ from validator_set at an epoch boundary.
-  bytes auxiliary_validator_set = 6;
 }
 
 // PluginBeginResponse acknowledges begin block execution

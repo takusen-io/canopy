@@ -21,7 +21,7 @@ func (m fixedValidatorSetRCManager) GetValidatorSet(_, _, _ uint64) (lib.Validat
 	return m.validatorSet, nil
 }
 
-func TestAuxiliaryCandidateOutboxSurvivesRestart(t *testing.T) {
+func TestAuxiliaryCandidatePoolIsMemoryOnly(t *testing.T) {
 	config := lib.DefaultConfig()
 	config.DataDirPath = t.TempDir()
 	first := &Controller{Config: config, auxiliaryCandidates: make(map[string]*lib.AuxiliaryCandidate)}
@@ -33,12 +33,8 @@ func TestAuxiliaryCandidateOutboxSurvivesRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	restarted := &Controller{Config: config, auxiliaryCandidates: make(map[string]*lib.AuxiliaryCandidate)}
-	if err := restarted.loadAuxiliaryCandidates(); err != nil {
-		t.Fatal(err)
-	}
-	loaded := restarted.auxiliaryCandidates[candidate.Kind+string(candidate.Key)]
-	if loaded == nil || !bytes.Equal(loaded.Digest, candidate.Digest) || !bytes.Equal(loaded.Payload, candidate.Payload) {
-		t.Fatalf("durable candidate was lost: %+v", loaded)
+	if loaded := restarted.auxiliaryCandidates[candidate.Kind+string(candidate.Key)]; loaded != nil {
+		t.Fatalf("external candidate unexpectedly survived controller restart: %+v", loaded)
 	}
 }
 
@@ -61,7 +57,7 @@ func TestAuxiliaryCandidateCheckpointCanAdvanceBeforeCertification(t *testing.T)
 	}
 }
 
-func TestAuxiliaryCandidateOutboxAcceptsBurstBeyondBlockCapacity(t *testing.T) {
+func TestAuxiliaryCandidatePoolAcceptsBurstBeyondBlockCapacity(t *testing.T) {
 	config := lib.DefaultConfig()
 	config.DataDirPath = t.TempDir()
 	controller := &Controller{Config: config, auxiliaryCandidates: make(map[string]*lib.AuxiliaryCandidate)}
@@ -74,7 +70,7 @@ func TestAuxiliaryCandidateOutboxAcceptsBurstBeyondBlockCapacity(t *testing.T) {
 		}
 	}
 	if len(controller.auxiliaryCandidates) != 64 {
-		t.Fatalf("outbox size = %d, want 64", len(controller.auxiliaryCandidates))
+		t.Fatalf("pool size = %d, want 64", len(controller.auxiliaryCandidates))
 	}
 }
 
@@ -188,5 +184,45 @@ func TestMaliciousProposalRejectsPayloadSubstitutedAuxiliaryCertificate(t *testi
 	}
 	if checkErr.Error() == lib.ErrInvalidLastQuorumCertificate().Error() {
 		t.Fatalf("malicious proposer test did not reach auxiliary aggregate validation: %v", checkErr)
+	}
+}
+
+func TestCoreRejectsUnderweightAuxiliaryCertificate(t *testing.T) {
+	keys := make([]crypto.PrivateKeyI, 4)
+	validators := &lib.ConsensusValidators{}
+	for index := range keys {
+		key, err := crypto.NewBLS12381PrivateKey()
+		if err != nil {
+			t.Fatal(err)
+		}
+		keys[index] = key
+		validators.ValidatorSet = append(validators.ValidatorSet, &lib.ConsensusValidator{
+			PublicKey: key.PublicKey().Bytes(), VotingPower: 1,
+		})
+	}
+	validatorSet, err := lib.NewValidatorSet(validators)
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidate := &lib.AuxiliaryCandidate{
+		Kind: "evm-observation/deposit", Key: []byte("underweight"),
+		Digest: bytes.Repeat([]byte{9}, 32), Payload: []byte("finalized evidence"),
+	}
+	multi := validatorSet.MultiKey.Copy()
+	for index := 0; index < 2; index++ {
+		if signErr := multi.AddSigner(keys[index].Sign(lib.AuxiliaryCandidateSignBytes(candidate)), index); signErr != nil {
+			t.Fatal(signErr)
+		}
+	}
+	aggregate, aggregateErr := multi.AggregateSignatures()
+	if aggregateErr != nil {
+		t.Fatal(aggregateErr)
+	}
+	qc := &lib.QuorumCertificate{AuxiliaryCertificates: []*lib.AuxiliaryCertificate{{
+		Candidate: candidate,
+		Signature: &lib.AggregateSignature{Signature: aggregate, Bitmap: []byte{0x03}},
+	}}}
+	if checkErr := (&Controller{}).validateAuxiliaryCertificates(qc, validatorSet); checkErr == nil {
+		t.Fatal("core accepted an auxiliary certificate without strict two-thirds weight")
 	}
 }

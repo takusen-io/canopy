@@ -182,12 +182,19 @@ func (c *Contract) activeValidatorSnapshot() (*activeValidatorSnapshot, *PluginE
 	if clockErr != nil {
 		return nil, clockErr
 	}
-	entries, err := c.rangeRead(EpochValidatorPrefix(clock.CurrentEpoch))
+	return c.validatorSnapshot(clock.CurrentEpoch, clock.ValidatorSetId)
+}
+
+func (c *Contract) validatorSnapshot(epoch, validatorSetID uint64) (*activeValidatorSnapshot, *PluginError) {
+	if epoch == 0 {
+		return nil, ErrState("validator snapshot identity is unavailable")
+	}
+	entries, err := c.rangeRead(EpochValidatorPrefix(epoch))
 	if err != nil {
 		return nil, err
 	}
 	if len(entries) == 0 {
-		return nil, ErrState("active validator snapshot is unavailable")
+		return nil, ErrState("validator snapshot is unavailable")
 	}
 	validators := make(map[string]*Validator)
 	var total uint64
@@ -210,9 +217,9 @@ func (c *Contract) activeValidatorSnapshot() (*activeValidatorSnapshot, *PluginE
 		validators[key] = validator
 	}
 	if total == 0 {
-		return nil, ErrState("Takusen requires an active validator committee")
+		return nil, ErrState("Takusen requires a validator committee")
 	}
-	return &activeValidatorSnapshot{validators: validators, totalStake: total, epoch: clock.CurrentEpoch, validatorSetID: clock.ValidatorSetId}, nil
+	return &activeValidatorSnapshot{validators: validators, totalStake: total, epoch: epoch, validatorSetID: validatorSetID}, nil
 }
 
 func (c *Contract) activeValidators() (map[string]*Validator, uint64, *PluginError) {

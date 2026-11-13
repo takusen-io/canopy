@@ -2,12 +2,8 @@ package controller
 
 import (
 	"bytes"
-	"encoding/json"
-	"errors"
 	"fmt"
 	"math/rand"
-	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -20,7 +16,7 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-const maxAuxiliaryCandidateOutbox = 4096
+const maxAuxiliaryCandidatePool = 4096
 
 const (
 	// Maximum size of the block sync request queue
@@ -571,19 +567,10 @@ func (c *Controller) SubmitAuxiliaryCandidate(candidate *lib.AuxiliaryCandidate)
 	// Watchers use deterministic historical checkpoints. Permit a later local
 	// checkpoint to replace an uncertified observation for the same logical
 	// fact; this prevents one stale in-memory candidate from pinning the pool.
-	if len(c.auxiliaryCandidates) >= maxAuxiliaryCandidateOutbox && c.auxiliaryCandidates[logical] == nil {
+	if len(c.auxiliaryCandidates) >= maxAuxiliaryCandidatePool && c.auxiliaryCandidates[logical] == nil {
 		return fmt.Errorf("auxiliary candidate pool is full")
 	}
-	previous, existed := c.auxiliaryCandidates[logical]
 	c.auxiliaryCandidates[logical] = candidate
-	if err := c.persistAuxiliaryCandidatesLocked(); err != nil {
-		if existed {
-			c.auxiliaryCandidates[logical] = previous
-		} else {
-			delete(c.auxiliaryCandidates, logical)
-		}
-		return err
-	}
 	return nil
 }
 
@@ -602,69 +589,6 @@ func (c *Controller) consumeAuxiliaryCertificates(certificates []*lib.AuxiliaryC
 			}
 		}
 	}
-	if err := c.persistAuxiliaryCandidatesLocked(); err != nil {
-		c.log.Errorf("persist auxiliary candidate outbox: %v", err)
-	}
-}
-
-const auxiliaryCandidatesFile = "auxiliary-candidates.json"
-
-func (c *Controller) loadAuxiliaryCandidates() error {
-	path := filepath.Join(c.Config.DataDirPath, auxiliaryCandidatesFile)
-	encoded, err := os.ReadFile(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	var candidates []*lib.AuxiliaryCandidate
-	if err = json.Unmarshal(encoded, &candidates); err != nil {
-		return err
-	}
-	if len(candidates) > maxAuxiliaryCandidateOutbox {
-		return fmt.Errorf("auxiliary candidate outbox exceeds %d entries", maxAuxiliaryCandidateOutbox)
-	}
-	for _, candidate := range candidates {
-		if candidate == nil || len(candidate.Kind) == 0 || len(candidate.Key) == 0 || len(candidate.Digest) != 32 {
-			return fmt.Errorf("invalid persisted auxiliary candidate")
-		}
-		logical := candidate.Kind + string(candidate.Key)
-		if c.auxiliaryCandidates[logical] != nil {
-			return fmt.Errorf("duplicate persisted auxiliary candidate")
-		}
-		c.auxiliaryCandidates[logical] = candidate
-	}
-	return nil
-}
-
-// persistAuxiliaryCandidatesLocked atomically stores the validator-local
-// external-observation outbox. Native candidates remain reproducible from
-// consensus state and are intentionally not duplicated here.
-func (c *Controller) persistAuxiliaryCandidatesLocked() error {
-	candidates := make([]*lib.AuxiliaryCandidate, 0, len(c.auxiliaryCandidates))
-	for _, candidate := range c.auxiliaryCandidates {
-		candidates = append(candidates, candidate)
-	}
-	sort.Slice(candidates, func(i, j int) bool {
-		if candidates[i].Kind != candidates[j].Kind {
-			return candidates[i].Kind < candidates[j].Kind
-		}
-		return bytes.Compare(candidates[i].Key, candidates[j].Key) < 0
-	})
-	encoded, err := json.Marshal(candidates)
-	if err != nil {
-		return err
-	}
-	if err = os.MkdirAll(c.Config.DataDirPath, 0o700); err != nil {
-		return err
-	}
-	path := filepath.Join(c.Config.DataDirPath, auxiliaryCandidatesFile)
-	temporary := path + ".tmp"
-	if err = os.WriteFile(temporary, encoded, 0o600); err != nil {
-		return err
-	}
-	return os.Rename(temporary, path)
 }
 
 // SendToProposer() sends a bft message to the leader of the Consensus round
