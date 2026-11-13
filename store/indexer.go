@@ -369,12 +369,13 @@ func (t *Indexer) IndexQC(qc *lib.QuorumCertificate) lib.ErrorI {
 	//t.qcCache.Add(qc.Header.Height, qc)
 	// convert to bytes
 	bz, err := lib.Marshal(&lib.QuorumCertificate{
-		Header:      qc.Header,
-		Results:     qc.Results,
-		ResultsHash: qc.ResultsHash,
-		BlockHash:   qc.BlockHash,
-		ProposerKey: qc.ProposerKey,
-		Signature:   qc.Signature,
+		Header:                qc.Header,
+		Results:               qc.Results,
+		ResultsHash:           qc.ResultsHash,
+		BlockHash:             qc.BlockHash,
+		ProposerKey:           qc.ProposerKey,
+		Signature:             qc.Signature,
+		AuxiliaryCertificates: qc.AuxiliaryCertificates,
 	})
 	if err != nil {
 		return err

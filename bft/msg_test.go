@@ -160,6 +160,21 @@ func TestReplicaSignBytesIgnoreAuxiliaryVotes(t *testing.T) {
 	require.Equal(t, want, message.SignBytes(), "best-effort auxiliary votes must never change the ordinary consensus vote")
 }
 
+func TestCommitProposerSignatureCoversStableAuxiliaryEnvelope(t *testing.T) {
+	key, err := crypto.NewBLS12381PrivateKey()
+	require.NoError(t, err)
+	message := &Message{
+		Header: &lib.View{Phase: Commit},
+		Qc: &QC{
+			Header: &lib.View{Phase: PrecommitVote}, BlockHash: make([]byte, 32), ResultsHash: make([]byte, 32),
+			ProposerKey: key.PublicKey().Bytes(), Signature: &lib.AggregateSignature{Signature: make([]byte, 96), Bitmap: []byte{1}},
+			AuxiliaryCertificates: []*lib.AuxiliaryCertificate{{Candidate: &lib.AuxiliaryCandidate{Kind: "evm-observation/deposit", Key: []byte("key"), Digest: make([]byte, 32)}}},
+		},
+	}
+	require.NoError(t, message.Sign(key))
+	require.NoError(t, checkSignature(message.Signature, message))
+}
+
 // TestObsoleteElectionProposalIsRejectedBeforeValidation() verifies deterministic mode rejects obsolete election proposals early.
 func TestObsoleteElectionProposalIsRejectedBeforeValidation(t *testing.T) {
 	c := newTestConsensus(t, Election, 3)

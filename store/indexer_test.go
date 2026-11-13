@@ -19,6 +19,27 @@ import (
 
 const testHeight = 1
 
+func TestIndexQCPersistsAuxiliaryCertificates(t *testing.T) {
+	store, _, cleanup := testStore(t)
+	defer cleanup()
+	candidate := &lib.AuxiliaryCandidate{Kind: "evm-observation/deposit", Key: []byte("deposit"), Digest: bytes.Repeat([]byte{1}, 32), Payload: []byte("payload")}
+	qc := &lib.QuorumCertificate{
+		Header:                &lib.View{Height: testHeight},
+		AuxiliaryCertificates: []*lib.AuxiliaryCertificate{{Candidate: candidate, Signature: &lib.AggregateSignature{Signature: bytes.Repeat([]byte{2}, 96), Bitmap: []byte{1}}}},
+	}
+	require.NoError(t, store.IndexQC(qc))
+	_, err := store.Commit()
+	require.NoError(t, err)
+	stored, err := store.Indexer.getQC(store.qcHeightKey(testHeight))
+	require.NoError(t, err)
+	require.Len(t, stored.AuxiliaryCertificates, 1)
+	actual := stored.AuxiliaryCertificates[0].Candidate
+	require.Equal(t, candidate.Kind, actual.Kind)
+	require.Equal(t, candidate.Key, actual.Key)
+	require.Equal(t, candidate.Digest, actual.Digest)
+	require.Equal(t, candidate.Payload, actual.Payload)
+}
+
 func TestGetTxByHash(t *testing.T) {
 	store, _, cleanup := testStore(t)
 	defer cleanup()

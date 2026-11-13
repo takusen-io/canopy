@@ -289,26 +289,28 @@ func (x *QuorumCertificate) GetNonSigners(vs *ConsensusValidators) (nonSignerPub
 
 // jsonQC represents the json.Marshaller and json.Unmarshaler implementation of QC
 type jsonQC struct {
-	Header      *View               `json:"header,omitempty"`
-	Block       HexBytes            `json:"block,omitempty"`
-	BlockHash   HexBytes            `json:"blockHash,omitempty"`
-	ResultsHash HexBytes            `json:"resultsHash,omitempty"`
-	Results     *CertificateResult  `json:"results,omitempty"`
-	ProposerKey HexBytes            `json:"proposerKey,omitempty"`
-	Signature   *AggregateSignature `json:"signature,omitempty"`
+	Header                *View                   `json:"header,omitempty"`
+	Block                 HexBytes                `json:"block,omitempty"`
+	BlockHash             HexBytes                `json:"blockHash,omitempty"`
+	ResultsHash           HexBytes                `json:"resultsHash,omitempty"`
+	Results               *CertificateResult      `json:"results,omitempty"`
+	ProposerKey           HexBytes                `json:"proposerKey,omitempty"`
+	Signature             *AggregateSignature     `json:"signature,omitempty"`
+	AuxiliaryCertificates []*AuxiliaryCertificate `json:"auxiliaryCertificates,omitempty"`
 }
 
 // MarshalJSON() implements the json.Marshaller interface
 func (x QuorumCertificate) MarshalJSON() ([]byte, error) {
 	// convert the quorum certificate to json bytes
 	return json.Marshal(jsonQC{
-		Header:      x.Header,
-		Results:     x.Results,
-		ResultsHash: x.ResultsHash,
-		Block:       x.Block,
-		BlockHash:   x.BlockHash,
-		ProposerKey: x.ProposerKey,
-		Signature:   x.Signature,
+		Header:                x.Header,
+		Results:               x.Results,
+		ResultsHash:           x.ResultsHash,
+		Block:                 x.Block,
+		BlockHash:             x.BlockHash,
+		ProposerKey:           x.ProposerKey,
+		Signature:             x.Signature,
+		AuxiliaryCertificates: x.AuxiliaryCertificates,
 	})
 }
 
@@ -323,13 +325,14 @@ func (x *QuorumCertificate) UnmarshalJSON(jsonBytes []byte) (err error) {
 	}
 	// set the underlying object using the json qc values
 	*x = QuorumCertificate{
-		Header:      j.Header,
-		Results:     j.Results,
-		ResultsHash: j.ResultsHash,
-		Block:       j.Block,
-		BlockHash:   j.BlockHash,
-		ProposerKey: j.ProposerKey,
-		Signature:   j.Signature,
+		Header:                j.Header,
+		Results:               j.Results,
+		ResultsHash:           j.ResultsHash,
+		Block:                 j.Block,
+		BlockHash:             j.BlockHash,
+		ProposerKey:           j.ProposerKey,
+		Signature:             j.Signature,
+		AuxiliaryCertificates: j.AuxiliaryCertificates,
 	}
 	// exit
 	return

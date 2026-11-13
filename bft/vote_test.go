@@ -9,6 +9,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+type testAuxiliarySignBytes struct{ candidate *lib.AuxiliaryCandidate }
+
+func (t testAuxiliarySignBytes) SignBytes() []byte {
+	return lib.AuxiliaryCandidateSignBytes(t.candidate)
+}
+
 func TestAddVote(t *testing.T) {
 	// pre-define some validators to test with
 	_, keys, _ := newTestValSet(t, 3)
@@ -120,4 +126,26 @@ func TestAddVoteAttachments(t *testing.T) {
 		require.NotZero(t, consensus.bft.getVoteSet(vote).TotalVotedPower)
 	}
 	require.Empty(t, consensus.bft.VDFCache)
+}
+
+func TestAuxiliaryVotesAggregateAtPrecommit(t *testing.T) {
+	consensus := newTestConsensus(t, Commit, 4)
+	candidate := &lib.AuxiliaryCandidate{
+		Kind: "evm-observation/deposit", Key: []byte("deposit"), Digest: bytes.Repeat([]byte{1}, 32), Payload: []byte("payload"),
+	}
+	for index, key := range consensus.valKeys {
+		vote := &Message{
+			Qc:             &QC{Header: &lib.View{Phase: PrecommitVote}},
+			AuxiliaryVotes: []*AuxiliaryVote{{Candidate: candidate, Signature: key.Sign(lib.AuxiliaryCandidateSignBytes(candidate))}},
+		}
+		require.NoError(t, vote.Sign(key))
+		require.NoError(t, consensus.bft.AddVote(vote), index)
+	}
+	vote, _, err := consensus.bft.GetMajorityVote()
+	require.NoError(t, err)
+	certificates := consensus.bft.AuxiliaryCertificates(vote)
+	require.Len(t, certificates, 1)
+	partial, checkErr := certificates[0].Signature.Check(testAuxiliarySignBytes{candidate: candidate}, consensus.bft.ValidatorSet)
+	require.NoError(t, checkErr)
+	require.False(t, partial)
 }
