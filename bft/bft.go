@@ -1350,16 +1350,10 @@ func (b *BFT) IsProposer(id []byte) bool { return bytes.Equal(id, b.ProposerKey)
 // SelfIsValidator() returns true if this node is part of the ValSet
 func (b *BFT) SelfIsValidator() bool {
 	selfValidator, _ := b.ValidatorSet.GetValidator(b.PublicKey)
-	// if not a validator
-	if selfValidator == nil {
-		// defensively check to make sure there wasn't a race between
-		// NEW_HEIGHT and NEW_COMMITTEE, worst case is extra consensus
-		// participation
-		b.RefreshRootChainInfo()
-		// double check
-		selfValidator, _ = b.ValidatorSet.GetValidator(b.PublicKey)
-	}
-	// return 'self is validator'
+	// Committee snapshots may only change through NewHeight. Refreshing one here
+	// would let an incoming validator continue the current phase with old votes,
+	// proposals, locks, and timers combined with the new roster. The sequenced
+	// reset path will install the complete snapshot and reset that state atomically.
 	return selfValidator != nil
 }
 

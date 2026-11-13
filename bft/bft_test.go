@@ -1090,6 +1090,32 @@ func TestNewHeightLoadFailurePreservesLiveRound(t *testing.T) {
 	require.Equal(t, uint64(9), c.bft.forcedRound)
 }
 
+func TestIncomingValidatorWaitsForAtomicReset(t *testing.T) {
+	c := newTestConsensus(t, Propose, 2)
+	incoming := c.bft.ValidatorSet
+	outgoing, err := lib.NewValidatorSet(&lib.ConsensusValidators{
+		ValidatorSet: []*lib.ConsensusValidator{incoming.ValidatorSet.ValidatorSet[1]},
+	})
+	require.NoError(t, err)
+	c.bft.ValidatorSet = outgoing
+	c.cont.valSet[lib.CanopyChainId] = incoming
+	c.cont.rootHeight = c.bft.RootHeight + 1
+
+	oldHeight, oldRootHeight := c.bft.Height, c.bft.RootHeight
+	oldVotes := VotesForHeight{oldHeight: {phaseToString(ProposeVote): {"old": &VoteSet{}}}}
+	oldProposals := ProposalsForHeight{oldHeight: {phaseToString(Propose): {&Message{}}}}
+	c.bft.Votes, c.bft.Proposals = oldVotes, oldProposals
+
+	c.bft.HandlePhase()
+
+	require.Equal(t, oldHeight, c.bft.Height)
+	require.Equal(t, oldRootHeight, c.bft.RootHeight)
+	require.Same(t, outgoing.ValidatorSet, c.bft.ValidatorSet.ValidatorSet)
+	require.Equal(t, oldVotes, c.bft.Votes)
+	require.Equal(t, oldProposals, c.bft.Proposals)
+	require.False(t, c.bft.SelfIsValidator())
+}
+
 func TestSnapshotRetryCannotResetNewerExternalReset(t *testing.T) {
 	c := newTestConsensus(t, Propose, 1)
 	c.bft.EnqueueReset(ResetBFT{})
