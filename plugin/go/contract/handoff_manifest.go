@@ -96,7 +96,7 @@ func (c *Contract) evmRosterHashes(epoch uint64, encoded []byte) ([]byte, []byte
 	if len(validators) < 2 {
 		return nil, nil, nil, ErrState("prepared validator set is too small")
 	}
-	sort.Slice(validators, func(i, j int) bool { return bytes.Compare(validators[i].PublicKey, validators[j].PublicKey) < 0 })
+	sortValidatorsByConsensusOrder(validators)
 	points := make([]kyber.Point, len(validators))
 	for index, validator := range validators {
 		point, pointErr := bdnPublicKey(validator.PublicKey)

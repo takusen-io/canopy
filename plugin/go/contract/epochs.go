@@ -378,7 +378,7 @@ func validatorHandoffRosterHash(encoded []byte, chainID uint64) ([]byte, *Plugin
 }
 
 func validatorRosterHash(validators []*Validator) []byte {
-	sort.Slice(validators, func(i, j int) bool { return bytes.Compare(validators[i].PublicKey, validators[j].PublicKey) < 0 })
+	sortValidatorsByConsensusOrder(validators)
 	hash := sha256.New()
 	_, _ = hash.Write([]byte("takusen:validator-handoff-roster:v1"))
 	_, _ = hash.Write(uint64Bytes(uint64(len(validators))))

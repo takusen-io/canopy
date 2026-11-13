@@ -53,8 +53,8 @@ func TestValidatorCertificateRequiresStrictTwoThirds(t *testing.T) {
 		store.put(t, KeyForEpochValidator(1, address), validator)
 	}
 
-	// activeValidators are sorted by public key; rebuild keys in that same
-	// order so the bitmap and BDN coefficients have one canonical meaning.
+	// Reproduce core's stake-descending/address-descending committee order so
+	// the bitmap and BDN coefficients have one canonical meaning end to end.
 	validators, _, stateErr := contract.activeValidators()
 	if stateErr != nil {
 		t.Fatal(stateErr)
@@ -63,7 +63,7 @@ func TestValidatorCertificateRequiresStrictTwoThirds(t *testing.T) {
 	for _, validator := range validators {
 		ordered = append(ordered, validator)
 	}
-	sort.Slice(ordered, func(i, j int) bool { return bytes.Compare(ordered[i].PublicKey, ordered[j].PublicKey) < 0 })
+	sortValidatorsByConsensusOrder(ordered)
 	kyberPublics := make([]kyber.Point, len(ordered))
 	privateByPublic := make(map[string]kyber.Scalar)
 	for i := int64(1); i <= 4; i++ {
@@ -85,8 +85,9 @@ func TestValidatorCertificateRequiresStrictTwoThirds(t *testing.T) {
 	}
 	digest := sha256.Sum256([]byte("finalization"))
 	scheme := bdn.NewSchemeOnG2(suite)
+	signerIndexes := []int{0, 2, 3}
 	partials := make([][]byte, 0, 3)
-	for i := 0; i < 3; i++ {
+	for _, i := range signerIndexes {
 		if err = mask.SetBit(i, true); err != nil {
 			t.Fatal(err)
 		}
@@ -104,7 +105,48 @@ func TestValidatorCertificateRequiresStrictTwoThirds(t *testing.T) {
 	if certErr := contract.verifyValidatorCertificate(digest[:], 5, mask.Mask(), encodedAggregate); certErr != nil {
 		t.Fatal(certErr)
 	}
-	mask.SetBit(2, false)
+	publicKeyOrdered := append([]*Validator(nil), ordered...)
+	sort.Slice(publicKeyOrdered, func(i, j int) bool {
+		return bytes.Compare(publicKeyOrdered[i].PublicKey, publicKeyOrdered[j].PublicKey) < 0
+	})
+	if string(publicKeyOrdered[0].PublicKey)+string(publicKeyOrdered[2].PublicKey)+string(publicKeyOrdered[3].PublicKey) ==
+		string(ordered[0].PublicKey)+string(ordered[2].PublicKey)+string(ordered[3].PublicKey) {
+		t.Fatal("test fixture does not distinguish consensus and public-key bitmap order")
+	}
+	wrongPoints := make([]kyber.Point, len(publicKeyOrdered))
+	for i, validator := range publicKeyOrdered {
+		wrongPoints[i], err = bdnPublicKey(validator.PublicKey)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	wrongMask, err := sign.NewMask(suite, wrongPoints, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wrongPartials := make([][]byte, 0, 3)
+	for _, i := range signerIndexes {
+		if err = wrongMask.SetBit(i, true); err != nil {
+			t.Fatal(err)
+		}
+		partial, signErr := scheme.Sign(privateByPublic[string(publicKeyOrdered[i].PublicKey)], digest[:])
+		if signErr != nil {
+			t.Fatal(signErr)
+		}
+		wrongPartials = append(wrongPartials, partial)
+	}
+	wrongAggregate, err := scheme.AggregateSignatures(wrongPartials, wrongMask)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wrongSignature, err := wrongAggregate.MarshalBinary()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if certErr := contract.verifyValidatorCertificate(digest[:], 5, wrongMask.Mask(), wrongSignature); certErr == nil {
+		t.Fatal("public-key-ordered partial quorum was reinterpreted as a consensus bitmap")
+	}
+	mask.SetBit(3, false)
 	if certErr := contract.verifyValidatorCertificate(digest[:], 5, mask.Mask(), encodedAggregate); certErr == nil {
 		t.Fatal("accepted a certificate without strict two-thirds stake")
 	}
@@ -574,7 +616,7 @@ func TestPreparedRotationRequiresExactRawVotingPower(t *testing.T) {
 				validators[index] = validator
 				store.put(t, KeyForEpochValidator(2, validator.Address), validator)
 			}
-			sort.Slice(validators, func(i, j int) bool { return bytes.Compare(validators[i].PublicKey, validators[j].PublicKey) < 0 })
+			sortValidatorsByConsensusOrder(validators)
 			rawWeights := make([]uint64, len(validators))
 			for index, validator := range validators {
 				rawWeights[index] = validator.StakedAmount

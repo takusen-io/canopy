@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/hex"
 	"math/big"
-	"sort"
 	"strings"
 
 	"github.com/drand/kyber"
@@ -293,9 +292,7 @@ func (c *Contract) deliverSubmitQuorumSignature(height uint64, message *MessageS
 	for _, validator := range validatorsByAddress {
 		validators = append(validators, validator)
 	}
-	sort.Slice(validators, func(i, j int) bool {
-		return bytes.Compare(validators[i].PublicKey, validators[j].PublicKey) < 0
-	})
+	sortValidatorsByConsensusOrder(validators)
 	shares, readErr := c.rangeRead(QuorumShareProofPrefix(message.ProofId))
 	if readErr != nil {
 		return &PluginDeliverResponse{Error: readErr}
@@ -455,7 +452,7 @@ func (c *Contract) verifyValidatorCertificate(digest []byte, validatorSetID uint
 	for _, validator := range validatorsByAddress {
 		validators = append(validators, validator)
 	}
-	sort.Slice(validators, func(i, j int) bool { return bytes.Compare(validators[i].PublicKey, validators[j].PublicKey) < 0 })
+	sortValidatorsByConsensusOrder(validators)
 	suite := drandbls.NewBLS12381Suite()
 	points := make([]kyber.Point, len(validators))
 	for i, validator := range validators {

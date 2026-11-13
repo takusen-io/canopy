@@ -1,9 +1,7 @@
 package contract
 
 import (
-	"bytes"
 	"math/big"
-	"sort"
 
 	"google.golang.org/protobuf/proto"
 )
@@ -37,7 +35,7 @@ func (c *Contract) consumeAuxiliaryCertificates(height uint64, certificates []*A
 	for _, validator := range snapshot.validators {
 		validators = append(validators, validator)
 	}
-	sort.Slice(validators, func(i, j int) bool { return bytes.Compare(validators[i].PublicKey, validators[j].PublicKey) < 0 })
+	sortValidatorsByConsensusOrder(validators)
 	for _, certificate := range certificates {
 		candidate, signature := certificate.GetCandidate(), certificate.GetSignature()
 		if candidate == nil || signature == nil || len(candidate.Kind) == 0 || len(candidate.Kind) > 64 ||

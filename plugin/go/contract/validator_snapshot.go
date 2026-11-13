@@ -16,6 +16,19 @@ const (
 	maxValidatorSetSize = 60
 )
 
+// sortValidatorsByConsensusOrder reproduces core committee ordering exactly:
+// highest raw stake first, then descending address for ties. Consensus signer
+// bitmaps, Native certificates, and EVM verifier rosters must all use this
+// order; public-key sorting would reinterpret a partial quorum's bitmap.
+func sortValidatorsByConsensusOrder(validators []*Validator) {
+	sort.Slice(validators, func(i, j int) bool {
+		if validators[i].StakedAmount != validators[j].StakedAmount {
+			return validators[i].StakedAmount > validators[j].StakedAmount
+		}
+		return bytes.Compare(validators[i].Address, validators[j].Address) > 0
+	})
+}
+
 func decodeActiveValidatorSet(encoded []byte, chainID uint64) (map[string]proto.Message, *PluginError) {
 	reader := bytes.NewReader(encoded)
 	version, err := reader.ReadByte()

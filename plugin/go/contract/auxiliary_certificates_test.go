@@ -3,7 +3,6 @@ package contract
 import (
 	"bytes"
 	"encoding/json"
-	"sort"
 	"testing"
 
 	"github.com/drand/kyber"
@@ -67,21 +66,31 @@ func TestAuxiliaryCertificatePersistsStrictQuorumWithoutAffectingConsensus(t *te
 	digest := bytes.Repeat([]byte{0x42}, 32)
 	suite := drandbls.NewBLS12381Suite()
 	candidate := &AuxiliaryCandidate{Kind: "test-native", Key: uint64Bytes(9), Digest: digest, Payload: []byte("bounded")}
-	points := []kyber.Point{suite.G1().Point().Mul(suite.G1().Scalar().SetInt64(1), nil), suite.G1().Point().Mul(suite.G1().Scalar().SetInt64(2), nil)}
-	sort.Slice(points, func(i, j int) bool {
-		left, _ := points[i].MarshalBinary()
-		right, _ := points[j].MarshalBinary()
-		return bytes.Compare(left, right) < 0
-	})
+	validators, _, stateErr := contract.activeValidators()
+	if stateErr != nil {
+		t.Fatal(stateErr)
+	}
+	ordered := make([]*Validator, 0, len(validators))
+	for _, validator := range validators {
+		ordered = append(ordered, validator)
+	}
+	sortValidatorsByConsensusOrder(ordered)
+	points := make([]kyber.Point, len(ordered))
+	for index, validator := range ordered {
+		point, pointErr := bdnPublicKey(validator.PublicKey)
+		if pointErr != nil {
+			t.Fatal(pointErr)
+		}
+		points[index] = point
+	}
 	mask, err := sign.NewMask(suite, points, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	partials := make([][]byte, 0, 2)
-	for index, point := range points {
-		encoded, _ := point.MarshalBinary()
+	for index, validator := range ordered {
 		scalar := suite.G1().Scalar().SetInt64(1)
-		if bytes.Equal(encoded, testBDNPublicKey(2)) {
+		if bytes.Equal(validator.PublicKey, testBDNPublicKey(2)) {
 			scalar = suite.G1().Scalar().SetInt64(2)
 		}
 		partial, signErr := bdn.NewSchemeOnG2(suite).Sign(scalar, auxiliaryCandidateSignBytes(candidate))
