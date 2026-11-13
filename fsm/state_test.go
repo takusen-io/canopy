@@ -429,13 +429,20 @@ func TestGetMaxBlockSizeRejectsUnderflowConfig(t *testing.T) {
 	cons, err := sm.GetParamsCons()
 	require.NoError(t, err)
 
-	// Persist an invalid value directly to simulate malformed state from legacy/corrupt config.
-	cons.BlockSize = lib.MaxBlockHeaderSize - 1
+	// Persist a value that covers the legacy header but not the newly retained
+	// auxiliary-certificate allowance.
+	cons.BlockSize = lib.MaxBlockOverheadSize() - 1
 	require.NoError(t, sm.SetParamsCons(cons))
 
 	_, err = sm.GetMaxBlockSize()
 	require.Error(t, err)
 	require.ErrorContains(t, err, "invalid param: blockSize")
+
+	cons.BlockSize = lib.MaxBlockOverheadSize() + 123
+	require.NoError(t, sm.SetParamsCons(cons))
+	available, err := sm.GetMaxBlockSize()
+	require.NoError(t, err)
+	require.Equal(t, uint64(123), available)
 }
 
 func newSingleAccountStateMachine(t *testing.T) StateMachine {

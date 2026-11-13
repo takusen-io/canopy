@@ -92,13 +92,13 @@ func TestUpdateParam(t *testing.T) {
 			error: "invalid param: preserveNonSignerRewards",
 		},
 		{
-			name:   "consensus param block size below header rejected",
-			detail: "block size must be at least header size to avoid max-size underflow",
+			name:   "consensus param block size below complete overhead rejected",
+			detail: "block size must cover the header and bounded auxiliary certificates to avoid max-size underflow",
 			update: paramUpdate{
 				space: "cons",
 				name:  ParamBlockSize,
 				value: &lib.UInt64Wrapper{
-					Value: lib.MaxBlockHeaderSize - 1,
+					Value: lib.MaxBlockOverheadSize() - 1,
 				},
 			},
 			error: "invalid param: blockSize",

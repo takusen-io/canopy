@@ -79,7 +79,7 @@ func (c *Controller) ListenForBlock() {
 				// gossip the block to our peers
 				c.GossipBlock(qc, sender, blockMessage.Time)
 				// signal a reset to the bft module
-				c.Consensus.ResetBFT <- bft.ResetBFT{StartTime: time.UnixMicro(int64(blockMessage.Time))}
+				c.Consensus.EnqueueReset(bft.ResetBFT{StartTime: time.UnixMicro(int64(blockMessage.Time))})
 			}
 			// reset 'syncDetector' because a new block was received properly
 			syncDetector.Reset()
@@ -376,13 +376,15 @@ func (c *Controller) validateAuxiliaryCertificates(qc *lib.QuorumCertificate, va
 	if qc == nil {
 		return nil
 	}
-	if len(qc.AuxiliaryCertificates) > 32 {
+	if len(qc.AuxiliaryCertificates) > lib.MaxAuxiliaryCertificatesPerBlock {
 		return lib.ErrInvalidAggrSignature()
 	}
 	logical := make(map[string]struct{}, len(qc.AuxiliaryCertificates))
 	for _, certificate := range qc.AuxiliaryCertificates {
 		candidate := certificate.GetCandidate()
-		if candidate == nil || len(candidate.Kind) == 0 || len(candidate.Kind) > 64 || len(candidate.Key) == 0 || len(candidate.Key) > 128 || len(candidate.Digest) != 32 || len(candidate.Payload) > 16<<10 || certificate.Signature == nil {
+		if candidate == nil || len(candidate.Kind) == 0 || len(candidate.Kind) > lib.MaxAuxiliaryCandidateKindSize ||
+			len(candidate.Key) == 0 || len(candidate.Key) > lib.MaxAuxiliaryCandidateKeySize || len(candidate.Digest) != crypto.HashSize ||
+			len(candidate.Payload) > lib.MaxAuxiliaryCandidatePayloadSize || certificate.Signature == nil {
 			return lib.ErrInvalidAggrSignature()
 		}
 		key := candidate.Kind + string(candidate.Key)

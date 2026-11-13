@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"strings"
 	"testing"
 
 	"github.com/canopy-network/canopy/lib/crypto"
@@ -137,6 +138,67 @@ func TestCertificateCheckBasic(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestCertificateCheckBoundsCompleteSerializedBlock(t *testing.T) {
+	block := &Block{
+		BlockHeader: &BlockHeader{
+			Height: 1, NetworkId: 1, Time: 1,
+			LastQuorumCertificate: &QuorumCertificate{
+				AuxiliaryCertificates: []*AuxiliaryCertificate{{
+					Candidate: &AuxiliaryCandidate{
+						Kind: "deposit", Key: []byte("domain:nonce"), Digest: bytes.Repeat([]byte{2}, crypto.HashSize),
+						Payload: bytes.Repeat([]byte{3}, MaxAuxiliaryCandidatePayloadSize),
+					},
+					Signature: &AggregateSignature{
+						Signature: bytes.Repeat([]byte{4}, crypto.BLS12381SignatureSize), Bitmap: []byte{1},
+					},
+				}},
+			},
+		},
+		Transactions: [][]byte{bytes.Repeat([]byte{1}, 128)},
+	}
+	_, err := block.BlockHeader.SetHash()
+	require.NoError(t, err)
+	blockBytes, err := Marshal(block)
+	require.NoError(t, err)
+	view := &View{NetworkId: 1, ChainId: 1, Height: 1, RootHeight: 1, Phase: Phase_PRECOMMIT_VOTE}
+	qc := &QuorumCertificate{
+		Header: view, Block: blockBytes, BlockHash: block.BlockHeader.Hash,
+		ResultsHash: crypto.Hash([]byte("results")),
+		Signature: &AggregateSignature{
+			Signature: bytes.Repeat([]byte{1}, crypto.BLS12381SignatureSize), Bitmap: []byte{1},
+		},
+	}
+
+	_, checkErr := qc.Check(ValidatorSet{}, len(blockBytes)-1, view.Copy(), false)
+	require.Error(t, checkErr)
+	require.Equal(t, ErrExpectedMaxBlockSize().Error(), checkErr.Error())
+}
+
+func TestAuxiliaryCertificateHeaderAllowanceCoversMaximumEnvelope(t *testing.T) {
+	header := &BlockHeader{LastQuorumCertificate: &QuorumCertificate{}}
+	withoutAuxiliary, err := Marshal(header)
+	require.NoError(t, err)
+	for range MaxAuxiliaryCertificatesPerBlock {
+		header.LastQuorumCertificate.AuxiliaryCertificates = append(
+			header.LastQuorumCertificate.AuxiliaryCertificates,
+			&AuxiliaryCertificate{
+				Candidate: &AuxiliaryCandidate{
+					Kind: strings.Repeat("k", MaxAuxiliaryCandidateKindSize),
+					Key:  bytes.Repeat([]byte{1}, MaxAuxiliaryCandidateKeySize), Digest: bytes.Repeat([]byte{2}, crypto.HashSize),
+					Payload: bytes.Repeat([]byte{3}, MaxAuxiliaryCandidatePayloadSize),
+				},
+				Signature: &AggregateSignature{
+					Signature: bytes.Repeat([]byte{4}, crypto.BLS12381SignatureSize),
+					Bitmap:    bytes.Repeat([]byte{5}, crypto.MaxBitmapSize(100)),
+				},
+			},
+		)
+	}
+	withAuxiliary, err := Marshal(header)
+	require.NoError(t, err)
+	require.LessOrEqual(t, uint64(len(withAuxiliary)-len(withoutAuxiliary)), MaxAuxiliaryCertificateHeaderSize)
 }
 
 func TestCertificateMarshalJSON(t *testing.T) {

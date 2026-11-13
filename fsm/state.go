@@ -13,6 +13,7 @@ import (
 
 	"github.com/canopy-network/canopy/lib"
 	"github.com/canopy-network/canopy/lib/crypto"
+	"google.golang.org/protobuf/encoding/protowire"
 )
 
 const (
@@ -296,6 +297,7 @@ func (s *StateMachine) ApplyTransactions(ctx context.Context, txs [][]byte, r *l
 	if err != nil {
 		return err
 	}
+	var blockWireSize uint64
 	// keep a map to track transactions that failed 'check'
 	failedCheckTxs := map[int]error{}
 	// retain stable multisig intent IDs from the successful precheck pass
@@ -391,10 +393,12 @@ func (s *StateMachine) ApplyTransactions(ctx context.Context, txs [][]byte, r *l
 				return duplicateErr
 			}
 		}
-		// get the tx size
-		txSize := uint64(len(tx))
+		// Charge the complete protobuf representation of the repeated transaction
+		// field, including its tag and length prefix, rather than payload bytes
+		// alone. The governed block limit is checked against serialized bytes.
+		txWireSize := uint64(protowire.SizeTag(2) + protowire.SizeBytes(len(tx)))
 		// if the max block size is exceeded and we're not yet marked as 'oversize'
-		if txSize+r.BlockSize > maxBlockSize && !oversize {
+		if txWireSize+blockWireSize > maxBlockSize && !oversize {
 			// if validating a block - oversize shouldn't happen
 			if !allowOversize {
 				return ErrMaxBlockSize()
@@ -446,6 +450,9 @@ func (s *StateMachine) ApplyTransactions(ctx context.Context, txs [][]byte, r *l
 			return e
 		}
 		r.Add(tx, txResultBz, result, events, oversize)
+		if !oversize {
+			blockWireSize += txWireSize
+		}
 	}
 	// update metrics
 	s.Metrics.UpdateLargestTxSize(r.LargestTx)
@@ -615,11 +622,11 @@ func (s *StateMachine) GetMaxBlockSize() (uint64, lib.ErrorI) {
 		return 0, err
 	}
 	// fail closed on malformed persisted config to avoid uint64 underflow.
-	if consParams.BlockSize < lib.MaxBlockHeaderSize {
+	if consParams.BlockSize < lib.MaxBlockOverheadSize() {
 		return 0, ErrInvalidParam(ParamBlockSize)
 	}
 	// return the max block size
-	return consParams.BlockSize - lib.MaxBlockHeaderSize, nil
+	return consParams.BlockSize - lib.MaxBlockOverheadSize(), nil
 }
 
 // LoadRootChainInfo() returns the 'need-to-know' information for a nested chain

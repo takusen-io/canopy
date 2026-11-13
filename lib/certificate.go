@@ -18,6 +18,13 @@ const (
 	GlobalMaxBlockSize = int(256 * units.MB)
 	// ensures developers are aware of a change to the header size (which is a consensus breaking change)
 	ExpectedMaxBlockHeaderSize = 1652
+	// Auxiliary certificates are retained in the predecessor QC embedded in the
+	// next block header. Reserve their complete bounded envelope separately from
+	// the legacy fixed header allowance.
+	MaxAuxiliaryCertificatesPerBlock = 32
+	MaxAuxiliaryCandidateKindSize    = 64
+	MaxAuxiliaryCandidateKeySize     = 128
+	MaxAuxiliaryCandidatePayloadSize = 16 << 10
 	// maximums
 	MaxDepositsPerDexBatch  = 5_000
 	MaxWithdrawsPerDexBatch = 5_000
@@ -29,9 +36,21 @@ const (
 	MaxOrdersSettledPerBlock = 250
 )
 
-// MaxBlockHeaderSize is a consensus breaking change because it affects how the state machine
-// checks if a block is above the MaxBlockSize as the State Machine is only aware of the txs.
+// MaxBlockHeaderSize is the legacy base-header allowance and is consensus
+// critical because it affects state-machine transaction capacity. Auxiliary
+// certificate envelopes are reserved separately below.
 var MaxBlockHeaderSize uint64
+
+// MaxAuxiliaryCertificateHeaderSize conservatively covers protobuf framing
+// plus every bounded field in the largest permitted auxiliary certificate set.
+// The exact serialized block is independently checked during QC validation.
+var MaxAuxiliaryCertificateHeaderSize = uint64(MaxAuxiliaryCertificatesPerBlock) * uint64(
+	MaxAuxiliaryCandidateKindSize+MaxAuxiliaryCandidateKeySize+crypto.HashSize+
+		MaxAuxiliaryCandidatePayloadSize+crypto.BLS12381SignatureSize+crypto.MaxBitmapSize(100)+128)
+
+func MaxBlockOverheadSize() uint64 {
+	return MaxBlockHeaderSize + MaxAuxiliaryCertificateHeaderSize
+}
 
 // QUORUM CERTIFICATE CODE BELOW
 
@@ -126,19 +145,15 @@ func (x *QuorumCertificate) Check(vs ValidatorSet, maxBlockSize int, view *View,
 		// exit with error
 		return false, err
 	}
-	// enforce 'max block size' - check only transaction bytes, not the full serialized block
-	// because the mempool transaction size limit is built using the size of the transactions
+	// Enforce the governed limit against the complete serialized block. This
+	// includes protobuf framing, the header, and the predecessor QC's retained
+	// auxiliary certificates rather than charging transactions alone.
+	if maxBlockSize < 0 || len(x.Block) > maxBlockSize {
+		return false, ErrExpectedMaxBlockSize()
+	}
 	block := new(Block)
 	if err := Unmarshal(x.Block, block); err != nil {
 		return false, err
-	}
-	txsSize := 0
-	for _, tx := range block.Transactions {
-		txsSize += len(tx)
-	}
-	if txsSize > maxBlockSize {
-		// exit with error
-		return false, ErrExpectedMaxBlockSize()
 	}
 	// verify the aggregate signature in the certificate
 	return x.Signature.Check(x, vs)

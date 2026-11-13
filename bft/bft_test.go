@@ -1092,16 +1092,19 @@ func TestNewHeightLoadFailurePreservesLiveRound(t *testing.T) {
 
 func TestSnapshotRetryCannotResetNewerExternalReset(t *testing.T) {
 	c := newTestConsensus(t, Propose, 1)
-	firstGeneration, current := c.bft.currentResetGeneration(ResetBFT{})
-	require.True(t, current)
+	c.bft.EnqueueReset(ResetBFT{})
+	first := <-c.bft.resetBFT
+	require.True(t, c.bft.isCurrentReset(first))
 
-	staleRetry := ResetBFT{snapshotRetry: true, resetGeneration: firstGeneration}
-	newerGeneration, current := c.bft.currentResetGeneration(ResetBFT{StartTime: time.Now()})
-	require.True(t, current)
-	require.Greater(t, newerGeneration, firstGeneration)
-
-	_, current = c.bft.currentResetGeneration(staleRetry)
-	require.False(t, current)
+	staleRetry := first
+	// Publish but deliberately do not consume the newer reset. Publication
+	// alone must invalidate a retry that may already be waiting for the
+	// controller lock.
+	c.bft.EnqueueReset(ResetBFT{IsRootChainUpdate: true, StartTime: time.Now()})
+	require.False(t, c.bft.isCurrentReset(staleRetry))
+	newer := <-c.bft.resetBFT
+	require.Greater(t, newer.resetGeneration, staleRetry.resetGeneration)
+	require.True(t, c.bft.isCurrentReset(newer))
 }
 
 func TestPhaseHas23Maj(t *testing.T) {

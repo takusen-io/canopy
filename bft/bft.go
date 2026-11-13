@@ -37,7 +37,7 @@ type BFT struct {
 	PacemakerMessages PacemakerMessages  // View messages from the current ValidatorSet allowing the node to synchronize to the highest +2/3 seen Round
 
 	Controller               // reference to the Controller for callbacks like producing and validating the proposal via the plugin or gossiping commit message
-	ResetBFT   chan ResetBFT // trigger that resets the BFT due to a new Target block or a new Canopy block
+	resetBFT   chan ResetBFT // sequenced trigger that resets the BFT due to a new Target block or a new Canopy block
 
 	advanceBFT   chan struct{} // edge-triggered notification that the current phase has enough data to advance
 	futureMsgs   []*Message    // messages that arrived before the preceding block reset
@@ -100,7 +100,7 @@ func New(c lib.Config, valKey crypto.PrivateKeyI, rootHeight, height uint64, con
 		Config:            c,
 		log:               l,
 		Controller:        con,
-		ResetBFT:          make(chan ResetBFT, 100),
+		resetBFT:          make(chan ResetBFT, 100),
 		advanceBFT:        make(chan struct{}, 1),
 		syncing:           con.Syncing(),
 		PhaseTimer:        lib.NewTimer(),
@@ -201,17 +201,26 @@ func (b *BFT) Start() {
 
 		// RESET BFT
 		// - This triggers when receiving a new Commit Block (QC) from either root-chainId (a) or the Target-ChainId (b)
-		case resetBFT := <-b.ResetBFT:
-			resetGeneration, current := b.currentResetGeneration(resetBFT)
-			if !current {
+		case resetBFT := <-b.resetBFT:
+			if !b.isCurrentReset(resetBFT) {
 				b.log.Info("Skipping stale consensus snapshot refresh retry")
 				continue
 			}
 			var deferred []*Message
 			var refreshErr lib.ErrorI
+			staleReset := false
 			func() {
 				b.Controller.Lock()
 				defer b.Controller.Unlock()
+				// A reset can wait behind block/committee work after its first
+				// check. Revalidate under the controller lock so any newer reset
+				// published in the meantime supersedes it before NewHeight can
+				// clear proposals or locks.
+				if !b.isCurrentReset(resetBFT) {
+					b.log.Info("Skipping stale consensus snapshot refresh retry")
+					staleReset = true
+					return
+				}
 				if resetBFT.IsRootChainUpdate {
 					b.log.Info("Reset BFT (NEW_COMMITTEE)")
 				} else {
@@ -238,15 +247,16 @@ func (b *BFT) Start() {
 				}
 				deferred = b.takeFutureMessages(b.Height)
 			}()
+			if staleReset {
+				continue
+			}
 			if refreshErr != nil {
 				retry := resetBFT
-				retry.snapshotRetry = true
-				retry.resetGeneration = resetGeneration
 				time.AfterFunc(time.Second, func() {
 					// Repeated failures schedule exactly one successor without stopping
 					// the BFT loop. The tagged generation lets the consumer discard this
 					// retry if a newer external reset was queued ahead of it.
-					b.ResetBFT <- retry
+					b.resetBFT <- retry
 				})
 				continue
 			}
@@ -266,17 +276,16 @@ func (b *BFT) Start() {
 	}
 }
 
-// currentResetGeneration tags external resets at consumption and leaves retry
-// messages on the generation that originally failed. Since ResetBFT is FIFO, a
-// newer external reset already buffered ahead of an older retry increments the
-// generation first and makes the retry stale without reinstalling old timing or
-// clearing newly collected votes.
-func (b *BFT) currentResetGeneration(reset ResetBFT) (uint64, bool) {
-	if !reset.snapshotRetry {
-		return b.resetGeneration.Add(1), true
-	}
-	current := b.resetGeneration.Load()
-	return current, current == reset.resetGeneration
+// EnqueueReset assigns external reset order at publication rather than
+// consumption. A queued committee reset therefore invalidates an older retry
+// even while the BFT loop is waiting for the controller lock.
+func (b *BFT) EnqueueReset(reset ResetBFT) {
+	reset.resetGeneration = b.resetGeneration.Add(1)
+	b.resetBFT <- reset
+}
+
+func (b *BFT) isCurrentReset(reset ResetBFT) bool {
+	return reset.resetGeneration != 0 && reset.resetGeneration == b.resetGeneration.Load()
 }
 
 func validProcessTime(start time.Time, maxAge time.Duration) time.Duration {
@@ -1511,7 +1520,6 @@ type (
 type ResetBFT struct {
 	IsRootChainUpdate bool
 	StartTime         time.Time
-	snapshotRetry     bool
 	resetGeneration   uint64
 }
 

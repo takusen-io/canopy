@@ -35,7 +35,7 @@ import (
 // BFTCommitProcessTime | 2 secs      | 1.5 secs   | Hard = config, Soft = 75% of config timing
 // NonSignerPercent     | 33%         | 10%        | Hard = BFT upper bound
 // LargestTxSize        | 4KB         | 3KB        | Hard = default mempool config, Soft = 75% of hard
-// BlockSize            | 1MB-1652B   | 750KB      | Hard = param - MaxBlockHeader, Soft = 75% of param
+// BlockSize            | governed-overhead | 75% capacity | Hard = param - complete bounded header overhead
 // BlockProcessingTime  | 4 secs      | 3 secs     | Hard = MIN(ProposeTimeoutMS, ProposeVoteTimeoutMS)
 // BlockVDFIterations   | n/a         | 0          | Soft = unexpected behavior
 // RootChainInfoTime    | 2 secs      | 1 sec      | Hard = 10% of block time
