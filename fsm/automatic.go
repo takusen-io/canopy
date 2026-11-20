@@ -157,12 +157,12 @@ func (s *StateMachine) EndBlock(proposerAddress []byte) (events lib.Events, err 
 				return nil, err
 			}
 			if resp.ReplaceAuxiliaryCandidates {
-				if len(resp.AuxiliaryCandidates) > 32 {
+				if len(resp.AuxiliaryCandidates) > lib.MaxAuxiliaryCertificatesPerBlock {
 					return nil, lib.ErrInvalidArgument()
 				}
 				logical := make(map[string]struct{}, len(resp.AuxiliaryCandidates))
 				for _, candidate := range resp.AuxiliaryCandidates {
-					if candidate == nil || len(candidate.Kind) == 0 || len(candidate.Kind) > 64 || len(candidate.Key) == 0 || len(candidate.Key) > 128 || len(candidate.Digest) != 32 || len(candidate.Payload) > 16<<10 {
+					if candidate == nil || len(candidate.Kind) == 0 || len(candidate.Kind) > lib.MaxAuxiliaryCandidateKindSize || len(candidate.Key) == 0 || len(candidate.Key) > lib.MaxAuxiliaryCandidateKeySize || len(candidate.Digest) != 32 || len(candidate.Payload) > lib.MaxAuxiliaryCandidatePayloadSize {
 						return nil, lib.ErrInvalidArgument()
 					}
 					key := candidate.Kind + string(candidate.Key)

@@ -92,6 +92,22 @@ func TestProposalBuildGraceDoesNotMoveConsensusDeadline(t *testing.T) {
 	c.bft.PhaseTimer.Stop()
 }
 
+func TestDeterministicRoundFailureTimerOutlivesTarget(t *testing.T) {
+	c := newTestConsensus(t, Propose, 4)
+	c.bft.Config.RoundRobinBlockIntervalMS = 40
+	c.bft.Config.ProposeTimeoutMS = 200
+	c.bft.SetHeightAnchor(time.Now())
+
+	c.bft.StartRound()
+	time.Sleep(60 * time.Millisecond)
+	select {
+	case <-c.bft.PhaseTimer.C:
+		t.Fatal("round failed at the deterministic target instead of the configured failure deadline")
+	default:
+	}
+	c.bft.PhaseTimer.Stop()
+}
+
 // TestForcedRoundDeadlineUsesRequestedTimeoutSchedule() verifies forced rounds use the requested timeout schedule.
 func TestForcedRoundDeadlineUsesRequestedTimeoutSchedule(t *testing.T) {
 	c := newTestConsensus(t, Propose, 1)
@@ -136,6 +152,8 @@ func TestValidatedProposalExtendsDeadlineMonotonically(t *testing.T) {
 
 	c.bft.extendRoundDeadlineFromProposal(encode(anchor.Add(2 * interval)))
 	require.Equal(t, anchor.Add(2*interval), c.bft.roundDeadline)
+	require.Equal(t, c.bft.roundDeadline.Add(500*time.Millisecond), c.bft.roundFailureDeadline(),
+		"proposal validation must preserve the configured failure margin beyond the signed timestamp")
 
 	c.bft.extendRoundDeadlineFromProposal(encode(anchor.Add(interval)))
 	require.Equal(t, anchor.Add(2*interval), c.bft.roundDeadline,
@@ -209,6 +227,22 @@ func TestCommitteeResetCollectsRoundZeroNewViews(t *testing.T) {
 		t.Fatal("committee-reset proposer did not propose after new-view quorum")
 	}
 	c.bft.PhaseTimer.Stop()
+}
+
+// TestCommitteeResetDropsPreviousHeightLock verifies that a delayed committee
+// refresh cannot carry a lock from a block that already committed into the next
+// height. The refresh must still use the committee-reset new-view protocol.
+func TestCommitteeResetDropsPreviousHeightLock(t *testing.T) {
+	c := newTestConsensus(t, Propose, 3)
+	locked := c.setupTestableHighQC(t, false, true)
+	c.bft.HighQC = locked
+	c.bft.PartialQCs = PartialQCs{"stale": {}}
+	c.cont.rootHeight = c.bft.Height + 1
+
+	require.NoError(t, c.bft.NewHeight(true))
+	require.Nil(t, c.bft.HighQC)
+	require.Empty(t, c.bft.PartialQCs)
+	require.True(t, c.bft.roundZeroNewView)
 }
 
 // TestCommitteeResetDoesNotAcceptRoundZeroOneSignerProof() verifies committee resets reject a round-zero single-signer proof.
@@ -1145,6 +1179,16 @@ func TestPhaseHas23Maj(t *testing.T) {
 	// 0% votes
 	c.bft.Phase = Commit
 	require.False(t, c.bft.PhaseHas23Maj())
+
+	// A proposer's own phase message can be delivered before replica votes.
+	// It must not use the replica-only no-op phase shortcut and aggregate a
+	// quorum that does not exist yet.
+	proposer := newTestConsensus(t, Precommit, 3)
+	proposer.bft.ProposerKey = proposer.bft.PublicKey
+	proposer.bft.Proposals[0] = map[string][]*Message{
+		phaseToString(Precommit): {{Header: proposer.view(Precommit, 0)}},
+	}
+	require.False(t, proposer.bft.PhaseHas23Maj())
 }
 
 func TestCheckProposerAndBlock(t *testing.T) {
@@ -1208,6 +1252,29 @@ func TestCheckProposerAndBlock(t *testing.T) {
 	}
 }
 
+func TestStaleProposerIsDroppedWithoutChangingRound(t *testing.T) {
+	c := newTestConsensus(t, PrecommitVote, 1)
+	c.bft.Block, _, c.bft.Results, _ = c.proposal(t)
+	c.bft.ProposerKey = c.valKeys[0].PublicKey().Bytes()
+	msg := &Message{
+		Header: c.view(Precommit, 0),
+		Qc: &QC{
+			BlockHash: c.bft.GetBlockHash(), ResultsHash: c.bft.Results.Hash(),
+		},
+		Signature: &lib.Signature{PublicKey: bytes.Repeat([]byte{1}, crypto.BLS12381PubKeySize)},
+	}
+	if c.bft.Proposals[0] == nil {
+		c.bft.Proposals[0] = make(map[string][]*Message)
+	}
+	c.bft.Proposals[0][phaseToString(Precommit)] = []*Message{msg}
+	round, phase := c.bft.Round, c.bft.Phase
+
+	require.True(t, c.bft.CheckProposerAndProposal(msg))
+	require.Empty(t, c.bft.Proposals[0][phaseToString(Precommit)])
+	require.Equal(t, round, c.bft.Round)
+	require.Equal(t, phase, c.bft.Phase)
+}
+
 func TestNewRound(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -1234,6 +1301,9 @@ func TestNewRound(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := newTestConsensus(t, Election, 4)
 			c.simElectionPhase(t)
+			// The legacy lifecycle helper below constructs validator zero as the
+			// proposer; keep the deterministic view consistent with that fixture.
+			c.bft.ProposerKey = c.valKeys[0].PublicKey().Bytes()
 			c.simProposePhase(t, 0, true, ByzantineEvidence{}, nil, 0)
 			c.simPrecommitPhase(t, 0)
 			c.simCommitPhase(t, 0, 0)

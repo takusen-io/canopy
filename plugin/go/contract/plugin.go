@@ -501,9 +501,9 @@ func DefaultConfig() Config {
 		DataDirPath:       filepath.Join("/tmp/plugin/"),
 		RPCAddress:        rpcAddress,
 		RPCAuthToken:      strings.TrimSpace(os.Getenv("TAKUSEN_PLUGIN_RPC_TOKEN")),
-		RPCMaxConnections: 256,
-		RPCMaxConcurrent:  128,
-		RPCMaxSubscribers: 64,
+		RPCMaxConnections: 1024,
+		RPCMaxConcurrent:  256,
+		RPCMaxSubscribers: 512,
 	}
 }
 

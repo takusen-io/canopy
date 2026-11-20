@@ -29,13 +29,14 @@ type (
 		auxiliary       map[string]*auxiliaryVoteSet
 	}
 	auxiliaryVoteSet struct {
-		candidate *lib.AuxiliaryCandidate
-		power     uint64
-		multiKey  crypto.MultiPublicKeyI
+		candidate        *lib.AuxiliaryCandidate
+		power            uint64
+		envelopeMultiKey crypto.MultiPublicKeyI
+		digestMultiKey   crypto.MultiPublicKeyI
 	}
 )
 
-const maxAuxiliaryVotes = 32
+const maxAuxiliaryVotes = lib.MaxAuxiliaryCertificatesPerBlock
 
 func auxiliaryCandidateID(candidate *lib.AuxiliaryCandidate) string {
 	payloadHash := sha256.Sum256(candidate.Payload)
@@ -43,7 +44,7 @@ func auxiliaryCandidateID(candidate *lib.AuxiliaryCandidate) string {
 }
 
 func validAuxiliaryCandidate(candidate *lib.AuxiliaryCandidate) bool {
-	return candidate != nil && len(candidate.Kind) > 0 && len(candidate.Kind) <= 64 && len(candidate.Key) > 0 && len(candidate.Key) <= 128 && len(candidate.Digest) == 32 && len(candidate.Payload) <= 16<<10
+	return candidate != nil && len(candidate.Kind) > 0 && len(candidate.Kind) <= lib.MaxAuxiliaryCandidateKindSize && len(candidate.Key) > 0 && len(candidate.Key) <= lib.MaxAuxiliaryCandidateKeySize && len(candidate.Digest) == 32 && len(candidate.Payload) <= lib.MaxAuxiliaryCandidatePayloadSize
 }
 
 // GetMajorityVote() returns the Message and AggregateSignature with a VoteSet with a +2/3 majority from the Replicas
@@ -156,7 +157,9 @@ func (b *BFT) addSigToVoteSet(vote *Message, voteSet *VoteSet) (err lib.ErrorI) 
 	logicalKeys := make(map[string]struct{}, len(vote.AuxiliaryVotes))
 	for _, attachment := range vote.AuxiliaryVotes {
 		if attachment == nil || !validAuxiliaryCandidate(attachment.Candidate) || len(attachment.Signature) != crypto.BLS12381SignatureSize ||
-			!publicKey.VerifyBytes(lib.AuxiliaryCandidateSignBytes(attachment.Candidate), attachment.Signature) {
+			len(attachment.DigestSignature) != crypto.BLS12381SignatureSize ||
+			!publicKey.VerifyBytes(lib.AuxiliaryCandidateSignBytes(attachment.Candidate), attachment.Signature) ||
+			!publicKey.VerifyBytes(attachment.Candidate.Digest, attachment.DigestSignature) {
 			continue
 		}
 		logical := attachment.Candidate.Kind + ":" + hex.EncodeToString(attachment.Candidate.Key)
@@ -167,13 +170,16 @@ func (b *BFT) addSigToVoteSet(vote *Message, voteSet *VoteSet) (err lib.ErrorI) 
 		id := auxiliaryCandidateID(attachment.Candidate)
 		set := voteSet.auxiliary[id]
 		if set == nil {
-			set = &auxiliaryVoteSet{candidate: attachment.Candidate, multiKey: b.ValidatorSet.MultiKey.Copy()}
+			set = &auxiliaryVoteSet{candidate: attachment.Candidate, envelopeMultiKey: b.ValidatorSet.MultiKey.Copy(), digestMultiKey: b.ValidatorSet.MultiKey.Copy()}
 			voteSet.auxiliary[id] = set
 		}
-		if enabled, enableErr := set.multiKey.SignerEnabledAt(idx); enableErr != nil || enabled {
+		if enabled, enableErr := set.envelopeMultiKey.SignerEnabledAt(idx); enableErr != nil || enabled {
 			continue
 		}
-		if addErr := set.multiKey.AddSigner(attachment.Signature, idx); addErr == nil {
+		if addErr := set.envelopeMultiKey.AddSigner(attachment.Signature, idx); addErr == nil {
+			if addErr = set.digestMultiKey.AddSigner(attachment.DigestSignature, idx); addErr != nil {
+				continue
+			}
 			set.power += val.VotingPower
 		}
 	}
@@ -195,9 +201,13 @@ func (b *BFT) AuxiliaryCertificates(vote *Message) []*lib.AuxiliaryCertificate {
 		if set.power*3 <= b.ValidatorSet.TotalPower*2 {
 			continue
 		}
-		signature, err := set.multiKey.AggregateSignatures()
-		if err == nil {
-			result = append(result, &lib.AuxiliaryCertificate{Candidate: set.candidate, Signature: &lib.AggregateSignature{Signature: signature, Bitmap: set.multiKey.Bitmap()}})
+		signature, err := set.envelopeMultiKey.AggregateSignatures()
+		digestSignature, digestErr := set.digestMultiKey.AggregateSignatures()
+		if err == nil && digestErr == nil {
+			result = append(result, &lib.AuxiliaryCertificate{
+				Candidate: set.candidate, Signature: &lib.AggregateSignature{Signature: signature, Bitmap: set.envelopeMultiKey.Bitmap()},
+				DigestSignature: &lib.AggregateSignature{Signature: digestSignature, Bitmap: set.digestMultiKey.Bitmap()},
+			})
 		}
 	}
 	return result

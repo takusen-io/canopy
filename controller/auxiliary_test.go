@@ -74,6 +74,52 @@ func TestAuxiliaryCandidatePoolAcceptsBurstBeyondBlockCapacity(t *testing.T) {
 	}
 }
 
+func TestAuxiliaryCandidateSelectionReservesFinalizationAndNativeCapacity(t *testing.T) {
+	candidate := func(kind string, index int) *lib.AuxiliaryCandidate {
+		return &lib.AuxiliaryCandidate{
+			Kind: kind, Key: []byte(fmt.Sprintf("%s-%03d", kind, index)),
+			Digest: bytes.Repeat([]byte{byte(index + 1)}, 32),
+		}
+	}
+	native := make([]*lib.AuxiliaryCandidate, 64)
+	finalizations := make([]*lib.AuxiliaryCandidate, 64)
+	controls := make([]*lib.AuxiliaryCandidate, 16)
+	for index := range native {
+		native[index] = candidate("settlement", index)
+		finalizations[index] = candidate("evm-observation/settlement-finalization", index)
+	}
+	for index := range controls {
+		controls[index] = candidate("evm-observation/deposit", index)
+	}
+	selected := selectAuxiliaryCandidates(native, append(finalizations, controls...))
+	if len(selected) != lib.MaxAuxiliaryCertificatesPerBlock {
+		t.Fatalf("selected %d candidates, want %d", len(selected), lib.MaxAuxiliaryCertificatesPerBlock)
+	}
+	counts := map[string]int{}
+	for _, item := range selected {
+		counts[item.Kind]++
+	}
+	if counts["settlement"] != auxiliaryNativeReserve ||
+		counts["evm-observation/settlement-finalization"] != auxiliarySettlementFinalizationReserve ||
+		counts["evm-observation/deposit"] != auxiliaryControlReserve {
+		t.Fatalf("unexpected reserved selection: %#v", counts)
+	}
+}
+
+func TestAuxiliaryCandidateSelectionBorrowsUnusedCapacity(t *testing.T) {
+	finalizations := make([]*lib.AuxiliaryCandidate, lib.MaxAuxiliaryCertificatesPerBlock)
+	for index := range finalizations {
+		finalizations[index] = &lib.AuxiliaryCandidate{
+			Kind: "evm-observation/settlement-finalization", Key: []byte(fmt.Sprintf("finalization-%03d", index)),
+			Digest: bytes.Repeat([]byte{byte(index + 1)}, 32),
+		}
+	}
+	selected := selectAuxiliaryCandidates(nil, finalizations)
+	if len(selected) != lib.MaxAuxiliaryCertificatesPerBlock {
+		t.Fatalf("selected %d candidates, want full borrowed capacity", len(selected))
+	}
+}
+
 func TestOlderAuxiliaryCertificateDoesNotConsumeReplacement(t *testing.T) {
 	config := lib.DefaultConfig()
 	config.DataDirPath = t.TempDir()

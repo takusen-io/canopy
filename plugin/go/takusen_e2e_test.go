@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -86,43 +87,44 @@ func TestTakusenConsensusE2E(t *testing.T) {
 	teeKeyID := "ed25519:" + hex.EncodeToString(keyDigest[:])
 	models := []string{"openai/gpt-6-luna", "anthropic/claude-haiku-5.5", "google/gemini-3.8-flash"}
 
-	if status, _ := getStatus(ctx, pluginURL+"/v1/takusen/enclaves/"+teeKeyID); status == http.StatusNotFound {
-		nonce := []byte("takusen-local-e2e-nonce")
-		userData := []byte("takusen-local-e2e")
+	if !servicerExists(t, ctx, pluginURL, localValidatorOneAddress) {
+		var bundle struct {
+			Attestation string `json:"attestation"`
+			Nonce       string `json:"nonce"`
+			UserData    string `json:"userData"`
+			PublicKey   string `json:"publicKey"`
+			Proof       string `json:"proof"`
+		}
+		encodedBundle := os.Getenv("TAKUSEN_E2E_REGISTRATION_BUNDLE")
+		if encodedBundle == "" || json.Unmarshal([]byte(encodedBundle), &bundle) != nil {
+			t.Fatal("TAKUSEN_E2E_REGISTRATION_BUNDLE must contain fresh complete owner-bound Nitro evidence when the E2E enclave is not registered")
+		}
+		attestation, attestationErr := base64.StdEncoding.DecodeString(bundle.Attestation)
+		nonce, nonceErr := base64.StdEncoding.DecodeString(bundle.Nonce)
+		userData, userDataErr := base64.StdEncoding.DecodeString(bundle.UserData)
+		attestedPublicKey, publicKeyErr := base64.RawURLEncoding.DecodeString(bundle.PublicKey)
+		proof, proofErr := base64.RawURLEncoding.DecodeString(bundle.Proof)
+		expectedUserData := []byte("takusen:servicer-registration:v1:" + localValidatorOneAddress)
 		registration := sha256.New()
 		_, _ = registration.Write([]byte("takusen:nitro-registration\x00"))
 		_, _ = registration.Write(nonce)
 		_, _ = registration.Write([]byte{0})
 		_, _ = registration.Write(userData)
-		attestation := sha256.Sum256([]byte("local-nitro-attestation"))
-		observe := func(address string) (*contract.MessageObserveEnclave, map[string]any) {
-			message := &contract.MessageObserveEnclave{
-				ObserverAddress: mustHex(t, address), OwnerAddress: mustHex(t, localValidatorOneAddress),
-				TeeKeyId: teeKeyID, PublicKey: publicKey, AttestationHash: attestation[:],
-				Pcr0: bytes.Repeat([]byte{0x10}, 48), Pcr1: bytes.Repeat([]byte{0x11}, 48), Pcr2: bytes.Repeat([]byte{0x12}, 48),
-				Nonce: nonce, UserData: userData, ProofSignature: ed25519.Sign(enclaveKey, registration.Sum(nil)),
-			}
-			return message, map[string]any{
-				"observerAddress": hex.EncodeToString(message.ObserverAddress), "ownerAddress": hex.EncodeToString(message.OwnerAddress),
-				"teeKeyId": message.TeeKeyId, "publicKey": hex.EncodeToString(message.PublicKey), "attestationHash": hex.EncodeToString(message.AttestationHash),
-				"pcr0": hex.EncodeToString(message.Pcr0), "pcr1": hex.EncodeToString(message.Pcr1), "pcr2": hex.EncodeToString(message.Pcr2),
-				"nonce": hex.EncodeToString(message.Nonce), "userData": hex.EncodeToString(message.UserData), "proofSignature": hex.EncodeToString(message.ProofSignature),
-			}
+		if attestationErr != nil || nonceErr != nil || userDataErr != nil || publicKeyErr != nil || proofErr != nil ||
+			len(attestation) == 0 || len(attestation) > 16<<10 || !bytes.Equal(attestedPublicKey, publicKey) ||
+			!bytes.Equal(userData, expectedUserData) || !ed25519.Verify(publicKey, registration.Sum(nil), proof) {
+			t.Fatal("TAKUSEN_E2E_REGISTRATION_BUNDLE is invalid or does not bind the fixture owner and enclave key")
 		}
-		message, fields := observe(validatorOne.address)
-		submit(t, ctx, rpcURL, validatorOne, contract.MessageObserveEnclaveName, message, fields)
-		message, fields = observe(validatorTwo.address)
-		submit(t, ctx, rpcURL, validatorTwo, contract.MessageObserveEnclaveName, message, fields)
-		waitStatus(t, ctx, pluginURL+"/v1/takusen/enclaves/"+teeKeyID, func(body []byte) bool {
-			var value contract.EnclaveKey
-			return json.Unmarshal(body, &value) == nil && value.Active
-		})
-	}
-
-	if !servicerExists(t, ctx, pluginURL, localValidatorOneAddress) {
-		payouts := []*contract.SettlementPayout{{SettlementDomainId: settlementDomain, Address: mustHex(t, localValidatorOneAddress)}}
-		message := &contract.MessageRegisterServicer{OwnerAddress: mustHex(t, localValidatorOneAddress), Payouts: payouts, TeeKeyId: teeKeyID, Models: models, Bond: 100_000}
-		fields := map[string]any{"ownerAddress": localValidatorOneAddress, "payouts": payouts, "teeKeyId": teeKeyID, "models": models, "bond": message.Bond}
+		message := &contract.MessageRegisterServicer{
+			OwnerAddress: mustHex(t, localValidatorOneAddress), TeeKeyId: teeKeyID, PublicKey: publicKey,
+			Nonce: nonce, UserData: userData, ProofSignature: proof, AttestationDocument: attestation,
+			EvmPayoutAddress: mustHex(t, localValidatorOneAddress), Models: models, Bond: 100_000,
+		}
+		fields := map[string]any{
+			"ownerAddress": localValidatorOneAddress, "teeKeyId": teeKeyID, "publicKey": hex.EncodeToString(publicKey),
+			"nonce": hex.EncodeToString(nonce), "userData": hex.EncodeToString(userData), "proofSignature": hex.EncodeToString(proof),
+			"attestationDocument": hex.EncodeToString(attestation), "evmPayoutAddress": localValidatorOneAddress, "models": models, "bond": message.Bond,
+		}
 		submit(t, ctx, rpcURL, validatorOne, contract.MessageRegisterServicerName, message, fields)
 		waitStatus(t, ctx, pluginURL+"/v1/takusen/servicers", func(body []byte) bool { return containsServicer(body, localValidatorOneAddress) })
 	}

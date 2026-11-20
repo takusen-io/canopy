@@ -23,6 +23,8 @@ var allowedProofKinds = map[string]bool{
 	"bridge-release":                            true,
 	"epoch-rewards":                             true,
 	"validator-set-rotation-queued":             true,
+	"validator-set-rotation-caught-up":          true,
+	"validator-set-rotation-forward":            true,
 	"validator-set-rotation-cancelled":          true,
 	"validator-set-rotation-absent":             true,
 	"settlement-domain-authority":               true,
@@ -70,11 +72,11 @@ func (c *Contract) deliverSubmitQuorumSignature(height uint64, message *MessageS
 	if cryptoErr != nil || bdnScheme().Verify(publicKey, message.Message, message.Signature) != nil {
 		return &PluginDeliverResponse{Error: ErrCrypto("invalid validator BDN signature share")}
 	}
-	if baseKind == "validator-set-rotation-queued" && len(message.SettlementDomainId) != 32 {
+	if (baseKind == "validator-set-rotation-queued" || baseKind == "validator-set-rotation-caught-up" || baseKind == "validator-set-rotation-forward") && len(message.SettlementDomainId) != 32 {
 		return &PluginDeliverResponse{Error: ErrInvalidTransaction("validator-set proof is missing its settlement domain")}
 	}
 	var handoffClock *EpochClock
-	if baseKind == "validator-set-rotation-queued" || baseKind == "validator-set-rotation-cancelled" ||
+	if baseKind == "validator-set-rotation-queued" || baseKind == "validator-set-rotation-caught-up" || baseKind == "validator-set-rotation-forward" || baseKind == "validator-set-rotation-cancelled" ||
 		baseKind == "validator-set-rotation-absent" {
 		clock, clockErr := c.currentEpochClockFromState()
 		if clockErr != nil {
@@ -242,14 +244,15 @@ func (c *Contract) deliverSubmitQuorumSignature(height uint64, message *MessageS
 			}
 		}
 	}
-	if baseKind == "validator-set-rotation-queued" &&
+	if (baseKind == "validator-set-rotation-queued" || baseKind == "validator-set-rotation-caught-up" || baseKind == "validator-set-rotation-forward") &&
 		(message.NewValidatorSetId != message.ValidatorSetId+1 || message.RotationNonce == 0 ||
-			len(message.HandoffGeneration) != 32 || message.HandoffTimestamp == 0) {
+			len(message.HandoffGeneration) != 32 || message.HandoffTimestamp == 0 ||
+			((baseKind == "validator-set-rotation-caught-up" || baseKind == "validator-set-rotation-forward") && (message.ControlBlockNumber == 0 || len(message.ControlBlockHash) != 32))) {
 		return &PluginDeliverResponse{Error: ErrInvalidTransaction("invalid queued validator-set rotation metadata")}
 	}
 	var rotationClaimKey []byte
 	var rotationClaim *Observation
-	if baseKind == "validator-set-rotation-queued" {
+	if baseKind == "validator-set-rotation-queued" || baseKind == "validator-set-rotation-caught-up" || baseKind == "validator-set-rotation-forward" {
 		claim := hashFields(
 			[]byte("takusen:validator-set-rotation-claim"), []byte(baseKind),
 			message.SettlementDomainId,
@@ -326,6 +329,16 @@ func (c *Contract) deliverSubmitQuorumSignature(height uint64, message *MessageS
 		records[string(KeyForQuorumProof(message.ProofId))] = proof
 		if baseKind == "validator-set-rotation-queued" {
 			records[string(KeyForQueuedRotationIndex(message.SettlementDomainId, message.ValidatorSetId, message.NewValidatorSetId))] = &ReplayMarker{Id: append([]byte(nil), message.ProofId...)}
+		}
+		if baseKind == "validator-set-rotation-caught-up" {
+			records[string(KeyForCaughtUpRotationIndex(message.SettlementDomainId, message.ValidatorSetId, message.NewValidatorSetId))] = &ReplayMarker{Id: append([]byte(nil), message.ProofId...)}
+		}
+		if baseKind == "validator-set-rotation-forward" {
+			records[string(KeyForRotationForwardIndex(message.SettlementDomainId, message.ValidatorSetId, message.NewValidatorSetId))] = &ReplayMarker{Id: append([]byte(nil), message.ProofId...)}
+		}
+		if (baseKind == "validator-set-rotation-queued" || baseKind == "validator-set-rotation-caught-up" || baseKind == "validator-set-rotation-forward" || baseKind == "validator-set-rotation-cancelled") &&
+			!c.stageDomainRotationNonce(message.SettlementDomainId, message.RotationNonce, records) {
+			return &PluginDeliverResponse{Error: ErrState("settlement-domain rotation nonce is not monotonic")}
 		}
 		if baseKind == "validator-set-rotation-absent" {
 			records[string(KeyForRotationResolutionIndex(message.SettlementDomainId, message.ValidatorSetId, message.NewValidatorSetId))] = &ReplayMarker{Id: append([]byte(nil), message.ProofId...)}

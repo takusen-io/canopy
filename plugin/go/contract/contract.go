@@ -11,7 +11,6 @@ import (
 )
 
 const (
-	MessageObserveEnclaveName        = "takusenObserveEnclave"
 	MessageRevokeEnclaveName         = "takusenRevokeEnclave"
 	MessageRegisterServicerName      = "takusenRegisterServicer"
 	MessageUpdateServicerName        = "takusenUpdateServicer"
@@ -23,7 +22,6 @@ const (
 	MessageQueueAuthorizationName    = "takusenQueueAuthorization"
 	MessageSubmitExecutionName       = "takusenSubmitExecution"
 	MessageSubmitExecutionsName      = "takusenSubmitExecutions"
-	MessageReassignRequestName       = "takusenReassignRequest"
 	MessageFinalizeRequestName       = "takusenFinalizeRequest"
 	MessageFinalizeRequestsName      = "takusenFinalizeRequests"
 	MessageSubmitQuorumSignatureName = "takusenSubmitQuorumSignature"
@@ -40,11 +38,10 @@ const (
 var ContractConfig = &PluginConfig{
 	Name:                      "takusen",
 	Id:                        22,
-	Version:                   1,
+	Version:                   5,
 	ValidatorSetEpochs:        true,
 	GovernanceParameterSpaces: []string{"takusen"},
 	SupportedTransactions: []string{
-		MessageObserveEnclaveName,
 		MessageRevokeEnclaveName,
 		MessageRegisterServicerName,
 		MessageUpdateServicerName,
@@ -56,7 +53,6 @@ var ContractConfig = &PluginConfig{
 		MessageQueueAuthorizationName,
 		MessageSubmitExecutionName,
 		MessageSubmitExecutionsName,
-		MessageReassignRequestName,
 		MessageFinalizeRequestName,
 		MessageFinalizeRequestsName,
 		MessageSubmitQuorumSignatureName,
@@ -70,7 +66,6 @@ var ContractConfig = &PluginConfig{
 		MessageObserveSlashEvidenceName,
 	},
 	TransactionTypeUrls: []string{
-		"type.googleapis.com/types.MessageObserveEnclave",
 		"type.googleapis.com/types.MessageRevokeEnclave",
 		"type.googleapis.com/types.MessageRegisterServicer",
 		"type.googleapis.com/types.MessageUpdateServicer",
@@ -82,7 +77,6 @@ var ContractConfig = &PluginConfig{
 		"type.googleapis.com/types.MessageQueueAuthorization",
 		"type.googleapis.com/types.MessageSubmitExecution",
 		"type.googleapis.com/types.MessageSubmitExecutions",
-		"type.googleapis.com/types.MessageReassignRequest",
 		"type.googleapis.com/types.MessageFinalizeRequest",
 		"type.googleapis.com/types.MessageFinalizeRequests",
 		"type.googleapis.com/types.MessageSubmitQuorumSignature",
@@ -109,6 +103,7 @@ var ContractConfig = &PluginConfig{
 		activeServicerIndexPrefix, pendingEpochAuthorizationPrefix, pendingBridgeBurnPrefix,
 		handoffManifestPrefix, domainRotationStatePrefix, handoffCancellationManifestPrefix,
 		consensusCertificatePrefix, nativeAuthorizationIntentPrefix, pendingAuthorizationPrefix,
+		uncertifiedSettlementIndexPrefix, certifiedSettlementIndexPrefix,
 	},
 }
 
@@ -202,10 +197,18 @@ func (c *Contract) BeginBlock(request *PluginBeginRequest) *PluginBeginResponse 
 		}
 		deletes = append(deletes, nextDeletes...)
 	}
-	for key, record := range c.consumeAuxiliaryCertificates(request.Height, request.AuxiliaryCertificates) {
+	certificateRecords, certificateDeletes := c.consumeAuxiliaryCertificates(request.Height, request.AuxiliaryCertificates)
+	for key, record := range certificateRecords {
 		records[key] = record
 	}
+	deletes = append(deletes, certificateDeletes...)
+	if repairErr := c.repairOverlappingSettlementCertificates(records, &deletes); repairErr != nil {
+		return &PluginBeginResponse{Error: repairErr}
+	}
 	if cursorErr := c.advanceTimeoutCandidateCursor(records); cursorErr != nil {
+		return &PluginBeginResponse{Error: cursorErr}
+	}
+	if cursorErr := c.advanceSettlementCandidateCursor(records); cursorErr != nil {
 		return &PluginBeginResponse{Error: cursorErr}
 	}
 	if expired, pruneErr := c.expiredPendingAuthorizations(request.Height, 32); pruneErr == nil {
@@ -243,8 +246,6 @@ func (c *Contract) CheckTx(request *PluginCheckRequest) *PluginCheckResponse {
 	}
 	var signer []byte
 	switch message := message.(type) {
-	case *MessageObserveEnclave:
-		signer, err = checkObserveEnclave(message)
 	case *MessageRevokeEnclave:
 		signer, err = checkRevokeEnclave(message)
 	case *MessageRegisterServicer:
@@ -267,8 +268,6 @@ func (c *Contract) CheckTx(request *PluginCheckRequest) *PluginCheckResponse {
 		signer, err = checkSubmitExecution(message)
 	case *MessageSubmitExecutions:
 		signer, err = checkSubmitExecutions(message)
-	case *MessageReassignRequest:
-		signer, err = checkReassignRequest(message)
 	case *MessageFinalizeRequest:
 		signer, err = checkFinalizeRequest(message)
 	case *MessageFinalizeRequests:
@@ -312,12 +311,10 @@ func (c *Contract) DeliverTx(request *PluginDeliverRequest) *PluginDeliverRespon
 		return &PluginDeliverResponse{Error: err}
 	}
 	switch message := message.(type) {
-	case *MessageObserveEnclave:
-		return c.deliverObserveEnclave(request.Height, message)
 	case *MessageRevokeEnclave:
 		return c.deliverRevokeEnclave(request.Height, message)
 	case *MessageRegisterServicer:
-		return c.deliverRegisterServicer(request.Height, message)
+		return c.deliverRegisterServicer(request.Height, request.TimeMicros, message)
 	case *MessageUpdateServicer:
 		return c.deliverUpdateServicer(message)
 	case *MessageObserveDeposit:
@@ -336,8 +333,6 @@ func (c *Contract) DeliverTx(request *PluginDeliverRequest) *PluginDeliverRespon
 		return c.deliverSubmitExecution(request.Height, message)
 	case *MessageSubmitExecutions:
 		return c.deliverSubmitExecutions(request.Height, message)
-	case *MessageReassignRequest:
-		return c.deliverReassignRequest(request.Height, message)
 	case *MessageFinalizeRequest:
 		return c.deliverFinalizeRequest(request.Height, message)
 	case *MessageFinalizeRequests:

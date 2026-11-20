@@ -175,11 +175,12 @@ func (x *Message) GetAuxiliaryVotes() []*AuxiliaryVote {
 }
 
 type AuxiliaryVote struct {
-	state         protoimpl.MessageState  `protogen:"open.v1"`
-	Candidate     *lib.AuxiliaryCandidate `protobuf:"bytes,1,opt,name=candidate,proto3" json:"candidate,omitempty"`
-	Signature     []byte                  `protobuf:"bytes,2,opt,name=signature,proto3" json:"signature,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state           protoimpl.MessageState  `protogen:"open.v1"`
+	Candidate       *lib.AuxiliaryCandidate `protobuf:"bytes,1,opt,name=candidate,proto3" json:"candidate,omitempty"`
+	Signature       []byte                  `protobuf:"bytes,2,opt,name=signature,proto3" json:"signature,omitempty"`
+	DigestSignature []byte                  `protobuf:"bytes,3,opt,name=digest_signature,json=digestSignature,proto3" json:"digest_signature,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *AuxiliaryVote) Reset() {
@@ -222,6 +223,13 @@ func (x *AuxiliaryVote) GetCandidate() *lib.AuxiliaryCandidate {
 func (x *AuxiliaryVote) GetSignature() []byte {
 	if x != nil {
 		return x.Signature
+	}
+	return nil
+}
+
+func (x *AuxiliaryVote) GetDigestSignature() []byte {
+	if x != nil {
+		return x.DigestSignature
 	}
 	return nil
 }
@@ -356,10 +364,11 @@ const file_bft_proto_rawDesc = "" +
 	"\ttimestamp\x18\b \x01(\x04R\ttimestamp\x12$\n" +
 	"\rrcBuildHeight\x18\t \x01(\x04R\rrcBuildHeight\x12=\n" +
 	"\x0fauxiliary_votes\x18\n" +
-	" \x03(\v2\x14.types.AuxiliaryVoteR\x0eauxiliaryVotes\"f\n" +
+	" \x03(\v2\x14.types.AuxiliaryVoteR\x0eauxiliaryVotes\"\x91\x01\n" +
 	"\rAuxiliaryVote\x127\n" +
 	"\tcandidate\x18\x01 \x01(\v2\x19.types.AuxiliaryCandidateR\tcandidate\x12\x1c\n" +
-	"\tsignature\x18\x02 \x01(\fR\tsignature\"v\n" +
+	"\tsignature\x18\x02 \x01(\fR\tsignature\x12)\n" +
+	"\x10digest_signature\x18\x03 \x01(\fR\x0fdigestSignature\"v\n" +
 	"\x12DoubleSignEvidence\x12/\n" +
 	"\x06vote_a\x18\x01 \x01(\v2\x18.types.QuorumCertificateR\x05voteA\x12/\n" +
 	"\x06vote_b\x18\x02 \x01(\v2\x18.types.QuorumCertificateR\x05voteB\"\xdf\x01\n" +

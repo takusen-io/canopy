@@ -14,8 +14,9 @@ import (
 var _ Mempool = &FeeMempool{} // Mempool interface enforcement for FeeMempool implementation
 
 const (
-	failedTxCacheMaxEntries = 5000
-	failedTxCacheMaxTxBytes = 4 * 1024
+	failedTxCacheMaxEntries       = 5000
+	failedTxCacheMaxTxBytes       = 4 * 1024
+	maxEnclaveRegistrationTxBytes = 20 * 1024
 )
 
 // Mempool interface is a model for a pre-block, in-memory, Transaction store
@@ -88,8 +89,11 @@ func (f *FeeMempool) AddTransactions(txs ...[]byte) (recheck bool, err ErrorI) {
 		if err = transaction.CheckBasic(); err != nil {
 			return false, err
 		}
-		// certificate results may contain a full DEX batch and remain bounded by MaxTotalBytes
-		if uint32(txBytes) > f.config.IndividualMaxTxSize && transaction.MessageType != "certificateResults" {
+		// Certificate results remain bounded by MaxTotalBytes. An atomic Takusen
+		// servicer registration has a separate narrow ceiling because its COSE
+		// evidence intentionally exceeds the generic 4 KiB transaction limit.
+		oversizedRegistration := transaction.MessageType == "takusenRegisterServicer" && txBytes > maxEnclaveRegistrationTxBytes
+		if (uint32(txBytes) > f.config.IndividualMaxTxSize && transaction.MessageType != "certificateResults" && transaction.MessageType != "takusenRegisterServicer") || oversizedRegistration {
 			return false, ErrMaxTxSize()
 		}
 		// extract the fee from the transaction result

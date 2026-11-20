@@ -9,10 +9,11 @@ import (
 )
 
 const (
-	observationEnclave           byte = 1
-	observationAuthorization     byte = 2
-	observationSettlement        byte = 3
-	observationReassignment      byte = 4
+	// Observation kind 1 was the removed validator-fan-out enclave registration
+	// path. It is intentionally never reused.
+	observationAuthorization byte = 2
+	observationSettlement    byte = 3
+	// Observation kind 4 was the removed reassignment path and is never reused.
 	observationRevocation        byte = 5
 	observationDeposit           byte = 6
 	observationValidatorRotation byte = 7
@@ -23,14 +24,6 @@ const (
 	observationSettlementReorg   byte = 12
 	observationEpochMint         byte = 13
 )
-
-func enclaveSubject(message *MessageObserveEnclave) []byte {
-	return hashFields(
-		[]byte("takusen:enclave-registration"), message.OwnerAddress, []byte(message.TeeKeyId),
-		message.PublicKey, message.AttestationHash, message.Pcr0, message.Pcr1, message.Pcr2,
-		message.Nonce, message.UserData, message.ProofSignature, message.AttestationDocument,
-	)
-}
 
 func revocationSubject(message *MessageRevokeEnclave) []byte {
 	return hashFields([]byte("takusen:enclave-revocation"), []byte(message.TeeKeyId))
@@ -92,6 +85,13 @@ func settlementBatchSubject(messages []*MessageFinalizeRequest) []byte {
 	return hashFields(fields...)
 }
 
+func settlementReferenceSubject(message *MessageFinalizeSettlementBatch) []byte {
+	return hashFields(
+		[]byte("takusen:settlement-finalization-reference:v1"), message.SettlementDomainId,
+		message.SettlementTxHash, uint64Bytes(message.BatchNonce), message.SettlementCertificateDigest,
+	)
+}
+
 func boolBytes(value bool) []byte {
 	if value {
 		return []byte{1}
@@ -99,10 +99,10 @@ func boolBytes(value bool) []byte {
 	return []byte{0}
 }
 
-func reassignmentSubject(message *MessageReassignRequest, attempt uint32) []byte {
+func assignmentExpirationSubject(message *MessageExpireAssignment) []byte {
 	return hashFields(
-		[]byte("takusen:reassignment"), []byte(message.RequestId), []byte(message.Model),
-		uint32Bytes(attempt), uint64Bytes(message.NewDeadlineHeight),
+		[]byte("takusen:assignment-expiration:v5"), message.SettlementDomainId, []byte(message.RequestId),
+		[]byte(message.Model), []byte(message.ExecutionId), uint64Bytes(message.DeadlineHeight),
 	)
 }
 

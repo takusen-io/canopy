@@ -2,6 +2,7 @@ package contract
 
 import (
 	"bytes"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/binary"
 	"math"
@@ -11,15 +12,25 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+// AWS Nitro Enclaves Root-G1 DER. Genesis and later governance documents carry
+// this value explicitly; the default keeps test and genesis construction on the
+// same fail-closed trust anchor.
+const defaultNitroTrustRootBase64 = "MIICETCCAZagAwIBAgIRAPkxdWgbkK/hHUbMtOTn+FYwCgYIKoZIzj0EAwMwSTELMAkGA1UEBhMCVVMxDzANBgNVBAoMBkFtYXpvbjEMMAoGA1UECwwDQVdTMRswGQYDVQQDDBJhd3Mubml0cm8tZW5jbGF2ZXMwHhcNMTkxMDI4MTMyODA1WhcNNDkxMDI4MTQyODA1WjBJMQswCQYDVQQGEwJVUzEPMA0GA1UECgwGQW1hem9uMQwwCgYDVQQLDANBV1MxGzAZBgNVBAMMEmF3cy5uaXRyby1lbmNsYXZlczB2MBAGByqGSM49AgEGBSuBBAAiA2IABPwCVOumCMHzaHDimtqQvkY4MpJzbolL//Zy2YlES1BR5TSksfbb48C8WBoyt7F2Bw7eEtaaP+ohG2bnUs990d0JX28TcPQXCEPZ3BABIeTPYwEoCWZEh8l5YoQwTcU/9KNCMEAwDwYDVR0TAQH/BAUwAwEB/zAdBgNVHQ4EFgQUkCW1DdkFR+eWw5b6cp3PmanfS5YwDgYDVR0PAQH/BAQDAgGGMAoGCCqGSM49BAMDA2kAMGYCMQCjfy+Rocm9Xue4YnwWmNJVA44fA0P5W2OpYow9OYCVRaEevL8uO1XYru5xtMPWrfMCMQCi85sWBbJwKKXdS6BptQFuZbT73o/gBh1qUxl/nNr12UO8Yfwr6wPLb+6NIwLz3/Y="
+
+// maxChargeBps permits a governed markup of up to 1,000% per destination.
+// mulDiv64 independently rejects arithmetic overflow at execution time.
+const maxChargeBps uint32 = 100_000
+
 func defaultProtocolParams() *ProtocolParams {
+	nitroRoot, _ := base64.StdEncoding.DecodeString(defaultNitroTrustRootBase64)
 	return &ProtocolParams{
 		QuorumNumerator: 2, QuorumDenominator: 3,
-		RetryLimit: 3, MinimumServicerBond: 1, MinimumValidatorBond: 1,
+		MinimumServicerBond: 1, MinimumValidatorBond: 1,
 		EpochBlocks: 3600, ValidatorHandoffNoticeSeconds: 2400, UnbondingEpochs: 24,
 		BridgeEpochMintLimit: math.MaxUint64, BridgeTransferLimit: math.MaxUint64,
-		SupportedOutputSchemas:  []string{"boolean", "score", "choice", "private_hash"},
-		SettlementDomains:       []*SettlementDomain{defaultSettlementDomain()},
-		RequireNitroAttestation: true,
+		SupportedOutputSchemas: []string{"boolean", "score", "choice", "private_hash"},
+		SettlementDomains:      []*SettlementDomain{defaultSettlementDomain()},
+		NitroTrustRoot:         nitroRoot,
 	}
 }
 
@@ -43,7 +54,7 @@ func (c *Contract) currentProtocolParams() (*ProtocolParams, *PluginError) {
 		return nil, err
 	}
 	if !found {
-		return defaultProtocolParams(), nil
+		return nil, ErrState("governed protocol parameters are missing")
 	}
 	return params, nil
 }
@@ -52,11 +63,12 @@ func validateProtocolParams(params *ProtocolParams) *PluginError {
 	if params == nil || params.Revision == 0 || params.QuorumDenominator == 0 ||
 		params.QuorumNumerator >= params.QuorumDenominator ||
 		uint64(params.QuorumNumerator)*3 < uint64(params.QuorumDenominator)*2 ||
-		params.FoundationFeeBps > 10_000 || (params.ServicerMarginBps > 0 && params.ServicerMarginBps >= params.FoundationFeeBps) ||
-		params.TimeoutSlashBps > 10_000 || params.InvalidReceiptSlashBps > 10_000 ||
+		params.FoundationFeeBps > maxChargeBps || params.ServicerMarginBps > maxChargeBps ||
+		(params.ServicerMarginBps > 0 && params.ServicerMarginBps >= params.FoundationFeeBps) ||
+		params.InvalidReceiptSlashBps > 10_000 ||
 		params.TreasuryBps > 10_000 || params.EpochBlocks == 0 || params.UnbondingEpochs == 0 ||
 		params.ValidatorHandoffNoticeSeconds < 1200 || params.ValidatorHandoffNoticeSeconds > 7*24*60*60 ||
-		params.RetryLimit == 0 || params.MinimumServicerBond == 0 || params.MinimumValidatorBond == 0 {
+		params.MinimumServicerBond == 0 || params.MinimumValidatorBond == 0 {
 		return ErrInvalidTransaction("invalid governed protocol parameters")
 	}
 	if params.CanonicalChainId != 0 || len(params.CanonicalTokenAddress) != 0 || len(params.CanonicalBridgeAddress) != 0 || params.EmissionPerEpoch != 0 {
@@ -138,6 +150,13 @@ func validateProtocolParams(params *ProtocolParams) *PluginError {
 	}
 	if activePCRs == 0 {
 		return ErrInvalidTransaction("at least one active governed PCR policy is required")
+	}
+	if len(params.NitroTrustRoot) == 0 || len(params.NitroTrustRoot) > maxNitroCertificateSize {
+		return ErrInvalidTransaction("a bounded governed Nitro trust root is required")
+	}
+	root, rootErr := x509.ParseCertificate(params.NitroTrustRoot)
+	if rootErr != nil || !bytes.Equal(root.Raw, params.NitroTrustRoot) || !root.IsCA || root.KeyUsage&x509.KeyUsageCertSign == 0 {
+		return ErrInvalidTransaction("governed Nitro trust root is not a certificate authority")
 	}
 	return nil
 }

@@ -371,62 +371,10 @@ func (x *EnclaveKey) GetActive() bool {
 	return false
 }
 
-type SettlementPayout struct {
-	state              protoimpl.MessageState `protogen:"open.v1"`
-	SettlementDomainId []byte                 `protobuf:"bytes,1,opt,name=settlement_domain_id,json=settlementDomainId,proto3" json:"settlement_domain_id,omitempty"`
-	Address            []byte                 `protobuf:"bytes,2,opt,name=address,proto3" json:"address,omitempty"`
-	unknownFields      protoimpl.UnknownFields
-	sizeCache          protoimpl.SizeCache
-}
-
-func (x *SettlementPayout) Reset() {
-	*x = SettlementPayout{}
-	mi := &file_account_proto_msgTypes[4]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *SettlementPayout) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*SettlementPayout) ProtoMessage() {}
-
-func (x *SettlementPayout) ProtoReflect() protoreflect.Message {
-	mi := &file_account_proto_msgTypes[4]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use SettlementPayout.ProtoReflect.Descriptor instead.
-func (*SettlementPayout) Descriptor() ([]byte, []int) {
-	return file_account_proto_rawDescGZIP(), []int{4}
-}
-
-func (x *SettlementPayout) GetSettlementDomainId() []byte {
-	if x != nil {
-		return x.SettlementDomainId
-	}
-	return nil
-}
-
-func (x *SettlementPayout) GetAddress() []byte {
-	if x != nil {
-		return x.Address
-	}
-	return nil
-}
-
 type Servicer struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
 	OwnerAddress     []byte                 `protobuf:"bytes,1,opt,name=owner_address,json=ownerAddress,proto3" json:"owner_address,omitempty"`
-	Payouts          []*SettlementPayout    `protobuf:"bytes,2,rep,name=payouts,proto3" json:"payouts,omitempty"`
+	EvmPayoutAddress []byte                 `protobuf:"bytes,2,opt,name=evm_payout_address,json=evmPayoutAddress,proto3" json:"evm_payout_address,omitempty"`
 	TeeKeyId         string                 `protobuf:"bytes,3,opt,name=tee_key_id,json=teeKeyId,proto3" json:"tee_key_id,omitempty"`
 	Models           []string               `protobuf:"bytes,4,rep,name=models,proto3" json:"models,omitempty"`
 	Bond             uint64                 `protobuf:"varint,5,opt,name=bond,proto3" json:"bond,omitempty"`
@@ -442,7 +390,7 @@ type Servicer struct {
 
 func (x *Servicer) Reset() {
 	*x = Servicer{}
-	mi := &file_account_proto_msgTypes[5]
+	mi := &file_account_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -454,7 +402,7 @@ func (x *Servicer) String() string {
 func (*Servicer) ProtoMessage() {}
 
 func (x *Servicer) ProtoReflect() protoreflect.Message {
-	mi := &file_account_proto_msgTypes[5]
+	mi := &file_account_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -467,7 +415,7 @@ func (x *Servicer) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Servicer.ProtoReflect.Descriptor instead.
 func (*Servicer) Descriptor() ([]byte, []int) {
-	return file_account_proto_rawDescGZIP(), []int{5}
+	return file_account_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *Servicer) GetOwnerAddress() []byte {
@@ -477,9 +425,9 @@ func (x *Servicer) GetOwnerAddress() []byte {
 	return nil
 }
 
-func (x *Servicer) GetPayouts() []*SettlementPayout {
+func (x *Servicer) GetEvmPayoutAddress() []byte {
 	if x != nil {
-		return x.Payouts
+		return x.EvmPayoutAddress
 	}
 	return nil
 }
@@ -551,10 +499,8 @@ type Assignment struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
 	Model           string                 `protobuf:"bytes,1,opt,name=model,proto3" json:"model,omitempty"`
 	ServicerAddress []byte                 `protobuf:"bytes,2,opt,name=servicer_address,json=servicerAddress,proto3" json:"servicer_address,omitempty"`
-	Attempt         uint32                 `protobuf:"varint,3,opt,name=attempt,proto3" json:"attempt,omitempty"`
 	Completed       bool                   `protobuf:"varint,4,opt,name=completed,proto3" json:"completed,omitempty"`
 	ExecutionId     string                 `protobuf:"bytes,5,opt,name=execution_id,json=executionId,proto3" json:"execution_id,omitempty"`
-	DeadlineHeight  uint64                 `protobuf:"varint,6,opt,name=deadline_height,json=deadlineHeight,proto3" json:"deadline_height,omitempty"`
 	TeeKeyId        string                 `protobuf:"bytes,7,opt,name=tee_key_id,json=teeKeyId,proto3" json:"tee_key_id,omitempty"`
 	Provider        string                 `protobuf:"bytes,8,opt,name=provider,proto3" json:"provider,omitempty"`
 	TerminalStatus  string                 `protobuf:"bytes,9,opt,name=terminal_status,json=terminalStatus,proto3" json:"terminal_status,omitempty"`
@@ -565,7 +511,7 @@ type Assignment struct {
 
 func (x *Assignment) Reset() {
 	*x = Assignment{}
-	mi := &file_account_proto_msgTypes[6]
+	mi := &file_account_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -577,7 +523,7 @@ func (x *Assignment) String() string {
 func (*Assignment) ProtoMessage() {}
 
 func (x *Assignment) ProtoReflect() protoreflect.Message {
-	mi := &file_account_proto_msgTypes[6]
+	mi := &file_account_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -590,7 +536,7 @@ func (x *Assignment) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Assignment.ProtoReflect.Descriptor instead.
 func (*Assignment) Descriptor() ([]byte, []int) {
-	return file_account_proto_rawDescGZIP(), []int{6}
+	return file_account_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *Assignment) GetModel() string {
@@ -607,13 +553,6 @@ func (x *Assignment) GetServicerAddress() []byte {
 	return nil
 }
 
-func (x *Assignment) GetAttempt() uint32 {
-	if x != nil {
-		return x.Attempt
-	}
-	return 0
-}
-
 func (x *Assignment) GetCompleted() bool {
 	if x != nil {
 		return x.Completed
@@ -626,13 +565,6 @@ func (x *Assignment) GetExecutionId() string {
 		return x.ExecutionId
 	}
 	return ""
-}
-
-func (x *Assignment) GetDeadlineHeight() uint64 {
-	if x != nil {
-		return x.DeadlineHeight
-	}
-	return 0
 }
 
 func (x *Assignment) GetTeeKeyId() string {
@@ -690,13 +622,16 @@ type RequestRecord struct {
 	OutputMaximum              int64         `protobuf:"varint,29,opt,name=output_maximum,json=outputMaximum,proto3" json:"output_maximum,omitempty"`
 	OutputChoices              []string      `protobuf:"bytes,30,rep,name=output_choices,json=outputChoices,proto3" json:"output_choices,omitempty"`
 	SchemaHash                 []byte        `protobuf:"bytes,31,opt,name=schema_hash,json=schemaHash,proto3" json:"schema_hash,omitempty"`
-	unknownFields              protoimpl.UnknownFields
-	sizeCache                  protoimpl.SizeCache
+	// Immutable request budget copied into the active-assignment index so
+	// servicer discovery does not fan out into request and reservation reads.
+	ReservedBudget uint64 `protobuf:"varint,32,opt,name=reserved_budget,json=reservedBudget,proto3" json:"reserved_budget,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *RequestRecord) Reset() {
 	*x = RequestRecord{}
-	mi := &file_account_proto_msgTypes[7]
+	mi := &file_account_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -708,7 +643,7 @@ func (x *RequestRecord) String() string {
 func (*RequestRecord) ProtoMessage() {}
 
 func (x *RequestRecord) ProtoReflect() protoreflect.Message {
-	mi := &file_account_proto_msgTypes[7]
+	mi := &file_account_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -721,7 +656,7 @@ func (x *RequestRecord) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RequestRecord.ProtoReflect.Descriptor instead.
 func (*RequestRecord) Descriptor() ([]byte, []int) {
-	return file_account_proto_rawDescGZIP(), []int{7}
+	return file_account_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *RequestRecord) GetRequestId() string {
@@ -892,6 +827,13 @@ func (x *RequestRecord) GetSchemaHash() []byte {
 	return nil
 }
 
+func (x *RequestRecord) GetReservedBudget() uint64 {
+	if x != nil {
+		return x.ReservedBudget
+	}
+	return 0
+}
+
 type ExecutionRecord struct {
 	state              protoimpl.MessageState `protogen:"open.v1"`
 	ExecutionId        string                 `protobuf:"bytes,1,opt,name=execution_id,json=executionId,proto3" json:"execution_id,omitempty"`
@@ -920,7 +862,7 @@ type ExecutionRecord struct {
 
 func (x *ExecutionRecord) Reset() {
 	*x = ExecutionRecord{}
-	mi := &file_account_proto_msgTypes[8]
+	mi := &file_account_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -932,7 +874,7 @@ func (x *ExecutionRecord) String() string {
 func (*ExecutionRecord) ProtoMessage() {}
 
 func (x *ExecutionRecord) ProtoReflect() protoreflect.Message {
-	mi := &file_account_proto_msgTypes[8]
+	mi := &file_account_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -945,7 +887,7 @@ func (x *ExecutionRecord) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExecutionRecord.ProtoReflect.Descriptor instead.
 func (*ExecutionRecord) Descriptor() ([]byte, []int) {
-	return file_account_proto_rawDescGZIP(), []int{8}
+	return file_account_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *ExecutionRecord) GetExecutionId() string {
@@ -1106,7 +1048,7 @@ type Observation struct {
 
 func (x *Observation) Reset() {
 	*x = Observation{}
-	mi := &file_account_proto_msgTypes[9]
+	mi := &file_account_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1118,7 +1060,7 @@ func (x *Observation) String() string {
 func (*Observation) ProtoMessage() {}
 
 func (x *Observation) ProtoReflect() protoreflect.Message {
-	mi := &file_account_proto_msgTypes[9]
+	mi := &file_account_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1131,7 +1073,7 @@ func (x *Observation) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Observation.ProtoReflect.Descriptor instead.
 func (*Observation) Descriptor() ([]byte, []int) {
-	return file_account_proto_rawDescGZIP(), []int{9}
+	return file_account_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *Observation) GetSubjectHash() []byte {
@@ -1200,7 +1142,7 @@ type BlockAnchor struct {
 
 func (x *BlockAnchor) Reset() {
 	*x = BlockAnchor{}
-	mi := &file_account_proto_msgTypes[10]
+	mi := &file_account_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1212,7 +1154,7 @@ func (x *BlockAnchor) String() string {
 func (*BlockAnchor) ProtoMessage() {}
 
 func (x *BlockAnchor) ProtoReflect() protoreflect.Message {
-	mi := &file_account_proto_msgTypes[10]
+	mi := &file_account_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1225,7 +1167,7 @@ func (x *BlockAnchor) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BlockAnchor.ProtoReflect.Descriptor instead.
 func (*BlockAnchor) Descriptor() ([]byte, []int) {
-	return file_account_proto_rawDescGZIP(), []int{10}
+	return file_account_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *BlockAnchor) GetHeight() uint64 {
@@ -1258,7 +1200,7 @@ type DepositRecord struct {
 
 func (x *DepositRecord) Reset() {
 	*x = DepositRecord{}
-	mi := &file_account_proto_msgTypes[11]
+	mi := &file_account_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1270,7 +1212,7 @@ func (x *DepositRecord) String() string {
 func (*DepositRecord) ProtoMessage() {}
 
 func (x *DepositRecord) ProtoReflect() protoreflect.Message {
-	mi := &file_account_proto_msgTypes[11]
+	mi := &file_account_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1283,7 +1225,7 @@ func (x *DepositRecord) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DepositRecord.ProtoReflect.Descriptor instead.
 func (*DepositRecord) Descriptor() ([]byte, []int) {
-	return file_account_proto_rawDescGZIP(), []int{11}
+	return file_account_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *DepositRecord) GetChainTxHash() []byte {
@@ -1359,7 +1301,7 @@ type CreditAccount struct {
 
 func (x *CreditAccount) Reset() {
 	*x = CreditAccount{}
-	mi := &file_account_proto_msgTypes[12]
+	mi := &file_account_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1371,7 +1313,7 @@ func (x *CreditAccount) String() string {
 func (*CreditAccount) ProtoMessage() {}
 
 func (x *CreditAccount) ProtoReflect() protoreflect.Message {
-	mi := &file_account_proto_msgTypes[12]
+	mi := &file_account_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1384,7 +1326,7 @@ func (x *CreditAccount) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreditAccount.ProtoReflect.Descriptor instead.
 func (*CreditAccount) Descriptor() ([]byte, []int) {
-	return file_account_proto_rawDescGZIP(), []int{12}
+	return file_account_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *CreditAccount) GetRequester() []byte {
@@ -1469,7 +1411,7 @@ type ReservationRecord struct {
 
 func (x *ReservationRecord) Reset() {
 	*x = ReservationRecord{}
-	mi := &file_account_proto_msgTypes[13]
+	mi := &file_account_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1481,7 +1423,7 @@ func (x *ReservationRecord) String() string {
 func (*ReservationRecord) ProtoMessage() {}
 
 func (x *ReservationRecord) ProtoReflect() protoreflect.Message {
-	mi := &file_account_proto_msgTypes[13]
+	mi := &file_account_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1494,7 +1436,7 @@ func (x *ReservationRecord) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReservationRecord.ProtoReflect.Descriptor instead.
 func (*ReservationRecord) Descriptor() ([]byte, []int) {
-	return file_account_proto_rawDescGZIP(), []int{13}
+	return file_account_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *ReservationRecord) GetRequestId() string {
@@ -1586,7 +1528,7 @@ type PendingAuthorization struct {
 
 func (x *PendingAuthorization) Reset() {
 	*x = PendingAuthorization{}
-	mi := &file_account_proto_msgTypes[14]
+	mi := &file_account_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1598,7 +1540,7 @@ func (x *PendingAuthorization) String() string {
 func (*PendingAuthorization) ProtoMessage() {}
 
 func (x *PendingAuthorization) ProtoReflect() protoreflect.Message {
-	mi := &file_account_proto_msgTypes[14]
+	mi := &file_account_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1611,7 +1553,7 @@ func (x *PendingAuthorization) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PendingAuthorization.ProtoReflect.Descriptor instead.
 func (*PendingAuthorization) Descriptor() ([]byte, []int) {
-	return file_account_proto_rawDescGZIP(), []int{14}
+	return file_account_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *PendingAuthorization) GetRequestId() string {
@@ -1664,7 +1606,7 @@ type SettlementDomain struct {
 
 func (x *SettlementDomain) Reset() {
 	*x = SettlementDomain{}
-	mi := &file_account_proto_msgTypes[15]
+	mi := &file_account_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1676,7 +1618,7 @@ func (x *SettlementDomain) String() string {
 func (*SettlementDomain) ProtoMessage() {}
 
 func (x *SettlementDomain) ProtoReflect() protoreflect.Message {
-	mi := &file_account_proto_msgTypes[15]
+	mi := &file_account_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1689,7 +1631,7 @@ func (x *SettlementDomain) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SettlementDomain.ProtoReflect.Descriptor instead.
 func (*SettlementDomain) Descriptor() ([]byte, []int) {
-	return file_account_proto_rawDescGZIP(), []int{15}
+	return file_account_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *SettlementDomain) GetId() []byte {
@@ -1802,7 +1744,7 @@ type ModelParams struct {
 
 func (x *ModelParams) Reset() {
 	*x = ModelParams{}
-	mi := &file_account_proto_msgTypes[16]
+	mi := &file_account_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1814,7 +1756,7 @@ func (x *ModelParams) String() string {
 func (*ModelParams) ProtoMessage() {}
 
 func (x *ModelParams) ProtoReflect() protoreflect.Message {
-	mi := &file_account_proto_msgTypes[16]
+	mi := &file_account_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1827,7 +1769,7 @@ func (x *ModelParams) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ModelParams.ProtoReflect.Descriptor instead.
 func (*ModelParams) Descriptor() ([]byte, []int) {
-	return file_account_proto_rawDescGZIP(), []int{16}
+	return file_account_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *ModelParams) GetModel() string {
@@ -1870,7 +1812,7 @@ type PCRPolicy struct {
 
 func (x *PCRPolicy) Reset() {
 	*x = PCRPolicy{}
-	mi := &file_account_proto_msgTypes[17]
+	mi := &file_account_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1882,7 +1824,7 @@ func (x *PCRPolicy) String() string {
 func (*PCRPolicy) ProtoMessage() {}
 
 func (x *PCRPolicy) ProtoReflect() protoreflect.Message {
-	mi := &file_account_proto_msgTypes[17]
+	mi := &file_account_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1895,7 +1837,7 @@ func (x *PCRPolicy) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PCRPolicy.ProtoReflect.Descriptor instead.
 func (*PCRPolicy) Descriptor() ([]byte, []int) {
-	return file_account_proto_rawDescGZIP(), []int{17}
+	return file_account_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *PCRPolicy) GetPcr0() []byte {
@@ -1939,11 +1881,8 @@ type ProtocolParams struct {
 	QuorumNumerator             uint32                 `protobuf:"varint,6,opt,name=quorum_numerator,json=quorumNumerator,proto3" json:"quorum_numerator,omitempty"`
 	QuorumDenominator           uint32                 `protobuf:"varint,7,opt,name=quorum_denominator,json=quorumDenominator,proto3" json:"quorum_denominator,omitempty"`
 	AuthorizationDeadlineBlocks uint64                 `protobuf:"varint,8,opt,name=authorization_deadline_blocks,json=authorizationDeadlineBlocks,proto3" json:"authorization_deadline_blocks,omitempty"`
-	ExecutionTimeoutBlocks      uint64                 `protobuf:"varint,9,opt,name=execution_timeout_blocks,json=executionTimeoutBlocks,proto3" json:"execution_timeout_blocks,omitempty"`
-	RetryLimit                  uint32                 `protobuf:"varint,10,opt,name=retry_limit,json=retryLimit,proto3" json:"retry_limit,omitempty"`
 	MinimumServicerBond         uint64                 `protobuf:"varint,11,opt,name=minimum_servicer_bond,json=minimumServicerBond,proto3" json:"minimum_servicer_bond,omitempty"`
 	MinimumValidatorBond        uint64                 `protobuf:"varint,12,opt,name=minimum_validator_bond,json=minimumValidatorBond,proto3" json:"minimum_validator_bond,omitempty"`
-	TimeoutSlashBps             uint32                 `protobuf:"varint,13,opt,name=timeout_slash_bps,json=timeoutSlashBps,proto3" json:"timeout_slash_bps,omitempty"`
 	InvalidReceiptSlashBps      uint32                 `protobuf:"varint,14,opt,name=invalid_receipt_slash_bps,json=invalidReceiptSlashBps,proto3" json:"invalid_receipt_slash_bps,omitempty"`
 	EpochBlocks                 uint64                 `protobuf:"varint,15,opt,name=epoch_blocks,json=epochBlocks,proto3" json:"epoch_blocks,omitempty"`
 	UnbondingEpochs             uint64                 `protobuf:"varint,16,opt,name=unbonding_epochs,json=unbondingEpochs,proto3" json:"unbonding_epochs,omitempty"`
@@ -1960,17 +1899,19 @@ type ProtocolParams struct {
 	SupportedOutputSchemas      []string               `protobuf:"bytes,27,rep,name=supported_output_schemas,json=supportedOutputSchemas,proto3" json:"supported_output_schemas,omitempty"`
 	DefaultModels               []string               `protobuf:"bytes,28,rep,name=default_models,json=defaultModels,proto3" json:"default_models,omitempty"`
 	SettlementDomains           []*SettlementDomain    `protobuf:"bytes,31,rep,name=settlement_domains,json=settlementDomains,proto3" json:"settlement_domains,omitempty"`
-	RequireNitroAttestation     bool                   `protobuf:"varint,32,opt,name=require_nitro_attestation,json=requireNitroAttestation,proto3" json:"require_nitro_attestation,omitempty"`
 	// Wall-clock notice for a changed-roster EVM schedule. This is independent
 	// of Canopy block cadence and must exceed every supported verifier minimum.
 	ValidatorHandoffNoticeSeconds uint64 `protobuf:"varint,33,opt,name=validator_handoff_notice_seconds,json=validatorHandoffNoticeSeconds,proto3" json:"validator_handoff_notice_seconds,omitempty"`
-	unknownFields                 protoimpl.UnknownFields
-	sizeCache                     protoimpl.SizeCache
+	// DER-encoded X.509 root that anchors Nitro attestation certificate chains.
+	// Governance replaces this atomically with the rest of the protocol params.
+	NitroTrustRoot []byte `protobuf:"bytes,34,opt,name=nitro_trust_root,json=nitroTrustRoot,proto3" json:"nitro_trust_root,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *ProtocolParams) Reset() {
 	*x = ProtocolParams{}
-	mi := &file_account_proto_msgTypes[18]
+	mi := &file_account_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1982,7 +1923,7 @@ func (x *ProtocolParams) String() string {
 func (*ProtocolParams) ProtoMessage() {}
 
 func (x *ProtocolParams) ProtoReflect() protoreflect.Message {
-	mi := &file_account_proto_msgTypes[18]
+	mi := &file_account_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1995,7 +1936,7 @@ func (x *ProtocolParams) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProtocolParams.ProtoReflect.Descriptor instead.
 func (*ProtocolParams) Descriptor() ([]byte, []int) {
-	return file_account_proto_rawDescGZIP(), []int{18}
+	return file_account_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *ProtocolParams) GetRevision() uint64 {
@@ -2054,20 +1995,6 @@ func (x *ProtocolParams) GetAuthorizationDeadlineBlocks() uint64 {
 	return 0
 }
 
-func (x *ProtocolParams) GetExecutionTimeoutBlocks() uint64 {
-	if x != nil {
-		return x.ExecutionTimeoutBlocks
-	}
-	return 0
-}
-
-func (x *ProtocolParams) GetRetryLimit() uint32 {
-	if x != nil {
-		return x.RetryLimit
-	}
-	return 0
-}
-
 func (x *ProtocolParams) GetMinimumServicerBond() uint64 {
 	if x != nil {
 		return x.MinimumServicerBond
@@ -2078,13 +2005,6 @@ func (x *ProtocolParams) GetMinimumServicerBond() uint64 {
 func (x *ProtocolParams) GetMinimumValidatorBond() uint64 {
 	if x != nil {
 		return x.MinimumValidatorBond
-	}
-	return 0
-}
-
-func (x *ProtocolParams) GetTimeoutSlashBps() uint32 {
-	if x != nil {
-		return x.TimeoutSlashBps
 	}
 	return 0
 }
@@ -2201,13 +2121,6 @@ func (x *ProtocolParams) GetSettlementDomains() []*SettlementDomain {
 	return nil
 }
 
-func (x *ProtocolParams) GetRequireNitroAttestation() bool {
-	if x != nil {
-		return x.RequireNitroAttestation
-	}
-	return false
-}
-
 func (x *ProtocolParams) GetValidatorHandoffNoticeSeconds() uint64 {
 	if x != nil {
 		return x.ValidatorHandoffNoticeSeconds
@@ -2215,11 +2128,18 @@ func (x *ProtocolParams) GetValidatorHandoffNoticeSeconds() uint64 {
 	return 0
 }
 
+func (x *ProtocolParams) GetNitroTrustRoot() []byte {
+	if x != nil {
+		return x.NitroTrustRoot
+	}
+	return nil
+}
+
 type StakeChange struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	OwnerAddress   []byte                 `protobuf:"bytes,1,opt,name=owner_address,json=ownerAddress,proto3" json:"owner_address,omitempty"`
-	TargetBond     uint64                 `protobuf:"varint,2,opt,name=target_bond,json=targetBond,proto3" json:"target_bond,omitempty"`
-	Active         bool                   `protobuf:"varint,3,opt,name=active,proto3" json:"active,omitempty"`
+	BondIncrease   uint64                 `protobuf:"varint,2,opt,name=bond_increase,json=bondIncrease,proto3" json:"bond_increase,omitempty"`
+	Exit           bool                   `protobuf:"varint,3,opt,name=exit,proto3" json:"exit,omitempty"`
 	AutoCompound   bool                   `protobuf:"varint,4,opt,name=auto_compound,json=autoCompound,proto3" json:"auto_compound,omitempty"`
 	EffectiveEpoch uint64                 `protobuf:"varint,5,opt,name=effective_epoch,json=effectiveEpoch,proto3" json:"effective_epoch,omitempty"`
 	LockedIncrease uint64                 `protobuf:"varint,6,opt,name=locked_increase,json=lockedIncrease,proto3" json:"locked_increase,omitempty"`
@@ -2229,7 +2149,7 @@ type StakeChange struct {
 
 func (x *StakeChange) Reset() {
 	*x = StakeChange{}
-	mi := &file_account_proto_msgTypes[19]
+	mi := &file_account_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2241,7 +2161,7 @@ func (x *StakeChange) String() string {
 func (*StakeChange) ProtoMessage() {}
 
 func (x *StakeChange) ProtoReflect() protoreflect.Message {
-	mi := &file_account_proto_msgTypes[19]
+	mi := &file_account_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2254,7 +2174,7 @@ func (x *StakeChange) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StakeChange.ProtoReflect.Descriptor instead.
 func (*StakeChange) Descriptor() ([]byte, []int) {
-	return file_account_proto_rawDescGZIP(), []int{19}
+	return file_account_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *StakeChange) GetOwnerAddress() []byte {
@@ -2264,16 +2184,16 @@ func (x *StakeChange) GetOwnerAddress() []byte {
 	return nil
 }
 
-func (x *StakeChange) GetTargetBond() uint64 {
+func (x *StakeChange) GetBondIncrease() uint64 {
 	if x != nil {
-		return x.TargetBond
+		return x.BondIncrease
 	}
 	return 0
 }
 
-func (x *StakeChange) GetActive() bool {
+func (x *StakeChange) GetExit() bool {
 	if x != nil {
-		return x.Active
+		return x.Exit
 	}
 	return false
 }
@@ -2312,7 +2232,7 @@ type UnbondingRecord struct {
 
 func (x *UnbondingRecord) Reset() {
 	*x = UnbondingRecord{}
-	mi := &file_account_proto_msgTypes[20]
+	mi := &file_account_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2324,7 +2244,7 @@ func (x *UnbondingRecord) String() string {
 func (*UnbondingRecord) ProtoMessage() {}
 
 func (x *UnbondingRecord) ProtoReflect() protoreflect.Message {
-	mi := &file_account_proto_msgTypes[20]
+	mi := &file_account_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2337,7 +2257,7 @@ func (x *UnbondingRecord) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UnbondingRecord.ProtoReflect.Descriptor instead.
 func (*UnbondingRecord) Descriptor() ([]byte, []int) {
-	return file_account_proto_rawDescGZIP(), []int{20}
+	return file_account_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *UnbondingRecord) GetOwnerAddress() []byte {
@@ -2390,7 +2310,7 @@ type SlashEvidence struct {
 
 func (x *SlashEvidence) Reset() {
 	*x = SlashEvidence{}
-	mi := &file_account_proto_msgTypes[21]
+	mi := &file_account_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2402,7 +2322,7 @@ func (x *SlashEvidence) String() string {
 func (*SlashEvidence) ProtoMessage() {}
 
 func (x *SlashEvidence) ProtoReflect() protoreflect.Message {
-	mi := &file_account_proto_msgTypes[21]
+	mi := &file_account_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2415,7 +2335,7 @@ func (x *SlashEvidence) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SlashEvidence.ProtoReflect.Descriptor instead.
 func (*SlashEvidence) Descriptor() ([]byte, []int) {
-	return file_account_proto_rawDescGZIP(), []int{21}
+	return file_account_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *SlashEvidence) GetEvidenceId() []byte {
@@ -2477,7 +2397,7 @@ type ProducerPayout struct {
 
 func (x *ProducerPayout) Reset() {
 	*x = ProducerPayout{}
-	mi := &file_account_proto_msgTypes[22]
+	mi := &file_account_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2489,7 +2409,7 @@ func (x *ProducerPayout) String() string {
 func (*ProducerPayout) ProtoMessage() {}
 
 func (x *ProducerPayout) ProtoReflect() protoreflect.Message {
-	mi := &file_account_proto_msgTypes[22]
+	mi := &file_account_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2502,7 +2422,7 @@ func (x *ProducerPayout) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProducerPayout.ProtoReflect.Descriptor instead.
 func (*ProducerPayout) Descriptor() ([]byte, []int) {
-	return file_account_proto_rawDescGZIP(), []int{22}
+	return file_account_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *ProducerPayout) GetOwnerAddress() []byte {
@@ -2530,7 +2450,7 @@ type ProducerRecord struct {
 
 func (x *ProducerRecord) Reset() {
 	*x = ProducerRecord{}
-	mi := &file_account_proto_msgTypes[23]
+	mi := &file_account_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2542,7 +2462,7 @@ func (x *ProducerRecord) String() string {
 func (*ProducerRecord) ProtoMessage() {}
 
 func (x *ProducerRecord) ProtoReflect() protoreflect.Message {
-	mi := &file_account_proto_msgTypes[23]
+	mi := &file_account_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2555,7 +2475,7 @@ func (x *ProducerRecord) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProducerRecord.ProtoReflect.Descriptor instead.
 func (*ProducerRecord) Descriptor() ([]byte, []int) {
-	return file_account_proto_rawDescGZIP(), []int{23}
+	return file_account_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *ProducerRecord) GetEpoch() uint64 {
@@ -2590,7 +2510,7 @@ type ProducerIdentity struct {
 
 func (x *ProducerIdentity) Reset() {
 	*x = ProducerIdentity{}
-	mi := &file_account_proto_msgTypes[24]
+	mi := &file_account_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2602,7 +2522,7 @@ func (x *ProducerIdentity) String() string {
 func (*ProducerIdentity) ProtoMessage() {}
 
 func (x *ProducerIdentity) ProtoReflect() protoreflect.Message {
-	mi := &file_account_proto_msgTypes[24]
+	mi := &file_account_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2615,7 +2535,7 @@ func (x *ProducerIdentity) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProducerIdentity.ProtoReflect.Descriptor instead.
 func (*ProducerIdentity) Descriptor() ([]byte, []int) {
-	return file_account_proto_rawDescGZIP(), []int{24}
+	return file_account_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *ProducerIdentity) GetOwnerAddress() []byte {
@@ -2638,7 +2558,7 @@ type RewardAllocation struct {
 
 func (x *RewardAllocation) Reset() {
 	*x = RewardAllocation{}
-	mi := &file_account_proto_msgTypes[25]
+	mi := &file_account_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2650,7 +2570,7 @@ func (x *RewardAllocation) String() string {
 func (*RewardAllocation) ProtoMessage() {}
 
 func (x *RewardAllocation) ProtoReflect() protoreflect.Message {
-	mi := &file_account_proto_msgTypes[25]
+	mi := &file_account_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2663,7 +2583,7 @@ func (x *RewardAllocation) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RewardAllocation.ProtoReflect.Descriptor instead.
 func (*RewardAllocation) Descriptor() ([]byte, []int) {
-	return file_account_proto_rawDescGZIP(), []int{25}
+	return file_account_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *RewardAllocation) GetProducerAddress() []byte {
@@ -2722,7 +2642,7 @@ type EpochAuthorization struct {
 
 func (x *EpochAuthorization) Reset() {
 	*x = EpochAuthorization{}
-	mi := &file_account_proto_msgTypes[26]
+	mi := &file_account_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2734,7 +2654,7 @@ func (x *EpochAuthorization) String() string {
 func (*EpochAuthorization) ProtoMessage() {}
 
 func (x *EpochAuthorization) ProtoReflect() protoreflect.Message {
-	mi := &file_account_proto_msgTypes[26]
+	mi := &file_account_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2747,7 +2667,7 @@ func (x *EpochAuthorization) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EpochAuthorization.ProtoReflect.Descriptor instead.
 func (*EpochAuthorization) Descriptor() ([]byte, []int) {
-	return file_account_proto_rawDescGZIP(), []int{26}
+	return file_account_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *EpochAuthorization) GetEpoch() uint64 {
@@ -2874,7 +2794,7 @@ type EpochClock struct {
 
 func (x *EpochClock) Reset() {
 	*x = EpochClock{}
-	mi := &file_account_proto_msgTypes[27]
+	mi := &file_account_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2886,7 +2806,7 @@ func (x *EpochClock) String() string {
 func (*EpochClock) ProtoMessage() {}
 
 func (x *EpochClock) ProtoReflect() protoreflect.Message {
-	mi := &file_account_proto_msgTypes[27]
+	mi := &file_account_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2899,7 +2819,7 @@ func (x *EpochClock) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EpochClock.ProtoReflect.Descriptor instead.
 func (*EpochClock) Descriptor() ([]byte, []int) {
-	return file_account_proto_rawDescGZIP(), []int{27}
+	return file_account_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *EpochClock) GetCurrentEpoch() uint64 {
@@ -3025,7 +2945,7 @@ type BridgeState struct {
 
 func (x *BridgeState) Reset() {
 	*x = BridgeState{}
-	mi := &file_account_proto_msgTypes[28]
+	mi := &file_account_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3037,7 +2957,7 @@ func (x *BridgeState) String() string {
 func (*BridgeState) ProtoMessage() {}
 
 func (x *BridgeState) ProtoReflect() protoreflect.Message {
-	mi := &file_account_proto_msgTypes[28]
+	mi := &file_account_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3050,7 +2970,7 @@ func (x *BridgeState) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BridgeState.ProtoReflect.Descriptor instead.
 func (*BridgeState) Descriptor() ([]byte, []int) {
-	return file_account_proto_rawDescGZIP(), []int{28}
+	return file_account_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *BridgeState) GetOutboundNonce() uint64 {
@@ -3088,7 +3008,7 @@ type BridgeMint struct {
 
 func (x *BridgeMint) Reset() {
 	*x = BridgeMint{}
-	mi := &file_account_proto_msgTypes[29]
+	mi := &file_account_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3100,7 +3020,7 @@ func (x *BridgeMint) String() string {
 func (*BridgeMint) ProtoMessage() {}
 
 func (x *BridgeMint) ProtoReflect() protoreflect.Message {
-	mi := &file_account_proto_msgTypes[29]
+	mi := &file_account_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3113,7 +3033,7 @@ func (x *BridgeMint) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BridgeMint.ProtoReflect.Descriptor instead.
 func (*BridgeMint) Descriptor() ([]byte, []int) {
-	return file_account_proto_rawDescGZIP(), []int{29}
+	return file_account_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *BridgeMint) GetCanonicalChainTxHash() []byte {
@@ -3177,7 +3097,7 @@ type BridgeBurn struct {
 
 func (x *BridgeBurn) Reset() {
 	*x = BridgeBurn{}
-	mi := &file_account_proto_msgTypes[30]
+	mi := &file_account_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3189,7 +3109,7 @@ func (x *BridgeBurn) String() string {
 func (*BridgeBurn) ProtoMessage() {}
 
 func (x *BridgeBurn) ProtoReflect() protoreflect.Message {
-	mi := &file_account_proto_msgTypes[30]
+	mi := &file_account_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3202,7 +3122,7 @@ func (x *BridgeBurn) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BridgeBurn.ProtoReflect.Descriptor instead.
 func (*BridgeBurn) Descriptor() ([]byte, []int) {
-	return file_account_proto_rawDescGZIP(), []int{30}
+	return file_account_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *BridgeBurn) GetBurnId() []byte {
@@ -3291,7 +3211,7 @@ type ReplayMarker struct {
 
 func (x *ReplayMarker) Reset() {
 	*x = ReplayMarker{}
-	mi := &file_account_proto_msgTypes[31]
+	mi := &file_account_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3303,7 +3223,7 @@ func (x *ReplayMarker) String() string {
 func (*ReplayMarker) ProtoMessage() {}
 
 func (x *ReplayMarker) ProtoReflect() protoreflect.Message {
-	mi := &file_account_proto_msgTypes[31]
+	mi := &file_account_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3316,7 +3236,7 @@ func (x *ReplayMarker) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReplayMarker.ProtoReflect.Descriptor instead.
 func (*ReplayMarker) Descriptor() ([]byte, []int) {
-	return file_account_proto_rawDescGZIP(), []int{31}
+	return file_account_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *ReplayMarker) GetId() []byte {
@@ -3343,7 +3263,7 @@ type SettlementDomainLifecycleIntent struct {
 
 func (x *SettlementDomainLifecycleIntent) Reset() {
 	*x = SettlementDomainLifecycleIntent{}
-	mi := &file_account_proto_msgTypes[32]
+	mi := &file_account_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3355,7 +3275,7 @@ func (x *SettlementDomainLifecycleIntent) String() string {
 func (*SettlementDomainLifecycleIntent) ProtoMessage() {}
 
 func (x *SettlementDomainLifecycleIntent) ProtoReflect() protoreflect.Message {
-	mi := &file_account_proto_msgTypes[32]
+	mi := &file_account_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3368,7 +3288,7 @@ func (x *SettlementDomainLifecycleIntent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SettlementDomainLifecycleIntent.ProtoReflect.Descriptor instead.
 func (*SettlementDomainLifecycleIntent) Descriptor() ([]byte, []int) {
-	return file_account_proto_rawDescGZIP(), []int{32}
+	return file_account_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *SettlementDomainLifecycleIntent) GetId() []byte {
@@ -3443,7 +3363,7 @@ type QuorumProof struct {
 
 func (x *QuorumProof) Reset() {
 	*x = QuorumProof{}
-	mi := &file_account_proto_msgTypes[33]
+	mi := &file_account_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3455,7 +3375,7 @@ func (x *QuorumProof) String() string {
 func (*QuorumProof) ProtoMessage() {}
 
 func (x *QuorumProof) ProtoReflect() protoreflect.Message {
-	mi := &file_account_proto_msgTypes[33]
+	mi := &file_account_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3468,7 +3388,7 @@ func (x *QuorumProof) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use QuorumProof.ProtoReflect.Descriptor instead.
 func (*QuorumProof) Descriptor() ([]byte, []int) {
-	return file_account_proto_rawDescGZIP(), []int{33}
+	return file_account_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *QuorumProof) GetProofKind() string {
@@ -3621,7 +3541,7 @@ type ConsensusCertificate struct {
 
 func (x *ConsensusCertificate) Reset() {
 	*x = ConsensusCertificate{}
-	mi := &file_account_proto_msgTypes[34]
+	mi := &file_account_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3633,7 +3553,7 @@ func (x *ConsensusCertificate) String() string {
 func (*ConsensusCertificate) ProtoMessage() {}
 
 func (x *ConsensusCertificate) ProtoReflect() protoreflect.Message {
-	mi := &file_account_proto_msgTypes[34]
+	mi := &file_account_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3646,7 +3566,7 @@ func (x *ConsensusCertificate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConsensusCertificate.ProtoReflect.Descriptor instead.
 func (*ConsensusCertificate) Descriptor() ([]byte, []int) {
-	return file_account_proto_rawDescGZIP(), []int{34}
+	return file_account_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *ConsensusCertificate) GetKind() string {
@@ -3753,7 +3673,7 @@ type ValidatorHandoffDomainManifest struct {
 
 func (x *ValidatorHandoffDomainManifest) Reset() {
 	*x = ValidatorHandoffDomainManifest{}
-	mi := &file_account_proto_msgTypes[35]
+	mi := &file_account_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3765,7 +3685,7 @@ func (x *ValidatorHandoffDomainManifest) String() string {
 func (*ValidatorHandoffDomainManifest) ProtoMessage() {}
 
 func (x *ValidatorHandoffDomainManifest) ProtoReflect() protoreflect.Message {
-	mi := &file_account_proto_msgTypes[35]
+	mi := &file_account_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3778,7 +3698,7 @@ func (x *ValidatorHandoffDomainManifest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ValidatorHandoffDomainManifest.ProtoReflect.Descriptor instead.
 func (*ValidatorHandoffDomainManifest) Descriptor() ([]byte, []int) {
-	return file_account_proto_rawDescGZIP(), []int{35}
+	return file_account_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *ValidatorHandoffDomainManifest) GetSettlementDomainId() []byte {
@@ -3861,7 +3781,7 @@ type ValidatorHandoffManifest struct {
 
 func (x *ValidatorHandoffManifest) Reset() {
 	*x = ValidatorHandoffManifest{}
-	mi := &file_account_proto_msgTypes[36]
+	mi := &file_account_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3873,7 +3793,7 @@ func (x *ValidatorHandoffManifest) String() string {
 func (*ValidatorHandoffManifest) ProtoMessage() {}
 
 func (x *ValidatorHandoffManifest) ProtoReflect() protoreflect.Message {
-	mi := &file_account_proto_msgTypes[36]
+	mi := &file_account_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3886,7 +3806,7 @@ func (x *ValidatorHandoffManifest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ValidatorHandoffManifest.ProtoReflect.Descriptor instead.
 func (*ValidatorHandoffManifest) Descriptor() ([]byte, []int) {
-	return file_account_proto_rawDescGZIP(), []int{36}
+	return file_account_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *ValidatorHandoffManifest) GetRoot() []byte {
@@ -3994,7 +3914,7 @@ type ValidatorHandoffCancellationDomainManifest struct {
 
 func (x *ValidatorHandoffCancellationDomainManifest) Reset() {
 	*x = ValidatorHandoffCancellationDomainManifest{}
-	mi := &file_account_proto_msgTypes[37]
+	mi := &file_account_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4006,7 +3926,7 @@ func (x *ValidatorHandoffCancellationDomainManifest) String() string {
 func (*ValidatorHandoffCancellationDomainManifest) ProtoMessage() {}
 
 func (x *ValidatorHandoffCancellationDomainManifest) ProtoReflect() protoreflect.Message {
-	mi := &file_account_proto_msgTypes[37]
+	mi := &file_account_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4019,7 +3939,7 @@ func (x *ValidatorHandoffCancellationDomainManifest) ProtoReflect() protoreflect
 
 // Deprecated: Use ValidatorHandoffCancellationDomainManifest.ProtoReflect.Descriptor instead.
 func (*ValidatorHandoffCancellationDomainManifest) Descriptor() ([]byte, []int) {
-	return file_account_proto_rawDescGZIP(), []int{37}
+	return file_account_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *ValidatorHandoffCancellationDomainManifest) GetSettlementDomainId() []byte {
@@ -4081,7 +4001,7 @@ type ValidatorHandoffCancellationManifest struct {
 
 func (x *ValidatorHandoffCancellationManifest) Reset() {
 	*x = ValidatorHandoffCancellationManifest{}
-	mi := &file_account_proto_msgTypes[38]
+	mi := &file_account_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4093,7 +4013,7 @@ func (x *ValidatorHandoffCancellationManifest) String() string {
 func (*ValidatorHandoffCancellationManifest) ProtoMessage() {}
 
 func (x *ValidatorHandoffCancellationManifest) ProtoReflect() protoreflect.Message {
-	mi := &file_account_proto_msgTypes[38]
+	mi := &file_account_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4106,7 +4026,7 @@ func (x *ValidatorHandoffCancellationManifest) ProtoReflect() protoreflect.Messa
 
 // Deprecated: Use ValidatorHandoffCancellationManifest.ProtoReflect.Descriptor instead.
 func (*ValidatorHandoffCancellationManifest) Descriptor() ([]byte, []int) {
-	return file_account_proto_rawDescGZIP(), []int{38}
+	return file_account_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *ValidatorHandoffCancellationManifest) GetRoot() []byte {
@@ -4182,7 +4102,7 @@ type SettlementDomainRotationState struct {
 
 func (x *SettlementDomainRotationState) Reset() {
 	*x = SettlementDomainRotationState{}
-	mi := &file_account_proto_msgTypes[39]
+	mi := &file_account_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4194,7 +4114,7 @@ func (x *SettlementDomainRotationState) String() string {
 func (*SettlementDomainRotationState) ProtoMessage() {}
 
 func (x *SettlementDomainRotationState) ProtoReflect() protoreflect.Message {
-	mi := &file_account_proto_msgTypes[39]
+	mi := &file_account_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4207,7 +4127,7 @@ func (x *SettlementDomainRotationState) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SettlementDomainRotationState.ProtoReflect.Descriptor instead.
 func (*SettlementDomainRotationState) Descriptor() ([]byte, []int) {
-	return file_account_proto_rawDescGZIP(), []int{39}
+	return file_account_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *SettlementDomainRotationState) GetSettlementDomainId() []byte {
@@ -4236,7 +4156,7 @@ type QuorumSignatureShare struct {
 
 func (x *QuorumSignatureShare) Reset() {
 	*x = QuorumSignatureShare{}
-	mi := &file_account_proto_msgTypes[40]
+	mi := &file_account_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4248,7 +4168,7 @@ func (x *QuorumSignatureShare) String() string {
 func (*QuorumSignatureShare) ProtoMessage() {}
 
 func (x *QuorumSignatureShare) ProtoReflect() protoreflect.Message {
-	mi := &file_account_proto_msgTypes[40]
+	mi := &file_account_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4261,7 +4181,7 @@ func (x *QuorumSignatureShare) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use QuorumSignatureShare.ProtoReflect.Descriptor instead.
 func (*QuorumSignatureShare) Descriptor() ([]byte, []int) {
-	return file_account_proto_rawDescGZIP(), []int{40}
+	return file_account_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *QuorumSignatureShare) GetProofId() []byte {
@@ -4332,13 +4252,10 @@ const file_account_proto_rawDesc = "" +
 	"\x04pcr1\x18\x06 \x01(\fR\x04pcr1\x12\x12\n" +
 	"\x04pcr2\x18\a \x01(\fR\x04pcr2\x12+\n" +
 	"\x11registered_height\x18\b \x01(\x04R\x10registeredHeight\x12\x16\n" +
-	"\x06active\x18\t \x01(\bR\x06active\"^\n" +
-	"\x10SettlementPayout\x120\n" +
-	"\x14settlement_domain_id\x18\x01 \x01(\fR\x12settlementDomainId\x12\x18\n" +
-	"\aaddress\x18\x02 \x01(\fR\aaddress\"\x89\x03\n" +
+	"\x06active\x18\t \x01(\bR\x06active\"\x84\x03\n" +
 	"\bServicer\x12#\n" +
-	"\rowner_address\x18\x01 \x01(\fR\fownerAddress\x121\n" +
-	"\apayouts\x18\x02 \x03(\v2\x17.types.SettlementPayoutR\apayouts\x12\x1c\n" +
+	"\rowner_address\x18\x01 \x01(\fR\fownerAddress\x12,\n" +
+	"\x12evm_payout_address\x18\x02 \x01(\fR\x10evmPayoutAddress\x12\x1c\n" +
 	"\n" +
 	"tee_key_id\x18\x03 \x01(\tR\bteeKeyId\x12\x16\n" +
 	"\x06models\x18\x04 \x03(\tR\x06models\x12\x12\n" +
@@ -4349,21 +4266,19 @@ const file_account_proto_rawDesc = "" +
 	"\rauto_compound\x18\t \x01(\bR\fautoCompound\x12'\n" +
 	"\x0faccrued_rewards\x18\n" +
 	" \x01(\x04R\x0eaccruedRewards\x12#\n" +
-	"\rtotal_slashed\x18\v \x01(\x04R\ftotalSlashed\"\xe0\x02\n" +
+	"\rtotal_slashed\x18\v \x01(\x04R\ftotalSlashed\"\xa9\x02\n" +
 	"\n" +
 	"Assignment\x12\x14\n" +
 	"\x05model\x18\x01 \x01(\tR\x05model\x12)\n" +
-	"\x10servicer_address\x18\x02 \x01(\fR\x0fservicerAddress\x12\x18\n" +
-	"\aattempt\x18\x03 \x01(\rR\aattempt\x12\x1c\n" +
+	"\x10servicer_address\x18\x02 \x01(\fR\x0fservicerAddress\x12\x1c\n" +
 	"\tcompleted\x18\x04 \x01(\bR\tcompleted\x12!\n" +
-	"\fexecution_id\x18\x05 \x01(\tR\vexecutionId\x12'\n" +
-	"\x0fdeadline_height\x18\x06 \x01(\x04R\x0edeadlineHeight\x12\x1c\n" +
+	"\fexecution_id\x18\x05 \x01(\tR\vexecutionId\x12\x1c\n" +
 	"\n" +
 	"tee_key_id\x18\a \x01(\tR\bteeKeyId\x12\x1a\n" +
 	"\bprovider\x18\b \x01(\tR\bprovider\x12'\n" +
 	"\x0fterminal_status\x18\t \x01(\tR\x0eterminalStatus\x12*\n" +
 	"\x11max_provider_cost\x18\n" +
-	" \x01(\x04R\x0fmaxProviderCost\"\x95\b\n" +
+	" \x01(\x04R\x0fmaxProviderCostJ\x04\b\x03\x10\x04J\x04\b\x06\x10\a\"\xbe\b\n" +
 	"\rRequestRecord\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12\x1d\n" +
@@ -4393,7 +4308,8 @@ const file_account_proto_rawDesc = "" +
 	"\x0eoutput_maximum\x18\x1d \x01(\x03R\routputMaximum\x12%\n" +
 	"\x0eoutput_choices\x18\x1e \x03(\tR\routputChoices\x12\x1f\n" +
 	"\vschema_hash\x18\x1f \x01(\fR\n" +
-	"schemaHashJ\x04\b\x04\x10\x05J\x04\b\b\x10\tJ\x04\b\x0e\x10\x0fJ\x04\b\x12\x10\x13J\x04\b\x16\x10\x17J\x04\b\x17\x10\x18J\x04\b\x19\x10\x1a\"\xc0\x05\n" +
+	"schemaHash\x12'\n" +
+	"\x0freserved_budget\x18  \x01(\x04R\x0ereservedBudgetJ\x04\b\x04\x10\x05J\x04\b\b\x10\tJ\x04\b\x0e\x10\x0fJ\x04\b\x12\x10\x13J\x04\b\x16\x10\x17J\x04\b\x17\x10\x18J\x04\b\x19\x10\x1a\"\xc0\x05\n" +
 	"\x0fExecutionRecord\x12!\n" +
 	"\fexecution_id\x18\x01 \x01(\tR\vexecutionId\x12\x1d\n" +
 	"\n" +
@@ -4498,7 +4414,7 @@ const file_account_proto_rawDesc = "" +
 	"\x04pcr0\x18\x01 \x01(\fR\x04pcr0\x12\x12\n" +
 	"\x04pcr1\x18\x02 \x01(\fR\x04pcr1\x12\x12\n" +
 	"\x04pcr2\x18\x03 \x01(\fR\x04pcr2\x12\x16\n" +
-	"\x06active\x18\x04 \x01(\bR\x06active\"\xae\f\n" +
+	"\x06active\x18\x04 \x01(\bR\x06active\"\xad\v\n" +
 	"\x0eProtocolParams\x12\x1a\n" +
 	"\brevision\x18\x01 \x01(\x04R\brevision\x12*\n" +
 	"\x06models\x18\x02 \x03(\v2\x12.types.ModelParamsR\x06models\x125\n" +
@@ -4507,14 +4423,9 @@ const file_account_proto_rawDesc = "" +
 	"\x13servicer_margin_bps\x18\x05 \x01(\rR\x11servicerMarginBps\x12)\n" +
 	"\x10quorum_numerator\x18\x06 \x01(\rR\x0fquorumNumerator\x12-\n" +
 	"\x12quorum_denominator\x18\a \x01(\rR\x11quorumDenominator\x12B\n" +
-	"\x1dauthorization_deadline_blocks\x18\b \x01(\x04R\x1bauthorizationDeadlineBlocks\x128\n" +
-	"\x18execution_timeout_blocks\x18\t \x01(\x04R\x16executionTimeoutBlocks\x12\x1f\n" +
-	"\vretry_limit\x18\n" +
-	" \x01(\rR\n" +
-	"retryLimit\x122\n" +
+	"\x1dauthorization_deadline_blocks\x18\b \x01(\x04R\x1bauthorizationDeadlineBlocks\x122\n" +
 	"\x15minimum_servicer_bond\x18\v \x01(\x04R\x13minimumServicerBond\x124\n" +
-	"\x16minimum_validator_bond\x18\f \x01(\x04R\x14minimumValidatorBond\x12*\n" +
-	"\x11timeout_slash_bps\x18\r \x01(\rR\x0ftimeoutSlashBps\x129\n" +
+	"\x16minimum_validator_bond\x18\f \x01(\x04R\x14minimumValidatorBond\x129\n" +
 	"\x19invalid_receipt_slash_bps\x18\x0e \x01(\rR\x16invalidReceiptSlashBps\x12!\n" +
 	"\fepoch_blocks\x18\x0f \x01(\x04R\vepochBlocks\x12)\n" +
 	"\x10unbonding_epochs\x18\x10 \x01(\x04R\x0funbondingEpochs\x12,\n" +
@@ -4530,14 +4441,15 @@ const file_account_proto_rawDesc = "" +
 	"\x1asettlement_interval_blocks\x18\x1a \x01(\x04R\x18settlementIntervalBlocks\x128\n" +
 	"\x18supported_output_schemas\x18\x1b \x03(\tR\x16supportedOutputSchemas\x12%\n" +
 	"\x0edefault_models\x18\x1c \x03(\tR\rdefaultModels\x12F\n" +
-	"\x12settlement_domains\x18\x1f \x03(\v2\x17.types.SettlementDomainR\x11settlementDomains\x12:\n" +
-	"\x19require_nitro_attestation\x18  \x01(\bR\x17requireNitroAttestation\x12G\n" +
-	" validator_handoff_notice_seconds\x18! \x01(\x04R\x1dvalidatorHandoffNoticeSecondsJ\x04\b\x1d\x10\x1eJ\x04\b\x1e\x10\x1f\"\xe2\x01\n" +
+	"\x12settlement_domains\x18\x1f \x03(\v2\x17.types.SettlementDomainR\x11settlementDomains\x12G\n" +
+	" validator_handoff_notice_seconds\x18! \x01(\x04R\x1dvalidatorHandoffNoticeSeconds\x12(\n" +
+	"\x10nitro_trust_root\x18\" \x01(\fR\x0enitroTrustRootJ\x04\b\t\x10\n" +
+	"J\x04\b\n" +
+	"\x10\vJ\x04\b\r\x10\x0eJ\x04\b\x1d\x10\x1eJ\x04\b\x1e\x10\x1fJ\x04\b \x10!\"\xe2\x01\n" +
 	"\vStakeChange\x12#\n" +
-	"\rowner_address\x18\x01 \x01(\fR\fownerAddress\x12\x1f\n" +
-	"\vtarget_bond\x18\x02 \x01(\x04R\n" +
-	"targetBond\x12\x16\n" +
-	"\x06active\x18\x03 \x01(\bR\x06active\x12#\n" +
+	"\rowner_address\x18\x01 \x01(\fR\fownerAddress\x12#\n" +
+	"\rbond_increase\x18\x02 \x01(\x04R\fbondIncrease\x12\x12\n" +
+	"\x04exit\x18\x03 \x01(\bR\x04exit\x12#\n" +
 	"\rauto_compound\x18\x04 \x01(\bR\fautoCompound\x12'\n" +
 	"\x0feffective_epoch\x18\x05 \x01(\x04R\x0eeffectiveEpoch\x12'\n" +
 	"\x0flocked_increase\x18\x06 \x01(\x04R\x0elockedIncrease\"\xad\x01\n" +
@@ -4747,64 +4659,62 @@ func file_account_proto_rawDescGZIP() []byte {
 	return file_account_proto_rawDescData
 }
 
-var file_account_proto_msgTypes = make([]protoimpl.MessageInfo, 41)
+var file_account_proto_msgTypes = make([]protoimpl.MessageInfo, 40)
 var file_account_proto_goTypes = []any{
 	(*Account)(nil),                                    // 0: types.Account
 	(*Pool)(nil),                                       // 1: types.Pool
 	(*Validator)(nil),                                  // 2: types.Validator
 	(*EnclaveKey)(nil),                                 // 3: types.EnclaveKey
-	(*SettlementPayout)(nil),                           // 4: types.SettlementPayout
-	(*Servicer)(nil),                                   // 5: types.Servicer
-	(*Assignment)(nil),                                 // 6: types.Assignment
-	(*RequestRecord)(nil),                              // 7: types.RequestRecord
-	(*ExecutionRecord)(nil),                            // 8: types.ExecutionRecord
-	(*Observation)(nil),                                // 9: types.Observation
-	(*BlockAnchor)(nil),                                // 10: types.BlockAnchor
-	(*DepositRecord)(nil),                              // 11: types.DepositRecord
-	(*CreditAccount)(nil),                              // 12: types.CreditAccount
-	(*ReservationRecord)(nil),                          // 13: types.ReservationRecord
-	(*PendingAuthorization)(nil),                       // 14: types.PendingAuthorization
-	(*SettlementDomain)(nil),                           // 15: types.SettlementDomain
-	(*ModelParams)(nil),                                // 16: types.ModelParams
-	(*PCRPolicy)(nil),                                  // 17: types.PCRPolicy
-	(*ProtocolParams)(nil),                             // 18: types.ProtocolParams
-	(*StakeChange)(nil),                                // 19: types.StakeChange
-	(*UnbondingRecord)(nil),                            // 20: types.UnbondingRecord
-	(*SlashEvidence)(nil),                              // 21: types.SlashEvidence
-	(*ProducerPayout)(nil),                             // 22: types.ProducerPayout
-	(*ProducerRecord)(nil),                             // 23: types.ProducerRecord
-	(*ProducerIdentity)(nil),                           // 24: types.ProducerIdentity
-	(*RewardAllocation)(nil),                           // 25: types.RewardAllocation
-	(*EpochAuthorization)(nil),                         // 26: types.EpochAuthorization
-	(*EpochClock)(nil),                                 // 27: types.EpochClock
-	(*BridgeState)(nil),                                // 28: types.BridgeState
-	(*BridgeMint)(nil),                                 // 29: types.BridgeMint
-	(*BridgeBurn)(nil),                                 // 30: types.BridgeBurn
-	(*ReplayMarker)(nil),                               // 31: types.ReplayMarker
-	(*SettlementDomainLifecycleIntent)(nil),            // 32: types.SettlementDomainLifecycleIntent
-	(*QuorumProof)(nil),                                // 33: types.QuorumProof
-	(*ConsensusCertificate)(nil),                       // 34: types.ConsensusCertificate
-	(*ValidatorHandoffDomainManifest)(nil),             // 35: types.ValidatorHandoffDomainManifest
-	(*ValidatorHandoffManifest)(nil),                   // 36: types.ValidatorHandoffManifest
-	(*ValidatorHandoffCancellationDomainManifest)(nil), // 37: types.ValidatorHandoffCancellationDomainManifest
-	(*ValidatorHandoffCancellationManifest)(nil),       // 38: types.ValidatorHandoffCancellationManifest
-	(*SettlementDomainRotationState)(nil),              // 39: types.SettlementDomainRotationState
-	(*QuorumSignatureShare)(nil),                       // 40: types.QuorumSignatureShare
+	(*Servicer)(nil),                                   // 4: types.Servicer
+	(*Assignment)(nil),                                 // 5: types.Assignment
+	(*RequestRecord)(nil),                              // 6: types.RequestRecord
+	(*ExecutionRecord)(nil),                            // 7: types.ExecutionRecord
+	(*Observation)(nil),                                // 8: types.Observation
+	(*BlockAnchor)(nil),                                // 9: types.BlockAnchor
+	(*DepositRecord)(nil),                              // 10: types.DepositRecord
+	(*CreditAccount)(nil),                              // 11: types.CreditAccount
+	(*ReservationRecord)(nil),                          // 12: types.ReservationRecord
+	(*PendingAuthorization)(nil),                       // 13: types.PendingAuthorization
+	(*SettlementDomain)(nil),                           // 14: types.SettlementDomain
+	(*ModelParams)(nil),                                // 15: types.ModelParams
+	(*PCRPolicy)(nil),                                  // 16: types.PCRPolicy
+	(*ProtocolParams)(nil),                             // 17: types.ProtocolParams
+	(*StakeChange)(nil),                                // 18: types.StakeChange
+	(*UnbondingRecord)(nil),                            // 19: types.UnbondingRecord
+	(*SlashEvidence)(nil),                              // 20: types.SlashEvidence
+	(*ProducerPayout)(nil),                             // 21: types.ProducerPayout
+	(*ProducerRecord)(nil),                             // 22: types.ProducerRecord
+	(*ProducerIdentity)(nil),                           // 23: types.ProducerIdentity
+	(*RewardAllocation)(nil),                           // 24: types.RewardAllocation
+	(*EpochAuthorization)(nil),                         // 25: types.EpochAuthorization
+	(*EpochClock)(nil),                                 // 26: types.EpochClock
+	(*BridgeState)(nil),                                // 27: types.BridgeState
+	(*BridgeMint)(nil),                                 // 28: types.BridgeMint
+	(*BridgeBurn)(nil),                                 // 29: types.BridgeBurn
+	(*ReplayMarker)(nil),                               // 30: types.ReplayMarker
+	(*SettlementDomainLifecycleIntent)(nil),            // 31: types.SettlementDomainLifecycleIntent
+	(*QuorumProof)(nil),                                // 32: types.QuorumProof
+	(*ConsensusCertificate)(nil),                       // 33: types.ConsensusCertificate
+	(*ValidatorHandoffDomainManifest)(nil),             // 34: types.ValidatorHandoffDomainManifest
+	(*ValidatorHandoffManifest)(nil),                   // 35: types.ValidatorHandoffManifest
+	(*ValidatorHandoffCancellationDomainManifest)(nil), // 36: types.ValidatorHandoffCancellationDomainManifest
+	(*ValidatorHandoffCancellationManifest)(nil),       // 37: types.ValidatorHandoffCancellationManifest
+	(*SettlementDomainRotationState)(nil),              // 38: types.SettlementDomainRotationState
+	(*QuorumSignatureShare)(nil),                       // 39: types.QuorumSignatureShare
 }
 var file_account_proto_depIdxs = []int32{
-	4,  // 0: types.Servicer.payouts:type_name -> types.SettlementPayout
-	6,  // 1: types.RequestRecord.assignments:type_name -> types.Assignment
-	16, // 2: types.ProtocolParams.models:type_name -> types.ModelParams
-	17, // 3: types.ProtocolParams.approved_pcrs:type_name -> types.PCRPolicy
-	15, // 4: types.ProtocolParams.settlement_domains:type_name -> types.SettlementDomain
-	25, // 5: types.EpochAuthorization.allocations:type_name -> types.RewardAllocation
-	35, // 6: types.ValidatorHandoffManifest.domains:type_name -> types.ValidatorHandoffDomainManifest
-	37, // 7: types.ValidatorHandoffCancellationManifest.domains:type_name -> types.ValidatorHandoffCancellationDomainManifest
-	8,  // [8:8] is the sub-list for method output_type
-	8,  // [8:8] is the sub-list for method input_type
-	8,  // [8:8] is the sub-list for extension type_name
-	8,  // [8:8] is the sub-list for extension extendee
-	0,  // [0:8] is the sub-list for field type_name
+	5,  // 0: types.RequestRecord.assignments:type_name -> types.Assignment
+	15, // 1: types.ProtocolParams.models:type_name -> types.ModelParams
+	16, // 2: types.ProtocolParams.approved_pcrs:type_name -> types.PCRPolicy
+	14, // 3: types.ProtocolParams.settlement_domains:type_name -> types.SettlementDomain
+	24, // 4: types.EpochAuthorization.allocations:type_name -> types.RewardAllocation
+	34, // 5: types.ValidatorHandoffManifest.domains:type_name -> types.ValidatorHandoffDomainManifest
+	36, // 6: types.ValidatorHandoffCancellationManifest.domains:type_name -> types.ValidatorHandoffCancellationDomainManifest
+	7,  // [7:7] is the sub-list for method output_type
+	7,  // [7:7] is the sub-list for method input_type
+	7,  // [7:7] is the sub-list for extension type_name
+	7,  // [7:7] is the sub-list for extension extendee
+	0,  // [0:7] is the sub-list for field type_name
 }
 
 func init() { file_account_proto_init() }
@@ -4818,7 +4728,7 @@ func file_account_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_account_proto_rawDesc), len(file_account_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   41,
+			NumMessages:   40,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

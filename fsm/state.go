@@ -729,7 +729,7 @@ func (s *StateMachine) AuxiliaryCandidates() []*lib.AuxiliaryCandidate {
 		return nil
 	}
 	wrapper := new(lib.AuxiliaryCandidates)
-	if lib.Unmarshal(encoded, wrapper) != nil || len(wrapper.Candidates) > 32 {
+	if lib.Unmarshal(encoded, wrapper) != nil || len(wrapper.Candidates) > lib.MaxAuxiliaryCertificatesPerBlock {
 		return nil
 	}
 	return wrapper.Candidates

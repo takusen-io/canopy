@@ -30,6 +30,7 @@ func TestGenesisPersistsProtocolParameters(t *testing.T) {
 	params := defaultProtocolParams()
 	params.Revision = 1
 	params.ApprovedPcrs = []*PCRPolicy{testPCRPolicy()}
+	params.NitroTrustRoot = testNitroRoot(t)
 	encoded, err := protojson.Marshal(params)
 	if err != nil {
 		t.Fatal(err)
@@ -50,33 +51,29 @@ func TestGenesisPersistsProtocolParameters(t *testing.T) {
 	}
 }
 
-func TestAssignmentIsStableAndRotates(t *testing.T) {
+func TestAssignmentIsStable(t *testing.T) {
 	servicers := []*Servicer{{OwnerAddress: []byte{1}}, {OwnerAddress: []byte{2}}, {OwnerAddress: []byte{3}}}
 	input := make([]byte, 32)
 	anchor := make([]byte, 32)
-	first := selectServicer(input, anchor, "model", 0, servicers)
-	if first != selectServicer(input, anchor, "model", 0, servicers) {
+	first := selectServicer(input, anchor, "model", servicers)
+	if first != selectServicer(input, anchor, "model", servicers) {
 		t.Fatal("assignment is not deterministic")
-	}
-	second := selectServicer(input, anchor, "model", 1, servicers)
-	if string(first.OwnerAddress) == string(second.OwnerAddress) {
-		t.Fatal("reassignment did not rotate to the next eligible servicer")
 	}
 }
 
 func TestAssignmentIndexTracksOnlyActiveOwners(t *testing.T) {
 	first, second := bytes.Repeat([]byte{1}, 20), bytes.Repeat([]byte{2}, 20)
-	request := &RequestRecord{SettlementDomainId: testSettlementDomainID(), RequestId: "request", Status: "authorized", Assignments: []*Assignment{
+	request := &RequestRecord{SettlementDomainId: testSettlementDomainID(), RequestId: "request", Status: "authorized", ReservedBudget: 100, Assignments: []*Assignment{
 		{Model: "first", ServicerAddress: first},
-		{Model: "second", ServicerAddress: second, TerminalStatus: "awaiting_servicer"},
+		{Model: "second", ServicerAddress: second},
 	}}
 	records := make(map[string]proto.Message)
-	if deletes := stageAssignmentIndexes(records, request, nil); len(deletes) != 0 || len(records) != 1 {
+	if deletes := stageAssignmentIndexes(records, request, nil); len(deletes) != 0 || len(records) != 2 {
 		t.Fatalf("initial index records=%d deletes=%d", len(records), len(deletes))
 	}
 	for _, indexed := range records {
-		if pointer, ok := indexed.(*RequestRecord); !ok || pointer.RequestId != request.RequestId || len(pointer.Assignments) != 0 {
-			t.Fatalf("assignment index is not a compact request pointer: %#v", indexed)
+		if snapshot, ok := indexed.(*RequestRecord); !ok || snapshot.RequestId != request.RequestId || len(snapshot.Assignments) != len(request.Assignments) || snapshot.ReservedBudget != request.ReservedBudget {
+			t.Fatalf("assignment index is not a complete hot snapshot: %#v", indexed)
 		}
 	}
 	request.Assignments[0].Completed = true
@@ -259,8 +256,20 @@ func TestGovernedParamsRejectUnsafeValues(t *testing.T) {
 	valid := defaultProtocolParams()
 	valid.Revision = 1
 	valid.ApprovedPcrs = []*PCRPolicy{testPCRPolicy()}
+	valid.NitroTrustRoot = testNitroRoot(t)
 	if err := validateProtocolParams(valid); err != nil {
 		t.Fatal(err)
+	}
+	highMarkup := proto.Clone(valid).(*ProtocolParams)
+	highMarkup.FoundationFeeBps = 20_000
+	highMarkup.ServicerMarginBps = 10_000
+	if err := validateProtocolParams(highMarkup); err != nil {
+		t.Fatalf("rejected governed markup above 100%%: %v", err)
+	}
+	excessiveMarkup := proto.Clone(highMarkup).(*ProtocolParams)
+	excessiveMarkup.FoundationFeeBps = maxChargeBps + 1
+	if err := validateProtocolParams(excessiveMarkup); err == nil {
+		t.Fatal("accepted foundation markup above the safety ceiling")
 	}
 	invalidQuorum := proto.Clone(valid).(*ProtocolParams)
 	invalidQuorum.QuorumNumerator = 3

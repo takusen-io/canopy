@@ -125,6 +125,7 @@ message AuxiliaryAggregateSignature { bytes signature = 1; bytes bitmap = 2; }
 message AuxiliaryCertificate {
   AuxiliaryCandidate candidate = 1;
   AuxiliaryAggregateSignature signature = 2;
+  AuxiliaryAggregateSignature digest_signature = 3;
 }
 
 // PluginBeginResponse acknowledges begin block execution
@@ -154,6 +155,9 @@ message PluginDeliverRequest {
   string governance_parameter_space = 3;
   string governance_parameter_key = 4;
   bytes governance_parameter_value = 5;
+  // Consensus block timestamp supplied by core. Plugins must use this value,
+  // never a local clock, for deterministic time-sensitive validation.
+  uint64 time_micros = 6;
 }
 
 // PluginDeliverResponse acknowledges transaction delivery

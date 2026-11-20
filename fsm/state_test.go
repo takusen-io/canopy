@@ -16,6 +16,21 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestAuxiliaryCandidatesUsesProtocolBlockLimit(t *testing.T) {
+	db, err := store.NewStoreInMemory(lib.NewDefaultLogger())
+	require.NoError(t, err)
+	defer db.Close()
+	sm := &StateMachine{store: db}
+	wrapper := &lib.AuxiliaryCandidates{Candidates: make([]*lib.AuxiliaryCandidate, lib.MaxAuxiliaryCertificatesPerBlock)}
+	for index := range wrapper.Candidates {
+		wrapper.Candidates[index] = &lib.AuxiliaryCandidate{Kind: "settlement", Key: []byte{byte(index + 1)}}
+	}
+	encoded, errI := lib.Marshal(wrapper)
+	require.Nil(t, errI)
+	require.Nil(t, sm.Set(AuxiliaryCandidatesKey(), encoded))
+	require.Len(t, sm.AuxiliaryCandidates(), lib.MaxAuxiliaryCertificatesPerBlock)
+}
+
 func TestInitialize(t *testing.T) {
 	const dataDirPath = "./"
 	tests := []struct {

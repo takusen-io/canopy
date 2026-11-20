@@ -1,6 +1,6 @@
 {
   "plugin": "go",
-  "logLevel": "debug",
+  "logLevel": "info",
   "chainId": 1,
   "sleepUntil": 0,
   "rootChain": [

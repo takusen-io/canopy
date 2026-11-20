@@ -317,7 +317,7 @@ func (s *StateMachine) HandleMessageChangeParameter(msg *MessageChangeParameter)
 		}
 		response, pluginErr := s.Plugin.DeliverTx(s, &lib.PluginDeliverRequest{
 			Height: s.Height(), GovernanceParameterSpace: msg.ParameterSpace,
-			GovernanceParameterKey: msg.ParameterKey, GovernanceParameterValue: []byte(value.Value),
+			GovernanceParameterKey: msg.ParameterKey, GovernanceParameterValue: []byte(value.Value), TimeMicros: s.blockTimeMicros,
 		})
 		if pluginErr != nil {
 			return pluginErr

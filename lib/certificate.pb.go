@@ -220,11 +220,12 @@ func (x *AuxiliaryCandidate) GetPayload() []byte {
 }
 
 type AuxiliaryCertificate struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Candidate     *AuxiliaryCandidate    `protobuf:"bytes,1,opt,name=candidate,proto3" json:"candidate,omitempty"`
-	Signature     *AggregateSignature    `protobuf:"bytes,2,opt,name=signature,proto3" json:"signature,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	Candidate       *AuxiliaryCandidate    `protobuf:"bytes,1,opt,name=candidate,proto3" json:"candidate,omitempty"`
+	Signature       *AggregateSignature    `protobuf:"bytes,2,opt,name=signature,proto3" json:"signature,omitempty"`
+	DigestSignature *AggregateSignature    `protobuf:"bytes,3,opt,name=digest_signature,json=digestSignature,proto3" json:"digest_signature,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *AuxiliaryCertificate) Reset() {
@@ -267,6 +268,13 @@ func (x *AuxiliaryCertificate) GetCandidate() *AuxiliaryCandidate {
 func (x *AuxiliaryCertificate) GetSignature() *AggregateSignature {
 	if x != nil {
 		return x.Signature
+	}
+	return nil
+}
+
+func (x *AuxiliaryCertificate) GetDigestSignature() *AggregateSignature {
+	if x != nil {
+		return x.DigestSignature
 	}
 	return nil
 }
@@ -1069,10 +1077,11 @@ const file_certificate_proto_rawDesc = "" +
 	"\x04kind\x18\x01 \x01(\tR\x04kind\x12\x10\n" +
 	"\x03key\x18\x02 \x01(\fR\x03key\x12\x16\n" +
 	"\x06digest\x18\x03 \x01(\fR\x06digest\x12\x18\n" +
-	"\apayload\x18\x04 \x01(\fR\apayload\"\x88\x01\n" +
+	"\apayload\x18\x04 \x01(\fR\apayload\"\xce\x01\n" +
 	"\x14AuxiliaryCertificate\x127\n" +
 	"\tcandidate\x18\x01 \x01(\v2\x19.types.AuxiliaryCandidateR\tcandidate\x127\n" +
-	"\tsignature\x18\x02 \x01(\v2\x19.types.AggregateSignatureR\tsignature\"P\n" +
+	"\tsignature\x18\x02 \x01(\v2\x19.types.AggregateSignatureR\tsignature\x12D\n" +
+	"\x10digest_signature\x18\x03 \x01(\v2\x19.types.AggregateSignatureR\x0fdigestSignature\"P\n" +
 	"\x13AuxiliaryCandidates\x129\n" +
 	"\n" +
 	"candidates\x18\x01 \x03(\v2\x19.types.AuxiliaryCandidateR\n" +
@@ -1170,23 +1179,24 @@ var file_certificate_proto_depIdxs = []int32{
 	2,  // 3: types.QuorumCertificate.auxiliary_certificates:type_name -> types.AuxiliaryCertificate
 	1,  // 4: types.AuxiliaryCertificate.candidate:type_name -> types.AuxiliaryCandidate
 	16, // 5: types.AuxiliaryCertificate.signature:type_name -> types.AggregateSignature
-	1,  // 6: types.AuxiliaryCandidates.candidates:type_name -> types.AuxiliaryCandidate
-	5,  // 7: types.CertificateResult.reward_recipients:type_name -> types.RewardRecipients
-	6,  // 8: types.CertificateResult.slash_recipients:type_name -> types.SlashRecipients
-	7,  // 9: types.CertificateResult.orders:type_name -> types.Orders
-	10, // 10: types.CertificateResult.checkpoint:type_name -> types.Checkpoint
-	17, // 11: types.CertificateResult.dex_batch:type_name -> types.DexBatch
-	17, // 12: types.CertificateResult.root_dex_batch:type_name -> types.DexBatch
-	11, // 13: types.RewardRecipients.payment_percents:type_name -> types.PaymentPercents
-	12, // 14: types.SlashRecipients.double_signers:type_name -> types.DoubleSigner
-	8,  // 15: types.Orders.lock_orders:type_name -> types.LockOrder
-	14, // 16: types.CommitteesData.list:type_name -> types.CommitteeData
-	11, // 17: types.CommitteeData.payment_percents:type_name -> types.PaymentPercents
-	18, // [18:18] is the sub-list for method output_type
-	18, // [18:18] is the sub-list for method input_type
-	18, // [18:18] is the sub-list for extension type_name
-	18, // [18:18] is the sub-list for extension extendee
-	0,  // [0:18] is the sub-list for field type_name
+	16, // 6: types.AuxiliaryCertificate.digest_signature:type_name -> types.AggregateSignature
+	1,  // 7: types.AuxiliaryCandidates.candidates:type_name -> types.AuxiliaryCandidate
+	5,  // 8: types.CertificateResult.reward_recipients:type_name -> types.RewardRecipients
+	6,  // 9: types.CertificateResult.slash_recipients:type_name -> types.SlashRecipients
+	7,  // 10: types.CertificateResult.orders:type_name -> types.Orders
+	10, // 11: types.CertificateResult.checkpoint:type_name -> types.Checkpoint
+	17, // 12: types.CertificateResult.dex_batch:type_name -> types.DexBatch
+	17, // 13: types.CertificateResult.root_dex_batch:type_name -> types.DexBatch
+	11, // 14: types.RewardRecipients.payment_percents:type_name -> types.PaymentPercents
+	12, // 15: types.SlashRecipients.double_signers:type_name -> types.DoubleSigner
+	8,  // 16: types.Orders.lock_orders:type_name -> types.LockOrder
+	14, // 17: types.CommitteesData.list:type_name -> types.CommitteeData
+	11, // 18: types.CommitteeData.payment_percents:type_name -> types.PaymentPercents
+	19, // [19:19] is the sub-list for method output_type
+	19, // [19:19] is the sub-list for method input_type
+	19, // [19:19] is the sub-list for extension type_name
+	19, // [19:19] is the sub-list for extension extendee
+	0,  // [0:19] is the sub-list for field type_name
 }
 
 func init() { file_certificate_proto_init() }

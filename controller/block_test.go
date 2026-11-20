@@ -15,18 +15,22 @@ import (
 	"github.com/canopy-network/canopy/lib/crypto"
 )
 
-// TestNextProposalTimeSkipsOldSlotsArithmetically() verifies stale proposal slots are skipped arithmetically.
-func TestNextProposalTimeSkipsOldSlotsArithmetically(t *testing.T) {
+// TestNextProposalTimePacesRecoveryFromOldSlots verifies a delayed height does
+// not trigger compressed catch-up blocks.
+func TestNextProposalTimePacesRecoveryFromOldSlots(t *testing.T) {
 	interval := 750 * time.Millisecond
 	leadTime := 225 * time.Millisecond
 	previous := uint64(time.Unix(1, 0).UnixMicro())
 	now := time.Date(2026, time.October, 24, 12, 0, 0, 0, time.UTC)
 	got := nextProposalTime(previous, now, interval, leadTime)
-	minimum := now.Add(leadTime)
+	require.True(t, now.Add(interval).Equal(got))
+}
 
-	require.False(t, got.Before(minimum))
-	intervalMicros := uint64(interval / time.Microsecond)
-	require.Zero(t, (uint64(got.UnixMicro())-(previous+intervalMicros))%intervalMicros)
+func TestNextProposalTimeRecoveryPreservesLargerLead(t *testing.T) {
+	interval := 750 * time.Millisecond
+	leadTime := 900 * time.Millisecond
+	now := time.Date(2026, time.October, 24, 12, 0, 0, 0, time.UTC)
+	require.True(t, now.Add(leadTime).Equal(nextProposalTime(1, now, interval, leadTime)))
 }
 
 // TestNextProposalTimeUsesImmediateNextSlotWhenReady() verifies the immediate next slot is used when sufficient lead time remains.
@@ -41,8 +45,14 @@ func TestNextProposalTimeUsesImmediateNextSlotWhenReady(t *testing.T) {
 func TestProposalConsensusLeadTimeScalesWithProposalWork(t *testing.T) {
 	configured := 200 * time.Millisecond
 	require.Equal(t, configured, proposalConsensusLeadTime(configured, 0))
-	require.Equal(t, 400*time.Millisecond, proposalConsensusLeadTime(configured, 8))
-	require.Equal(t, 1800*time.Millisecond, proposalConsensusLeadTime(configured, 64))
+	require.Equal(t, 240*time.Millisecond, proposalConsensusLeadTime(configured, 8))
+	require.Equal(t, 520*time.Millisecond, proposalConsensusLeadTime(configured, 64))
+}
+
+func TestProposalBuildGraceUsesConfiguredFailureTimeout(t *testing.T) {
+	interval := 900 * time.Millisecond
+	require.Equal(t, interval, proposalBuildGrace(interval, 500))
+	require.Equal(t, 8*time.Second, proposalBuildGrace(interval, 8_000))
 }
 
 // TestValidateProposalTimeRequiresMonotonicTimestamp() verifies proposal timestamps increase monotonically.

@@ -90,3 +90,19 @@ func TestLoopbackListenAddress(t *testing.T) {
 		}
 	}
 }
+
+func TestSettlementBundleRecoveryIncludesTerminalRequests(t *testing.T) {
+	for _, status := range []string{"authorized", "ready"} {
+		if !settlementBundleStatusAllowed(status, false) || !settlementBundleStatusAllowed(status, true) {
+			t.Fatalf("%s request was excluded from settlement lookup", status)
+		}
+	}
+	for _, status := range []string{"settled", "failed"} {
+		if settlementBundleStatusAllowed(status, false) || !settlementBundleStatusAllowed(status, true) {
+			t.Fatalf("%s request has incorrect recovery visibility", status)
+		}
+	}
+	if settlementBundleStatusAllowed("orphaned_reorg", true) {
+		t.Fatal("unrelated terminal state was included in settlement recovery")
+	}
+}

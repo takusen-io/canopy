@@ -28,23 +28,6 @@ func validPayoutAddress(address []byte) bool {
 	return false
 }
 
-func validSettlementPayouts(payouts []*SettlementPayout) bool {
-	if len(payouts) == 0 {
-		return false
-	}
-	seen := make(map[string]struct{}, len(payouts))
-	for _, payout := range payouts {
-		if payout == nil || !validHash(payout.SettlementDomainId) || !validPayoutAddress(payout.Address) {
-			return false
-		}
-		key := string(payout.SettlementDomainId)
-		if _, duplicate := seen[key]; duplicate {
-			return false
-		}
-		seen[key] = struct{}{}
-	}
-	return true
-}
 func validHash(hash []byte) bool { return len(hash) == sha256.Size }
 
 func validModels(models []string) bool {
@@ -73,22 +56,13 @@ func validOutputType(outputType string) bool {
 	}
 }
 
-func checkObserveEnclave(message *MessageObserveEnclave) ([]byte, *PluginError) {
-	if !validAddress(message.ObserverAddress) || !validAddress(message.OwnerAddress) ||
-		len(message.PublicKey) != ed25519.PublicKeySize || !validHash(message.AttestationHash) ||
-		!validPCRMeasurements(message.Pcr0, message.Pcr1, message.Pcr2) ||
-		len(message.Nonce) == 0 || len(message.Nonce) > 64 || len(message.UserData) > 1024 ||
-		len(message.ProofSignature) != ed25519.SignatureSize {
-		return nil, ErrInvalidTransaction("invalid enclave observation")
-	}
-	if len(message.AttestationDocument) > 1<<20 {
-		return nil, ErrInvalidTransaction("enclave attestation document is too large")
-	}
-	if len(message.AttestationDocument) != 0 {
-		digest := sha256.Sum256(message.AttestationDocument)
-		if !bytes.Equal(digest[:], message.AttestationHash) {
-			return nil, ErrInvalidTransaction("enclave attestation document hash mismatch")
-		}
+func checkRegisterServicer(message *MessageRegisterServicer) ([]byte, *PluginError) {
+	if message == nil || !validAddress(message.OwnerAddress) || len(message.PublicKey) != ed25519.PublicKeySize ||
+		len(message.Nonce) < 16 || len(message.Nonce) > 64 || len(message.ProofSignature) != ed25519.SignatureSize ||
+		len(message.AttestationDocument) == 0 || len(message.AttestationDocument) > maxNitroAttestationSize ||
+		!bytes.Equal(message.UserData, registrationUserData(message.OwnerAddress)) || !validPayoutAddress(message.EvmPayoutAddress) ||
+		message.TeeKeyId == "" || message.Bond == 0 || !validModels(message.Models) {
+		return nil, ErrInvalidTransaction("invalid atomic servicer registration")
 	}
 	keyDigest := sha256.Sum256(message.PublicKey)
 	if message.TeeKeyId != "ed25519:"+hex.EncodeToString(keyDigest[:]) {
@@ -102,7 +76,11 @@ func checkObserveEnclave(message *MessageObserveEnclave) ([]byte, *PluginError) 
 	if !ed25519.Verify(message.PublicKey, registrationDigest.Sum(nil), message.ProofSignature) {
 		return nil, ErrCrypto("invalid enclave proof of possession")
 	}
-	return message.ObserverAddress, nil
+	return message.OwnerAddress, nil
+}
+
+func registrationUserData(owner []byte) []byte {
+	return []byte("takusen:servicer-registration:v1:" + hex.EncodeToString(owner))
 }
 
 func checkRevokeEnclave(message *MessageRevokeEnclave) ([]byte, *PluginError) {
@@ -112,15 +90,8 @@ func checkRevokeEnclave(message *MessageRevokeEnclave) ([]byte, *PluginError) {
 	return message.ObserverAddress, nil
 }
 
-func checkRegisterServicer(message *MessageRegisterServicer) ([]byte, *PluginError) {
-	if !validAddress(message.OwnerAddress) || !validSettlementPayouts(message.Payouts) || message.TeeKeyId == "" || message.Bond == 0 || !validModels(message.Models) {
-		return nil, ErrInvalidTransaction("invalid servicer registration")
-	}
-	return message.OwnerAddress, nil
-}
-
 func checkUpdateServicer(message *MessageUpdateServicer) ([]byte, *PluginError) {
-	if !validAddress(message.OwnerAddress) || !validSettlementPayouts(message.Payouts) || message.TeeKeyId == "" ||
+	if !validAddress(message.OwnerAddress) || !validPayoutAddress(message.EvmPayoutAddress) || message.TeeKeyId == "" ||
 		!validModels(message.Models) {
 		return nil, ErrInvalidTransaction("invalid servicer update")
 	}
@@ -353,13 +324,6 @@ func validateExecutionBatchItems(message *MessageSubmitExecutions) *PluginError 
 	return nil
 }
 
-func checkReassignRequest(message *MessageReassignRequest) ([]byte, *PluginError) {
-	if !validAddress(message.ObserverAddress) || message.RequestId == "" || message.Model == "" || message.NewDeadlineHeight == 0 {
-		return nil, ErrInvalidTransaction("invalid reassignment")
-	}
-	return message.ObserverAddress, nil
-}
-
 func checkFinalizeRequest(message *MessageFinalizeRequest) ([]byte, *PluginError) {
 	if !validAddress(message.ObserverAddress) || !validHash(message.SettlementDomainId) || message.RequestId == "" || len(message.ExecutionIds) == 0 || message.RequestSpent > message.ReservedBudget ||
 		!validHash(message.SettlementTxHash) {
@@ -449,7 +413,7 @@ func checkBurnBridge(message *MessageBurnBridge) ([]byte, *PluginError) {
 }
 
 func checkQueueServicerStake(message *MessageQueueServicerStake) ([]byte, *PluginError) {
-	if !validAddress(message.OwnerAddress) {
+	if !validAddress(message.OwnerAddress) || message.Exit == (message.AdditionalBond != 0) {
 		return nil, ErrInvalidTransaction("invalid queued servicer stake change")
 	}
 	return message.OwnerAddress, nil
@@ -471,7 +435,7 @@ func checkSetProducerPayout(message *MessageSetProducerPayout) ([]byte, *PluginE
 
 func checkObserveSlashEvidence(message *MessageObserveSlashEvidence) ([]byte, *PluginError) {
 	if !validAddress(message.ObserverAddress) || !validHash(message.EvidenceId) ||
-		!validAddress(message.TargetAddress) || (message.Reason != "timeout" && message.Reason != "invalid_receipt") {
+		!validAddress(message.TargetAddress) || message.Reason != "invalid_receipt" {
 		return nil, ErrInvalidTransaction("invalid servicer slash evidence")
 	}
 	return message.ObserverAddress, nil

@@ -2,6 +2,7 @@ package contract
 
 import (
 	"bytes"
+	"encoding/hex"
 	"encoding/json"
 	"testing"
 
@@ -56,6 +57,98 @@ func TestCertifiedEVMDepositAppliesWithoutObservationTransactions(t *testing.T) 
 	}
 }
 
+func TestCertifiedAssignmentExpirationPublishesTerminalTimeout(t *testing.T) {
+	contract, store, _, _ := newMemoryContract(t)
+	domain := testSettlementDomainID()
+	servicer := bytes.Repeat([]byte{0x22}, 20)
+	executionID := "exec:" + hex.EncodeToString(bytes.Repeat([]byte{0x33}, 32))
+	request := &RequestRecord{
+		SettlementDomainId: domain, RequestId: "request", InputHash: bytes.Repeat([]byte{0x44}, 32),
+		Requester: bytes.Repeat([]byte{0x55}, 20), Models: []string{"model"}, Status: "authorized", DeadlineHeight: 10,
+		Assignments: []*Assignment{{Model: "model", Provider: "openrouter", ServicerAddress: servicer, ExecutionId: executionID}},
+	}
+	store.put(t, KeyForRequest(request.RequestId), request)
+	store.put(t, KeyForReservation(domain, request.RequestId), &ReservationRecord{
+		SettlementDomainId: domain, RequestId: request.RequestId, Requester: request.Requester, Budget: 100, Status: "reserved",
+	})
+	message := &MessageExpireAssignment{
+		RequestId: request.RequestId, Model: "model", ExecutionId: executionID,
+		SettlementDomainId: domain, DeadlineHeight: request.DeadlineHeight,
+	}
+	payload, err := Marshal(message)
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidate := &AuxiliaryCandidate{
+		Kind:   "native-assignment-expiration",
+		Key:    hashFields(domain, []byte(request.RequestId), []byte(message.Model), []byte(executionID)),
+		Digest: assignmentExpirationSubject(message), Payload: payload,
+	}
+	certificate := &ConsensusCertificate{ValidatorSetId: 7, SignedWeight: 200, TotalWeight: 200}
+	if contract.applyNativeAuxiliaryCertificate(10, candidate, certificate, map[string]proto.Message{}) {
+		t.Fatal("certificate expired an assignment before its deadline elapsed")
+	}
+	if !contract.applyNativeAuxiliaryCertificate(11, candidate, certificate, map[string]proto.Message{}) {
+		t.Fatal("valid assignment-expiration certificate was rejected")
+	}
+	stored := new(RequestRecord)
+	if found, readErr := contract.read(KeyForRequest(request.RequestId), stored); readErr != nil || !found ||
+		stored.Status != "ready" || !stored.Assignments[0].Completed || stored.Assignments[0].TerminalStatus != "timeout" {
+		t.Fatalf("request=%+v found=%v err=%v", stored, found, readErr)
+	}
+	timeout := new(ExecutionRecord)
+	if found, readErr := contract.read(KeyForExecution(executionID), timeout); readErr != nil || !found ||
+		timeout.Status != "timeout" || timeout.Cost != 0 || !bytes.Equal(timeout.SettlementDomainId, domain) {
+		t.Fatalf("timeout=%+v found=%v err=%v", timeout, found, readErr)
+	}
+	if contract.applyNativeAuxiliaryCertificate(12, candidate, certificate, map[string]proto.Message{}) {
+		t.Fatal("assignment-expiration replay was accepted")
+	}
+}
+
+func TestCompactSettlementFinalizationReloadsCertifiedCohort(t *testing.T) {
+	contract, store, _, _ := newMemoryContract(t)
+	domain := testSettlementDomainID()
+	digest := bytes.Repeat([]byte{0x42}, 32)
+	txHash := bytes.Repeat([]byte{0x51}, 32)
+	payload, err := json.Marshal(certifiedSettlementBatch{
+		ValidatorSetID: 7, BatchNonce: 9, Digest: "0x" + hex.EncodeToString(digest),
+		Requests: []certifiedSettlementRequest{{
+			SettlementDomain: "0x" + hex.EncodeToString(domain), RequestID: "request", Models: []string{"first", "second"},
+			ReservedBudget: 100, RequestSpent: 40, FinalizesRequest: true,
+			Executions: []certifiedSettlementExecution{{ExecutionID: "second-id", Model: "second"}, {ExecutionID: "first-id", Model: "first"}},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.put(t, KeyForConsensusCertificate("settlement", uint64Bytes(9), digest), &ConsensusCertificate{
+		Kind: "settlement", Key: uint64Bytes(9), Digest: digest, Payload: payload, ValidatorSetId: 7,
+	})
+	reference := &MessageFinalizeSettlementBatch{
+		SettlementDomainId: domain, SettlementTxHash: txHash, BatchNonce: 9, SettlementCertificateDigest: digest,
+	}
+	message, valid := contract.finalizationsForSettlementReference(reference)
+	if !valid || len(message.Requests) != 1 {
+		t.Fatalf("valid=%v message=%+v", valid, message)
+	}
+	request := message.Requests[0]
+	if request.RequestId != "request" || !request.FinalizesRequest || request.RequestSpent != 40 ||
+		len(request.ExecutionIds) != 2 || request.ExecutionIds[0] != "first-id" || request.ExecutionIds[1] != "second-id" {
+		t.Fatalf("unexpected reconstructed finalization: %+v", request)
+	}
+	encoded, marshalErr := Marshal(reference)
+	if marshalErr != nil || len(encoded) > 110 {
+		t.Fatalf("compact reference encoded size=%d err=%v", len(encoded), marshalErr)
+	}
+
+	bad := proto.Clone(reference).(*MessageFinalizeSettlementBatch)
+	bad.SettlementCertificateDigest[0] ^= 0xff
+	if _, accepted := contract.finalizationsForSettlementReference(bad); accepted {
+		t.Fatal("accepted a reference to an unknown settlement certificate")
+	}
+}
+
 func TestAuxiliaryCertificatePersistsCoreValidatedRelayArtifact(t *testing.T) {
 	contract, store, _, _ := newMemoryContract(t)
 	params := defaultProtocolParams()
@@ -79,7 +172,14 @@ func TestAuxiliaryCertificatePersistsCoreValidatedRelayArtifact(t *testing.T) {
 
 	digest := bytes.Repeat([]byte{0x42}, 32)
 	suite := drandbls.NewBLS12381Suite()
-	candidate := &AuxiliaryCandidate{Kind: "test-native", Key: uint64Bytes(9), Digest: digest, Payload: []byte("bounded")}
+	payload, err := json.Marshal(certifiedSettlementBatch{
+		ValidatorSetID: 7, BatchNonce: 9, Digest: "0x" + hex.EncodeToString(digest),
+		Requests: []certifiedSettlementRequest{{RequestID: "request"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidate := &AuxiliaryCandidate{Kind: "settlement", Key: uint64Bytes(9), Digest: digest, Payload: payload}
 	sortValidatorsByConsensusOrder(outgoing)
 	points := make([]kyber.Point, len(outgoing))
 	for index, validator := range outgoing {
@@ -100,8 +200,8 @@ func TestAuxiliaryCertificatePersistsCoreValidatedRelayArtifact(t *testing.T) {
 			scalar = suite.G1().Scalar().SetInt64(2)
 		}
 		// Sign unrelated bytes. Core is the sole authentication boundary, so the
-		// plugin must persist this well-formed relay artifact without repeating
-		// BDN verification against the candidate envelope.
+		// plugin must persist this well-formed digest relay artifact without
+		// repeating BDN verification.
 		partial, signErr := bdn.NewSchemeOnG2(suite).Sign(scalar, []byte("already-verified-by-core"))
 		if signErr != nil || mask.SetBit(index, true) != nil {
 			t.Fatal(signErr)
@@ -117,14 +217,29 @@ func TestAuxiliaryCertificatePersistsCoreValidatedRelayArtifact(t *testing.T) {
 		t.Fatal(err)
 	}
 	certificates := []*AuxiliaryCertificate{{
-		Candidate: candidate,
-		Signature: &AuxiliaryAggregateSignature{Signature: encodedSignature, Bitmap: mask.Mask()},
+		Candidate:       candidate,
+		DigestSignature: &AuxiliaryAggregateSignature{Signature: encodedSignature, Bitmap: mask.Mask()},
 	}}
-	records := contract.consumeAuxiliaryCertificates(13, certificates)
+	records, deletes := contract.consumeAuxiliaryCertificates(13, certificates)
 	record, ok := records[string(KeyForConsensusCertificate(candidate.Kind, candidate.Key, candidate.Digest))].(*ConsensusCertificate)
 	if !ok || record.ValidatorSetId != 7 || record.ValidatorEpoch != 1 || record.SignedWeight != 200 ||
 		record.TotalWeight != 200 || record.CompletedHeight != 13 || len(record.AggregateSignatureEip2537) != 256 {
 		t.Fatalf("unexpected persisted certificate: %+v", record)
+	}
+	marker, ok := records[string(KeyForCertifiedSettlementIndex("request"))].(*ReplayMarker)
+	if !ok || !bytes.Equal(marker.Id, candidate.Key) {
+		t.Fatalf("settlement certificate index = %+v", marker)
+	}
+	if len(deletes) != 1 || !bytes.Equal(deletes[0], KeyForUncertifiedSettlementIndex("request")) {
+		t.Fatalf("settlement certificate deletes = %x", deletes)
+	}
+	store.put(t, KeyForConsensusCertificate(candidate.Kind, candidate.Key, candidate.Digest), record)
+	replayRecords, replayDeletes := contract.consumeAuxiliaryCertificates(13, certificates)
+	if marker, ok = replayRecords[string(KeyForCertifiedSettlementIndex("request"))].(*ReplayMarker); !ok || !bytes.Equal(marker.Id, candidate.Key) {
+		t.Fatalf("replayed settlement certificate index = %+v", marker)
+	}
+	if len(replayDeletes) != 1 || !bytes.Equal(replayDeletes[0], KeyForUncertifiedSettlementIndex("request")) {
+		t.Fatalf("replayed settlement certificate deletes = %x", replayDeletes)
 	}
 }
 

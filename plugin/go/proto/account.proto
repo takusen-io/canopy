@@ -53,14 +53,9 @@ message EnclaveKey {
   bool active = 9;
 }
 
-message SettlementPayout {
-  bytes settlement_domain_id = 1;
-  bytes address = 2;
-}
-
 message Servicer {
   bytes owner_address = 1;
-  repeated SettlementPayout payouts = 2;
+  bytes evm_payout_address = 2;
   string tee_key_id = 3;
   repeated string models = 4;
   uint64 bond = 5;
@@ -73,12 +68,11 @@ message Servicer {
 }
 
 message Assignment {
+  reserved 3, 6;
   string model = 1;
   bytes servicer_address = 2;
-  uint32 attempt = 3;
   bool completed = 4;
   string execution_id = 5;
-  uint64 deadline_height = 6;
   string tee_key_id = 7;
   string provider = 8;
   string terminal_status = 9;
@@ -112,6 +106,9 @@ message RequestRecord {
   int64 output_maximum = 29;
   repeated string output_choices = 30;
   bytes schema_hash = 31;
+  // Immutable request budget copied into the active-assignment index so
+  // servicer discovery does not fan out into request and reservation reads.
+  uint64 reserved_budget = 32;
 }
 
 message ExecutionRecord {
@@ -244,11 +241,10 @@ message ProtocolParams {
   uint32 quorum_numerator = 6;
   uint32 quorum_denominator = 7;
   uint64 authorization_deadline_blocks = 8;
-  uint64 execution_timeout_blocks = 9;
-  uint32 retry_limit = 10;
+  reserved 9, 10;
   uint64 minimum_servicer_bond = 11;
   uint64 minimum_validator_bond = 12;
-  uint32 timeout_slash_bps = 13;
+  reserved 13;
   uint32 invalid_receipt_slash_bps = 14;
   uint64 epoch_blocks = 15;
   uint64 unbonding_epochs = 16;
@@ -268,16 +264,21 @@ message ProtocolParams {
   // begin atomically at the nominal epoch boundary; never reuse this number.
   reserved 29, 30;
   repeated SettlementDomain settlement_domains = 31;
-  bool require_nitro_attestation = 32;
+  // Field 32 previously toggled Nitro verification. Registration is now
+  // unconditionally verified in consensus; never reuse this number.
+  reserved 32;
   // Wall-clock notice for a changed-roster EVM schedule. This is independent
   // of Canopy block cadence and must exceed every supported verifier minimum.
   uint64 validator_handoff_notice_seconds = 33;
+  // DER-encoded X.509 root that anchors Nitro attestation certificate chains.
+  // Governance replaces this atomically with the rest of the protocol params.
+  bytes nitro_trust_root = 34;
 }
 
 message StakeChange {
   bytes owner_address = 1;
-  uint64 target_bond = 2;
-  bool active = 3;
+  uint64 bond_increase = 2;
+  bool exit = 3;
   bool auto_compound = 4;
   uint64 effective_epoch = 5;
   uint64 locked_increase = 6;

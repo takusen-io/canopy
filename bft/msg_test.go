@@ -493,5 +493,18 @@ func TestProposerMessageRejectsPostElectionRelay(t *testing.T) {
 
 	err := c.bft.HandleMessage(msg)
 	require.Error(t, err)
-	require.Equal(t, lib.CodeInvalidSigner, err.Code())
+	require.Equal(t, lib.CodeInvalidProposerPubKey, err.Code())
+}
+
+func TestDeterministicProposerMessageRejectsOtherValidatorBeforeStorage(t *testing.T) {
+	c := newTestConsensus(t, Precommit, 3)
+	c.simPrecommitPhase(t, 0)
+	msg := proto.Clone(c.bft.Proposals[0][phaseToString(Precommit)][0]).(*Message)
+	msg.Qc.ProposerKey = c.valKeys[1].PublicKey().Bytes()
+	require.NoError(t, msg.Sign(c.valKeys[1]))
+
+	err := c.bft.HandleMessage(msg)
+	require.Error(t, err)
+	require.Equal(t, lib.CodeInvalidProposerPubKey, err.Code())
+	require.NotEqual(t, msg, c.bft.Proposals[0][phaseToString(Precommit)][0])
 }

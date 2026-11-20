@@ -135,8 +135,12 @@ func TestAuxiliaryVotesAggregateAtPrecommit(t *testing.T) {
 	}
 	for index, key := range consensus.valKeys {
 		vote := &Message{
-			Qc:             &QC{Header: &lib.View{Phase: PrecommitVote}},
-			AuxiliaryVotes: []*AuxiliaryVote{{Candidate: candidate, Signature: key.Sign(lib.AuxiliaryCandidateSignBytes(candidate))}},
+			Qc: &QC{Header: &lib.View{Phase: PrecommitVote}},
+			AuxiliaryVotes: []*AuxiliaryVote{{
+				Candidate:       candidate,
+				Signature:       key.Sign(lib.AuxiliaryCandidateSignBytes(candidate)),
+				DigestSignature: key.Sign(candidate.Digest),
+			}},
 		}
 		require.NoError(t, vote.Sign(key))
 		require.NoError(t, consensus.bft.AddVote(vote), index)
@@ -148,4 +152,12 @@ func TestAuxiliaryVotesAggregateAtPrecommit(t *testing.T) {
 	partial, checkErr := certificates[0].Signature.Check(testAuxiliarySignBytes{candidate: candidate}, consensus.bft.ValidatorSet)
 	require.NoError(t, checkErr)
 	require.False(t, partial)
+	partial, checkErr = certificates[0].DigestSignature.Check(testAuxiliaryDigestSignBytes{digest: candidate.Digest}, consensus.bft.ValidatorSet)
+	require.NoError(t, checkErr)
+	require.False(t, partial)
+	require.Equal(t, certificates[0].Signature.Bitmap, certificates[0].DigestSignature.Bitmap)
 }
+
+type testAuxiliaryDigestSignBytes struct{ digest []byte }
+
+func (t testAuxiliaryDigestSignBytes) SignBytes() []byte { return t.digest }

@@ -21,10 +21,10 @@ const (
 	// Auxiliary certificates are retained in the predecessor QC embedded in the
 	// next block header. Reserve their complete bounded envelope separately from
 	// the legacy fixed header allowance.
-	MaxAuxiliaryCertificatesPerBlock = 32
+	MaxAuxiliaryCertificatesPerBlock = 64
 	MaxAuxiliaryCandidateKindSize    = 64
 	MaxAuxiliaryCandidateKeySize     = 128
-	MaxAuxiliaryCandidatePayloadSize = 16 << 10
+	MaxAuxiliaryCandidatePayloadSize = 64 << 10
 	// maximums
 	MaxDepositsPerDexBatch  = 5_000
 	MaxWithdrawsPerDexBatch = 5_000

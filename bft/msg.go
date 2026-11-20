@@ -145,6 +145,13 @@ func (b *BFT) CheckProposerMessage(x *Message, p *validateMessageParams) (isPart
 	if b.usesDeterministicProposers() && x != nil && x.Header != nil && x.Header.Phase == Election {
 		return false, lib.ErrWrongPhase()
 	}
+	// Every proposer phase belongs to the one deterministic proposer selected
+	// for this view. A valid signature and QC from another validator must not be
+	// retained: AddProposal replaces the phase entry, so accepting it here lets
+	// a stale peer overwrite the real proposal and stall the round.
+	if b.usesDeterministicProposers() && len(p.proposerKey) != 0 && x != nil && x.Signature != nil && !bytes.Equal(x.Signature.PublicKey, p.proposerKey) {
+		return false, lib.ErrInvalidProposerPubKey(p.proposerKey)
+	}
 	// basic sanity checks on the message
 	if err = x.checkBasic(p.view); err != nil {
 		return false, err

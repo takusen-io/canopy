@@ -114,11 +114,11 @@ func (c *Contract) endBlock(request *PluginEndRequest) *PluginEndResponse {
 		if handoffStateErr := validatePreparedValidatorHandoff(clock, c.Config.ChainId); handoffStateErr != nil {
 			return &PluginEndResponse{Error: handoffStateErr}
 		}
-		ready, readyErr := c.validatorHandoffReady(clock)
-		if readyErr != nil {
-			return &PluginEndResponse{Error: readyErr}
+		forwardReady, forwardErr := c.validatorHandoffForwardReady(clock)
+		if forwardErr != nil {
+			return &PluginEndResponse{Error: forwardErr}
 		}
-		if clock.ValidatorHandoffCancelling {
+		if clock.ValidatorHandoffCancelling && !forwardReady {
 			cancelled, cancelErr := c.validatorHandoffCancellationReady(clock)
 			if cancelErr != nil {
 				return &PluginEndResponse{Error: cancelErr}
@@ -155,8 +155,23 @@ func (c *Contract) endBlock(request *PluginEndRequest) *PluginEndResponse {
 			}
 			return c.withNativeAuxiliaryCandidates(request.Height, params, &PluginEndResponse{Error: c.write(records)}, priority)
 		}
+		var ready bool
+		var readyErr *PluginError
+		if clock.ValidatorHandoffCancelling {
+			// Once cancellation begins, an old queue attestation is no longer
+			// positive evidence: cancellation may already have finalized on a
+			// slower domain whose Native observation is still in flight. After
+			// any domain proves the split, require post-T N+1 evidence from every
+			// snapshotted domain before advancing.
+			ready, readyErr = c.validatorHandoffRecoveryReady(clock)
+		} else {
+			ready, readyErr = c.validatorHandoffReady(clock)
+		}
+		if readyErr != nil {
+			return &PluginEndResponse{Error: readyErr}
+		}
 		if !ready || clock.ConsensusTimeSeconds < clock.ValidatorHandoffTimestamp {
-			if !ready && handoffCancellationWindowOpen(clock) {
+			if !ready && !clock.ValidatorHandoffCancelling && handoffCancellationWindowOpen(clock) {
 				handoff := new(ValidatorHandoffManifest)
 				if found, readErr := c.read(KeyForValidatorHandoffManifest(), handoff); readErr != nil {
 					return &PluginEndResponse{Error: readErr}
@@ -253,6 +268,19 @@ func (c *Contract) withNativeAuxiliaryCandidates(height uint64, params *Protocol
 
 func (c *Contract) currentHandoffAuxiliaryCandidate(clock *EpochClock) (*AuxiliaryCandidate, *PluginError) {
 	if clock.ValidatorHandoffCancelling {
+		forward, forwardErr := c.validatorHandoffForwardReady(clock)
+		if forwardErr != nil {
+			return nil, forwardErr
+		}
+		if forward {
+			manifest := new(ValidatorHandoffManifest)
+			if found, err := c.read(KeyForValidatorHandoffManifest(), manifest); err != nil {
+				return nil, err
+			} else if !found {
+				return nil, ErrState("validator handoff manifest is unavailable")
+			}
+			return handoffRecoveryAuxiliaryCandidate(manifest), nil
+		}
 		manifest := new(ValidatorHandoffCancellationManifest)
 		if found, err := c.read(KeyForValidatorHandoffCancellationManifest(), manifest); err != nil {
 			return nil, err
@@ -282,31 +310,120 @@ func handoffCancellationAuxiliaryCandidate(manifest *ValidatorHandoffCancellatio
 	return &AuxiliaryCandidate{Kind: "validator-handoff-cancellation", Key: key, Digest: append([]byte(nil), manifest.Root...), Payload: append([]byte(nil), manifest.HandoffGeneration...)}
 }
 
+func handoffRecoveryAuxiliaryCandidate(manifest *ValidatorHandoffManifest) *AuxiliaryCandidate {
+	key := append(uint64Bytes(manifest.OldValidatorSetId), uint64Bytes(manifest.NewValidatorSetId)...)
+	key = append(key, manifest.Generation...)
+	return &AuxiliaryCandidate{
+		Kind: "validator-handoff-recovery", Key: key,
+		Digest: validatorHandoffRecoveryDigest(manifest), Payload: append([]byte(nil), manifest.Generation...),
+	}
+}
+
 func (c *Contract) validatorHandoffReady(clock *EpochClock) (bool, *PluginError) {
 	expectedGeneration := validatorHandoffGeneration(clock)
 	for _, domainID := range clock.ValidatorHandoffDomains {
 		if len(domainID) != 32 {
 			return false, ErrState("validator handoff domain snapshot is invalid")
 		}
-		if found, readErr := c.read(KeyForRotationCancellationIndex(domainID, clock.ValidatorSetId, clock.ValidatorSetId+1), new(ReplayMarker)); readErr != nil {
-			return false, readErr
-		} else if found {
-			return false, nil
-		}
 		marker := new(ReplayMarker)
-		if found, readErr := c.read(KeyForQueuedRotationIndex(domainID, clock.ValidatorSetId, clock.ValidatorSetId+1), marker); readErr != nil {
+		caughtUp, readErr := c.read(KeyForCaughtUpRotationIndex(domainID, clock.ValidatorSetId, clock.ValidatorSetId+1), marker)
+		if readErr != nil {
 			return false, readErr
-		} else if !found {
-			return false, nil
+		}
+		if !caughtUp {
+			if found, queuedErr := c.read(KeyForQueuedRotationIndex(domainID, clock.ValidatorSetId, clock.ValidatorSetId+1), marker); queuedErr != nil {
+				return false, queuedErr
+			} else if !found {
+				return false, nil
+			}
 		}
 		proof := new(QuorumProof)
 		if found, readErr := c.read(KeyForQuorumProof(marker.Id), proof); readErr != nil {
 			return false, readErr
-		} else if !found || proof.ProofKind != "validator-set-rotation-queued" || proof.ValidatorSetId != clock.ValidatorSetId ||
+		} else if !found || proof.ValidatorSetId != clock.ValidatorSetId ||
 			proof.NewValidatorSetId != clock.ValidatorSetId+1 || proof.CompletedHeight == 0 ||
-			!bytes.Equal(proof.HandoffGeneration, expectedGeneration) || proof.HandoffTimestamp != clock.ValidatorHandoffTimestamp ||
-			!bytes.Equal(proof.SettlementDomainId, domainID) {
+			!bytes.Equal(proof.SettlementDomainId, domainID) ||
+			caughtUp && proof.ProofKind != "validator-set-rotation-caught-up" ||
+			!caughtUp && proof.ProofKind != "validator-set-rotation-queued" {
 			return false, ErrState("validator rotation schedule index references an invalid proof")
+		}
+		if !bytes.Equal(proof.HandoffGeneration, expectedGeneration) || proof.HandoffTimestamp != clock.ValidatorHandoffTimestamp {
+			return false, ErrState("validator rotation schedule index references an invalid proof")
+		}
+		if !caughtUp {
+			if found, readErr := c.read(KeyForRotationResolutionIndex(domainID, clock.ValidatorSetId, clock.ValidatorSetId+1), new(ReplayMarker)); readErr != nil {
+				return false, readErr
+			} else if found {
+				return false, nil
+			}
+		}
+	}
+	return true, nil
+}
+
+func (c *Contract) validatorHandoffForwardReady(clock *EpochClock) (bool, *PluginError) {
+	expectedGeneration := validatorHandoffGeneration(clock)
+	for _, domainID := range clock.ValidatorHandoffDomains {
+		if len(domainID) != 32 {
+			return false, ErrState("validator handoff domain snapshot is invalid")
+		}
+		marker := new(ReplayMarker)
+		if found, err := c.read(KeyForRotationForwardIndex(domainID, clock.ValidatorSetId, clock.ValidatorSetId+1), marker); err != nil {
+			return false, err
+		} else if !found {
+			continue
+		}
+		proof := new(QuorumProof)
+		if found, err := c.read(KeyForQuorumProof(marker.Id), proof); err != nil {
+			return false, err
+		} else if !found || proof.ProofKind != "validator-set-rotation-forward" ||
+			proof.ValidatorSetId != clock.ValidatorSetId || proof.NewValidatorSetId != clock.ValidatorSetId+1 ||
+			proof.CompletedHeight == 0 ||
+			!bytes.Equal(proof.SettlementDomainId, domainID) ||
+			!bytes.Equal(proof.HandoffGeneration, expectedGeneration) || proof.HandoffTimestamp != clock.ValidatorHandoffTimestamp ||
+			proof.ControlBlockNumber == 0 || len(proof.ControlBlockHash) != 32 {
+			return false, ErrState("validator forward-recovery index references an invalid proof")
+		}
+		return true, nil
+	}
+	return false, nil
+}
+
+// validatorHandoffRecoveryReady deliberately ignores pre-cancellation queue
+// attestations. Independent domain finality can deliver a forward proof before
+// another domain's already-finalized cancellation proof, so only exact post-T
+// N+1 state (forward or caught-up) can close the recovery barrier.
+func (c *Contract) validatorHandoffRecoveryReady(clock *EpochClock) (bool, *PluginError) {
+	expectedGeneration := validatorHandoffGeneration(clock)
+	for _, domainID := range clock.ValidatorHandoffDomains {
+		if len(domainID) != 32 {
+			return false, ErrState("validator handoff domain snapshot is invalid")
+		}
+		marker := new(ReplayMarker)
+		proofKind := "validator-set-rotation-caught-up"
+		found, readErr := c.read(KeyForCaughtUpRotationIndex(domainID, clock.ValidatorSetId, clock.ValidatorSetId+1), marker)
+		if readErr != nil {
+			return false, readErr
+		}
+		if !found {
+			proofKind = "validator-set-rotation-forward"
+			found, readErr = c.read(KeyForRotationForwardIndex(domainID, clock.ValidatorSetId, clock.ValidatorSetId+1), marker)
+			if readErr != nil {
+				return false, readErr
+			}
+		}
+		if !found {
+			return false, nil
+		}
+		proof := new(QuorumProof)
+		if found, readErr = c.read(KeyForQuorumProof(marker.Id), proof); readErr != nil {
+			return false, readErr
+		} else if !found || proof.ProofKind != proofKind || proof.ValidatorSetId != clock.ValidatorSetId ||
+			proof.NewValidatorSetId != clock.ValidatorSetId+1 || proof.CompletedHeight == 0 ||
+			!bytes.Equal(proof.SettlementDomainId, domainID) ||
+			!bytes.Equal(proof.HandoffGeneration, expectedGeneration) || proof.HandoffTimestamp != clock.ValidatorHandoffTimestamp ||
+			proof.ControlBlockNumber == 0 || len(proof.ControlBlockHash) != 32 {
+			return false, ErrState("validator forward-recovery index references an invalid proof")
 		}
 	}
 	return true, nil
@@ -471,11 +588,13 @@ func startValidatorHandoffAttempt(clock *EpochClock) ([][]byte, *PluginError) {
 	clock.ValidatorHandoffAttempt++
 	clock.ValidatorHandoffTimestamp = clock.ConsensusTimeSeconds + clock.ValidatorHandoffNoticeSeconds
 	clock.ValidatorHandoffOutgoingAuthorityCutoff = clock.ValidatorHandoffTimestamp
-	deletes := make([][]byte, 0, len(clock.ValidatorHandoffDomains)*4)
+	deletes := make([][]byte, 0, len(clock.ValidatorHandoffDomains)*6)
 	for _, domainID := range clock.ValidatorHandoffDomains {
 		deletes = append(deletes,
 			KeyForRotationProofIndex(domainID, clock.ValidatorSetId, clock.ValidatorSetId+1),
 			KeyForQueuedRotationIndex(domainID, clock.ValidatorSetId, clock.ValidatorSetId+1),
+			KeyForCaughtUpRotationIndex(domainID, clock.ValidatorSetId, clock.ValidatorSetId+1),
+			KeyForRotationForwardIndex(domainID, clock.ValidatorSetId, clock.ValidatorSetId+1),
 			KeyForRotationCancellationIndex(domainID, clock.ValidatorSetId, clock.ValidatorSetId+1),
 			KeyForRotationResolutionIndex(domainID, clock.ValidatorSetId, clock.ValidatorSetId+1),
 		)

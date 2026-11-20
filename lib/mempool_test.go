@@ -1,8 +1,10 @@
 package lib
 
 import (
+	"bytes"
 	"github.com/canopy-network/canopy/lib/crypto"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/types/known/anypb"
 	"math"
 	"strings"
 	"testing"
@@ -90,6 +92,26 @@ func TestCertificateResultsMayExceedIndividualMaxTxSize(t *testing.T) {
 	_, err = mempool.AddTransactions(tx)
 	require.NoError(t, err)
 	require.Equal(t, 1, mempool.TxCount())
+}
+
+func TestAtomicServicerRegistrationHasNarrowLargerTransactionBound(t *testing.T) {
+	sig := &Signature{PublicKey: newTestPublicKeyBytes(t), Signature: newTestPublicKeyBytes(t)}
+	encode := func(payloadBytes int) []byte {
+		t.Helper()
+		tx, err := Marshal(&Transaction{
+			MessageType: "takusenRegisterServicer",
+			Msg:         &anypb.Any{TypeUrl: "type.googleapis.com/types.MessageRegisterServicer", Value: bytes.Repeat([]byte{1}, payloadBytes)},
+			Signature:   sig, CreatedHeight: 1, Time: uint64(time.Now().UnixMicro()), Fee: 1, NetworkId: 1, ChainId: 1,
+		})
+		require.NoError(t, err)
+		return tx
+	}
+	mempool := NewMempool(MempoolConfig{MaxTotalBytes: math.MaxUint64, MaxTransactionCount: 10,
+		IndividualMaxTxSize: 4 * 1024, DropPercentage: 10})
+	_, err := mempool.AddTransactions(encode(16 * 1024))
+	require.NoError(t, err)
+	_, err = mempool.AddTransactions(encode(maxEnclaveRegistrationTxBytes))
+	require.ErrorContains(t, err, "max tx size")
 }
 
 func TestRejectedBatchDoesNotChangeMempoolBytes(t *testing.T) {

@@ -172,7 +172,7 @@ func (c *Contract) stageAuthenticatedExecution(height uint64, message *MessageSu
 		}
 	}
 	assignment := findAssignment(request, parsed.Model)
-	if assignment == nil || assignment.Completed || assignment.TerminalStatus == "awaiting_servicer" || !bytes.Equal(assignment.ServicerAddress, message.ServicerAddress) {
+	if assignment == nil || assignment.Completed || !bytes.Equal(assignment.ServicerAddress, message.ServicerAddress) {
 		return invalid(ErrUnauthorized("execution was not submitted by the assigned servicer"))
 	}
 	previousAssignments := activeAssignmentOwners(request)
@@ -182,16 +182,12 @@ func (c *Contract) stageAuthenticatedExecution(height uint64, message *MessageSu
 	if assignment.Provider == "" || parsed.Provider != assignment.Provider {
 		return invalid(ErrUnauthorized("receipt provider is not the governed assignment provider"))
 	}
-	assignmentDeadline := assignment.DeadlineHeight
-	if assignmentDeadline == 0 {
-		assignmentDeadline = request.DeadlineHeight
-	}
-	if assignmentDeadline == 0 || height > assignmentDeadline {
+	if request.DeadlineHeight == 0 || height > request.DeadlineHeight {
 		return &PluginDeliverResponse{Error: ErrInvalidTransaction("execution was submitted after its assignment deadline")}
 	}
 	expectedExecutionID := assignment.ExecutionId
 	if expectedExecutionID == "" {
-		expectedExecutionID = assignmentExecutionID(request.RequestId, assignment.Model, assignment.Attempt, assignment.ServicerAddress, request.InputHash)
+		expectedExecutionID = assignmentExecutionID(request.SettlementDomainId, request.RequestId, assignment.Model, assignment.ServicerAddress, request.InputHash)
 	}
 	if parsed.ExecutionID != expectedExecutionID {
 		return invalid(ErrUnauthorized("receipt execution identifier is not the committed assignment identifier"))
@@ -222,8 +218,8 @@ func (c *Contract) stageAuthenticatedExecution(height uint64, message *MessageSu
 	}
 	providerCost := reportedProviderCost
 	if providerCost <= maximumProviderCost {
-		if parsed.Status != "success" {
-			return invalid(ErrInvalidTransaction("cost within the assignment limit requires a successful receipt"))
+		if parsed.Status != "success" && parsed.Status != "non_answer" {
+			return invalid(ErrInvalidTransaction("cost within the assignment limit requires a successful or non-answer receipt"))
 		}
 	} else {
 		if parsed.Status != "budget_exhausted" {
@@ -278,6 +274,10 @@ func (c *Contract) stageAuthenticatedExecution(height uint64, message *MessageSu
 	// cost as assignment and receipt fields grow. RPC readers resolve these
 	// compact pointers to the canonical request key in bounded chunks.
 	records[string(KeyForSettlementIndex(request.RequestId))] = &RequestRecord{RequestId: request.RequestId}
+	records[string(KeyForUncertifiedSettlementIndex(request.RequestId))] = &RequestRecord{RequestId: request.RequestId}
+	// Keep an earlier certificate pinned until its EVM transaction is finalized.
+	// Candidate discovery will serialize this new execution behind it, preventing
+	// overlapping certificates from paying or publishing the same result twice.
 	return &PluginDeliverResponse{}
 }
 
@@ -334,13 +334,17 @@ func (c *Contract) prefetchExecutionState(messages []*MessageSubmitExecution, au
 		add(KeyForEnclave("ed25519:"+hex.EncodeToString(keyDigest[:])), 2)
 		add(KeyForExecution(parsed.ExecutionID), 3)
 		add(KeyForRequest(parsed.RequestID), 4)
-		// Reservation keys are settlement-domain scoped. The request is loaded in
-		// this prefetch and the reservation is fetched after its domain is known.
+		// The signed receipt already commits the settlement domain. Prefetch the
+		// reservation with the rest of the cohort so a valid receipt does not pay
+		// one synchronous plugin/FSM round trip after its request is decoded.
+		if settlementDomain, err := decodeHash(parsed.SettlementDomain); err == nil {
+			add(KeyForReservation(settlementDomain, parsed.RequestID), 5)
+		}
 	}
-	// The 256-receipt transaction limit bounds this to fewer than 1,024 unique
+	// The 256-receipt transaction limit bounds this to at most 1,280 unique
 	// keys. Fetch the cohort in one plugin/FSM exchange; splitting it adds IPC
 	// latency but no memory-safety or consensus benefit.
-	const pageSize = 1024
+	const pageSize = 2048
 	for start := 0; start < len(keys); start += pageSize {
 		end := min(start+pageSize, len(keys))
 		response, err := c.plugin.StateRead(c, &PluginStateReadRequest{Keys: keys[start:end]})
@@ -391,16 +395,20 @@ func (c *Contract) queueInvalidReceiptSlash(height uint64, receiptDigest []byte,
 	if err != nil {
 		return err
 	}
-	penalty, valid := mulDiv64(servicer.Bond, uint64(params.InvalidReceiptSlashBps), 10_000)
+	clock, err := c.currentEpochClock(params)
+	if err != nil {
+		return err
+	}
+	slashable, slashableErr := c.slashableServicerBond(servicer.OwnerAddress, servicer, records, clock.CurrentEpoch)
+	if slashableErr != nil {
+		return slashableErr
+	}
+	penalty, valid := mulDiv64(slashable, uint64(params.InvalidReceiptSlashBps), 10_000)
 	if !valid {
 		return ErrState("invalid receipt slash calculation overflow")
 	}
 	if params.InvalidReceiptSlashBps != 0 && penalty == 0 {
 		penalty = 1
-	}
-	clock, err := c.currentEpochClock(params)
-	if err != nil {
-		return err
 	}
 	records[string(KeyForSlashEvidence(evidenceID))] = &SlashEvidence{
 		EvidenceId: evidenceID, TargetAddress: append([]byte(nil), servicer.OwnerAddress...),
@@ -507,7 +515,7 @@ func validateReceipt(parsed *receipt, message *MessageSubmitExecution, expectedT
 	}
 	switch parsed.Status {
 	case "success":
-	case "budget_exhausted", "provider_failure":
+	case "budget_exhausted", "non_answer", "provider_failure":
 		if parsed.Output != "" {
 			return ErrInvalidTransaction("non-answer receipt contains an output")
 		}
@@ -591,7 +599,7 @@ func indexOf(values []string, wanted string) int {
 func completedExecutions(request *RequestRecord) int {
 	count := 0
 	for _, assignment := range request.Assignments {
-		if assignment.Completed && assignment.ExecutionId != "" && assignment.TerminalStatus != "failed" {
+		if assignment.Completed && assignment.ExecutionId != "" && assignment.TerminalStatus != "timeout" {
 			count++
 		}
 	}
@@ -614,7 +622,7 @@ func (c *Contract) collectExecutions(request *RequestRecord, current *ExecutionR
 func (c *Contract) collectExecutionsStaged(records map[string]proto.Message, request *RequestRecord, current *ExecutionRecord) ([]*ExecutionRecord, *PluginError) {
 	executions := make([]*ExecutionRecord, 0, completedExecutions(request))
 	for _, assignment := range request.Assignments {
-		if !assignment.Completed || assignment.ExecutionId == "" || assignment.TerminalStatus == "failed" {
+		if !assignment.Completed || assignment.ExecutionId == "" || assignment.TerminalStatus == "timeout" {
 			continue
 		}
 		if current != nil && assignment.ExecutionId == current.ExecutionId {

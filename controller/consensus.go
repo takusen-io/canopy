@@ -19,6 +19,16 @@ import (
 const maxAuxiliaryCandidatePool = 4096
 
 const (
+	// Keep the Native production path and the independently observed EVM return
+	// path live at the same time. A validator-local backlog must never consume
+	// every vote-extension slot and prevent already published results from
+	// releasing Native reservations. Unused capacity is borrowed below.
+	auxiliaryNativeReserve                 = 28
+	auxiliarySettlementFinalizationReserve = 32
+	auxiliaryControlReserve                = 4
+)
+
+const (
 	// Maximum size of the block sync request queue
 	blockSyncQueueSize = uint64(80)
 	// How often the queue is checked and more block requests sent
@@ -526,7 +536,7 @@ func (c *Controller) SendToReplicas(replicas lib.ValidatorSet, msg lib.Signable)
 }
 
 func (c *Controller) AuxiliaryCandidates() []*lib.AuxiliaryCandidate {
-	result := append([]*lib.AuxiliaryCandidate(nil), c.FSM.AuxiliaryCandidates()...)
+	native := append([]*lib.AuxiliaryCandidate(nil), c.FSM.AuxiliaryCandidates()...)
 	c.auxiliaryMu.RLock()
 	defer c.auxiliaryMu.RUnlock()
 	local := make([]*lib.AuxiliaryCandidate, 0, len(c.auxiliaryCandidates))
@@ -542,17 +552,43 @@ func (c *Controller) AuxiliaryCandidates() []*lib.AuxiliaryCandidate {
 		}
 		return bytes.Compare(local[i].Digest, local[j].Digest) < 0
 	})
+	return selectAuxiliaryCandidates(native, local)
+}
+
+func selectAuxiliaryCandidates(native, local []*lib.AuxiliaryCandidate) []*lib.AuxiliaryCandidate {
+	finalizations := make([]*lib.AuxiliaryCandidate, 0, len(local))
+	controls := make([]*lib.AuxiliaryCandidate, 0, len(local))
 	for _, candidate := range local {
-		if len(result) == 32 {
-			break
+		if candidate != nil && candidate.Kind == "evm-observation/settlement-finalization" {
+			finalizations = append(finalizations, candidate)
+		} else {
+			controls = append(controls, candidate)
 		}
-		result = append(result, candidate)
 	}
+	result := make([]*lib.AuxiliaryCandidate, 0, lib.MaxAuxiliaryCertificatesPerBlock)
+	appendBounded := func(candidates []*lib.AuxiliaryCandidate, limit int) {
+		for _, candidate := range candidates {
+			if limit == 0 || len(result) == lib.MaxAuxiliaryCertificatesPerBlock {
+				return
+			}
+			result = append(result, candidate)
+			limit--
+		}
+	}
+	appendBounded(controls, auxiliaryControlReserve)
+	appendBounded(finalizations, auxiliarySettlementFinalizationReserve)
+	appendBounded(native, auxiliaryNativeReserve)
+	// Borrow every unused reservation in liveness order. Control observations
+	// unblock deposits and ceremonies, finalizations release request budgets,
+	// and Native candidates fill all remaining throughput capacity.
+	appendBounded(controls[min(len(controls), auxiliaryControlReserve):], lib.MaxAuxiliaryCertificatesPerBlock-len(result))
+	appendBounded(finalizations[min(len(finalizations), auxiliarySettlementFinalizationReserve):], lib.MaxAuxiliaryCertificatesPerBlock-len(result))
+	appendBounded(native[min(len(native), auxiliaryNativeReserve):], lib.MaxAuxiliaryCertificatesPerBlock-len(result))
 	return result
 }
 
 func (c *Controller) SubmitAuxiliaryCandidate(candidate *lib.AuxiliaryCandidate) error {
-	if candidate == nil || len(candidate.Kind) == 0 || len(candidate.Kind) > 64 || len(candidate.Key) == 0 || len(candidate.Key) > 128 || len(candidate.Digest) != 32 || len(candidate.Payload) > 16<<10 {
+	if candidate == nil || len(candidate.Kind) == 0 || len(candidate.Kind) > lib.MaxAuxiliaryCandidateKindSize || len(candidate.Key) == 0 || len(candidate.Key) > lib.MaxAuxiliaryCandidateKeySize || len(candidate.Digest) != 32 || len(candidate.Payload) > lib.MaxAuxiliaryCandidatePayloadSize {
 		return fmt.Errorf("invalid auxiliary candidate")
 	}
 	// Runtime submissions are reserved for independently verified external
@@ -598,6 +634,7 @@ func (c *Controller) SendToProposer(msg lib.Signable) {
 			if candidate != nil && len(candidate.Digest) == 32 {
 				consensusMessage.AuxiliaryVotes = append(consensusMessage.AuxiliaryVotes, &bft.AuxiliaryVote{
 					Candidate: candidate, Signature: c.PrivateKey.Sign(lib.AuxiliaryCandidateSignBytes(candidate)),
+					DigestSignature: c.PrivateKey.Sign(candidate.Digest),
 				})
 			}
 		}

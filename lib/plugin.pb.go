@@ -1012,8 +1012,11 @@ type PluginDeliverRequest struct {
 	GovernanceParameterSpace string                 `protobuf:"bytes,3,opt,name=governance_parameter_space,json=governanceParameterSpace,proto3" json:"governance_parameter_space,omitempty"`
 	GovernanceParameterKey   string                 `protobuf:"bytes,4,opt,name=governance_parameter_key,json=governanceParameterKey,proto3" json:"governance_parameter_key,omitempty"`
 	GovernanceParameterValue []byte                 `protobuf:"bytes,5,opt,name=governance_parameter_value,json=governanceParameterValue,proto3" json:"governance_parameter_value,omitempty"`
-	unknownFields            protoimpl.UnknownFields
-	sizeCache                protoimpl.SizeCache
+	// Consensus block timestamp supplied by core. Plugins must use this value,
+	// never a local clock, for deterministic time-sensitive validation.
+	TimeMicros    uint64 `protobuf:"varint,6,opt,name=time_micros,json=timeMicros,proto3" json:"time_micros,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *PluginDeliverRequest) Reset() {
@@ -1079,6 +1082,13 @@ func (x *PluginDeliverRequest) GetGovernanceParameterValue() []byte {
 		return x.GovernanceParameterValue
 	}
 	return nil
+}
+
+func (x *PluginDeliverRequest) GetTimeMicros() uint64 {
+	if x != nil {
+		return x.TimeMicros
+	}
+	return 0
 }
 
 // PluginDeliverResponse acknowledges transaction delivery
@@ -2095,13 +2105,15 @@ const file_plugin_proto_rawDesc = "" +
 	"\x13PluginCheckResponse\x12-\n" +
 	"\x12authorized_signers\x18\x01 \x03(\fR\x11authorizedSigners\x12\x1c\n" +
 	"\trecipient\x18\x02 \x01(\fR\trecipient\x12(\n" +
-	"\x05error\x18c \x01(\v2\x12.types.PluginErrorR\x05error\"\x88\x02\n" +
+	"\x05error\x18c \x01(\v2\x12.types.PluginErrorR\x05error\"\xa9\x02\n" +
 	"\x14PluginDeliverRequest\x12\"\n" +
 	"\x02tx\x18\x01 \x01(\v2\x12.types.TransactionR\x02tx\x12\x16\n" +
 	"\x06height\x18\x02 \x01(\x04R\x06height\x12<\n" +
 	"\x1agovernance_parameter_space\x18\x03 \x01(\tR\x18governanceParameterSpace\x128\n" +
 	"\x18governance_parameter_key\x18\x04 \x01(\tR\x16governanceParameterKey\x12<\n" +
-	"\x1agovernance_parameter_value\x18\x05 \x01(\fR\x18governanceParameterValue\"g\n" +
+	"\x1agovernance_parameter_value\x18\x05 \x01(\fR\x18governanceParameterValue\x12\x1f\n" +
+	"\vtime_micros\x18\x06 \x01(\x04R\n" +
+	"timeMicros\"g\n" +
 	"\x15PluginDeliverResponse\x12$\n" +
 	"\x06events\x18\x01 \x03(\v2\f.types.EventR\x06events\x12(\n" +
 	"\x05error\x18c \x01(\v2\x12.types.PluginErrorR\x05error\"\xa4\x01\n" +

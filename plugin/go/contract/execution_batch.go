@@ -10,8 +10,8 @@ import (
 )
 
 const (
-	maxCompressedExecutionBatch = 3 << 10
-	maxExpandedExecutionBatch   = 64 << 10
+	maxCompressedExecutionBatch = 32 << 10
+	maxExpandedExecutionBatch   = 256 << 10
 	maxExecutionExpansionRatio  = 16
 )
 

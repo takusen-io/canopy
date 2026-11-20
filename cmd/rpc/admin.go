@@ -31,7 +31,7 @@ import (
 func (s *Server) AuxiliaryCandidate(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 	defer r.Body.Close()
 	candidate := new(lib.AuxiliaryCandidate)
-	decoder := json.NewDecoder(io.LimitReader(r.Body, 20<<10))
+	decoder := json.NewDecoder(io.LimitReader(r.Body, 128<<10))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(candidate); err != nil {
 		write(w, err, http.StatusBadRequest)

@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	drandbls "github.com/drand/kyber-bls12381"
 	"google.golang.org/protobuf/proto"
@@ -95,7 +96,10 @@ func completePreparedClock(clock *EpochClock, params *ProtocolParams, rosterHash
 	clock.ValidatorHandoffOutgoingAuthorityCutoff = clock.ValidatorHandoffTimestamp
 }
 
-type memoryStateStore struct{ values map[string][]byte }
+type memoryStateStore struct {
+	values         map[string][]byte
+	stateReadCalls int
+}
 
 func newMemoryContract(t *testing.T) (*Contract, *memoryStateStore, []byte, []byte) {
 	t.Helper()
@@ -108,6 +112,7 @@ func newMemoryContract(t *testing.T) (*Contract, *memoryStateStore, []byte, []by
 	store.put(t, KeyForValidator(second), secondValidator)
 	store.put(t, KeyForEpochValidator(1, first), firstValidator)
 	store.put(t, KeyForEpochValidator(1, second), secondValidator)
+	store.put(t, KeyForProtocolParams(), defaultProtocolParams())
 	return contract, store, first, second
 }
 
@@ -128,6 +133,7 @@ func (s *memoryStateStore) put(t *testing.T, key []byte, value any) {
 }
 
 func (s *memoryStateStore) StateRead(_ *Contract, request *PluginStateReadRequest) (*PluginStateReadResponse, *PluginError) {
+	s.stateReadCalls++
 	response := new(PluginStateReadResponse)
 	for _, key := range request.Keys {
 		result := &PluginReadResult{QueryId: key.QueryId}
@@ -205,11 +211,11 @@ func TestServicerCanRestoreSlashedBondOnKeyRotation(t *testing.T) {
 	store.put(t, KeyForProtocolParams(), params)
 	store.put(t, KeyForEnclave(teeKeyID), &EnclaveKey{OwnerAddress: owner, TeeKeyId: teeKeyID, Active: true})
 	store.put(t, KeyForAccount(owner), &Account{Address: owner, Amount: 1_000})
-	payouts := testPayouts(params, owner)
-	store.put(t, KeyForServicer(owner), &Servicer{OwnerAddress: owner, Payouts: payouts, TeeKeyId: "old", Models: []string{"model"}, Bond: 99_000})
+	payout := bytes.Repeat([]byte{8}, 20)
+	store.put(t, KeyForServicer(owner), &Servicer{OwnerAddress: owner, EvmPayoutAddress: payout, TeeKeyId: "old", Models: []string{"model"}, Bond: 99_000})
 
 	response := contract.deliverUpdateServicer(&MessageUpdateServicer{
-		OwnerAddress: owner, Payouts: payouts, TeeKeyId: teeKeyID,
+		OwnerAddress: owner, EvmPayoutAddress: payout, TeeKeyId: teeKeyID,
 		Models: []string{"model"}, AdditionalBond: 1_000, Active: true,
 	})
 	if response.Error != nil {
@@ -230,21 +236,21 @@ func TestServicerCanRestoreSlashedBondOnKeyRotation(t *testing.T) {
 
 func TestActiveServicerIndexTracksRegistrationAndDeactivation(t *testing.T) {
 	contract, store, owner, _ := newMemoryContract(t)
-	params := defaultProtocolParams()
+	fixture := newNitroFixture(t, nitroFixtureTime, owner)
+	params := protocolParamsForNitroFixture(fixture)
 	store.put(t, KeyForProtocolParams(), params)
 	store.put(t, KeyForAccount(owner), &Account{Address: owner, Amount: params.MinimumServicerBond})
-	store.put(t, KeyForEnclave("key"), &EnclaveKey{OwnerAddress: owner, TeeKeyId: "key", Active: true})
-	register := &MessageRegisterServicer{
-		OwnerAddress: owner, Payouts: testPayouts(params, owner), TeeKeyId: "key", Models: []string{"model"}, Bond: params.MinimumServicerBond,
-	}
-	if response := contract.deliverRegisterServicer(1, register); response.Error != nil {
+	register := fixture.message
+	register.EvmPayoutAddress = append([]byte(nil), owner...)
+	register.Bond = params.MinimumServicerBond
+	if response := contract.deliverRegisterServicer(1, uint64(nitroFixtureTime.Add(time.Minute).UnixMicro()), register); response.Error != nil {
 		t.Fatal(response.Error)
 	}
 	if found, err := contract.read(KeyForActiveServicer(owner), new(ReplayMarker)); err != nil || !found {
 		t.Fatalf("active servicer index missing: found=%v err=%v", found, err)
 	}
 	update := &MessageUpdateServicer{
-		OwnerAddress: owner, Payouts: testPayouts(params, owner), TeeKeyId: "key", Models: []string{"model"}, Active: false,
+		OwnerAddress: owner, EvmPayoutAddress: append([]byte(nil), owner...), TeeKeyId: register.TeeKeyId, Models: []string{"model"}, Active: false,
 	}
 	if response := contract.deliverUpdateServicer(update); response.Error != nil {
 		t.Fatal(response.Error)
@@ -252,16 +258,6 @@ func TestActiveServicerIndexTracksRegistrationAndDeactivation(t *testing.T) {
 	if found, err := contract.read(KeyForActiveServicer(owner), new(ReplayMarker)); err != nil || found {
 		t.Fatalf("inactive servicer remains indexed: found=%v err=%v", found, err)
 	}
-}
-
-func testPayouts(params *ProtocolParams, address []byte) []*SettlementPayout {
-	result := make([]*SettlementPayout, 0, len(params.SettlementDomains))
-	for _, domain := range params.SettlementDomains {
-		if domain != nil && domain.Active {
-			result = append(result, &SettlementPayout{SettlementDomainId: append([]byte(nil), domain.Id...), Address: append([]byte(nil), address...)})
-		}
-	}
-	return result
 }
 
 func TestAdversarialObservationsRejectConflictsStaleValidatorsAndReplay(t *testing.T) {
@@ -293,6 +289,7 @@ func TestAdversarialObservationsRejectConflictsStaleValidatorsAndReplay(t *testi
 	params := defaultProtocolParams()
 	params.Revision = 1
 	params.ApprovedPcrs = []*PCRPolicy{testPCRPolicy()}
+	params.NitroTrustRoot = testNitroRoot(t)
 	encoded, encodeErr := Marshal(params)
 	if encodeErr != nil {
 		t.Fatal(encodeErr)
@@ -312,53 +309,6 @@ func TestAdversarialObservationsRejectConflictsStaleValidatorsAndReplay(t *testi
 	committed := new(ProtocolParams)
 	if found, err := contract.read(KeyForProtocolParams(), committed); err != nil || !found || committed.Revision != 1 {
 		t.Fatalf("governed params = %#v, found = %v, err = %v", committed, found, err)
-	}
-}
-
-func TestEnclaveRegistrationRequiresGovernedEvidenceAndNonzeroPCRs(t *testing.T) {
-	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		t.Fatal(err)
-	}
-	owner := bytes.Repeat([]byte{7}, 20)
-	nonce := []byte("registration-nonce")
-	userData := bytes.Repeat([]byte{8}, 32)
-	keyDigest := sha256.Sum256(publicKey)
-	attestationHash := sha256.Sum256([]byte("synthetic-attestation"))
-	message := &MessageObserveEnclave{
-		ObserverAddress: bytes.Repeat([]byte{9}, 20), OwnerAddress: owner,
-		TeeKeyId: "ed25519:" + hex.EncodeToString(keyDigest[:]), PublicKey: publicKey, AttestationHash: attestationHash[:],
-		Pcr0: bytes.Repeat([]byte{1}, 48), Pcr1: bytes.Repeat([]byte{2}, 48), Pcr2: bytes.Repeat([]byte{3}, 48),
-		Nonce: nonce, UserData: userData,
-	}
-	registrationDigest := sha256.New()
-	_, _ = registrationDigest.Write([]byte("takusen:nitro-registration\x00"))
-	_, _ = registrationDigest.Write(message.Nonce)
-	_, _ = registrationDigest.Write([]byte{0})
-	_, _ = registrationDigest.Write(message.UserData)
-	message.ProofSignature = ed25519.Sign(privateKey, registrationDigest.Sum(nil))
-	for bank := 0; bank < 3; bank++ {
-		candidate := proto.Clone(message).(*MessageObserveEnclave)
-		switch bank {
-		case 0:
-			candidate.Pcr0 = make([]byte, 48)
-		case 1:
-			candidate.Pcr1 = make([]byte, 48)
-		case 2:
-			candidate.Pcr2 = make([]byte, 48)
-		}
-		if _, checkErr := checkObserveEnclave(candidate); checkErr == nil {
-			t.Fatalf("registration accepted all-zero PCR bank %d", bank)
-		}
-	}
-
-	contract, store, _, _ := newMemoryContract(t)
-	params := defaultProtocolParams()
-	params.Revision = 1
-	params.ApprovedPcrs = []*PCRPolicy{testPCRPolicy()}
-	store.put(t, KeyForProtocolParams(), params)
-	if response := contract.deliverObserveEnclave(10, message); response.Error == nil {
-		t.Fatal("governed Nitro mode accepted an empty attestation document")
 	}
 }
 
@@ -487,11 +437,11 @@ func TestSettlementReorgPreservesRequesterAccountingAndReopensExecution(t *testi
 	}
 	request := new(RequestRecord)
 	if found, err := contract.read(KeyForRequest("request"), request); err != nil || !found || request.Status != "ready" || len(request.SettlementTxHash) != 0 {
-		t.Fatalf("settlement was not made retryable: found=%v request=%#v err=%v", found, request, err)
+		t.Fatalf("settlement was not made repairable: found=%v request=%#v err=%v", found, request, err)
 	}
 	execution := new(ExecutionRecord)
 	if found, err := contract.read(KeyForExecution("execution"), execution); err != nil || !found || execution.Settled || len(execution.SettlementTxHash) != 0 {
-		t.Fatalf("execution was not made retryable: found=%v execution=%#v err=%v", found, execution, err)
+		t.Fatalf("execution was not made repairable: found=%v execution=%#v err=%v", found, execution, err)
 	}
 	repairHash := bytes.Repeat([]byte{9}, 32)
 	repair := &MessageFinalizeRequest{SettlementDomainId: testSettlementDomainID(), RequestId: "request", SettlementTxHash: repairHash, ReservedBudget: 40, RequestSpent: 20, ExecutionIds: []string{"execution"}, FinalizesRequest: true}
@@ -553,11 +503,11 @@ func TestAdversarialExecutionRejectsDuplicatesAndRevokedEnclave(t *testing.T) {
 	store.put(t, KeyForServicer(first), &Servicer{OwnerAddress: first, TeeKeyId: keyID, Models: []string{"model"}, Bond: 100, Active: true})
 	inputHash := sha256.Sum256([]byte("input"))
 	putRequest := func(id string) {
-		executionID := assignmentExecutionID(id, "model", 0, first, inputHash[:])
+		executionID := assignmentExecutionID(testSettlementDomainID(), id, "model", first, inputHash[:])
 		store.put(t, KeyForRequest(id), &RequestRecord{SettlementDomainId: testSettlementDomainID(),
 			RequestId: id, InputHash: inputHash[:], Requester: first,
 			OutputType: "boolean", Models: []string{"model"}, ExecutionQuorum: 1, DeadlineHeight: 30,
-			Assignments: []*Assignment{{Model: "model", Provider: "provider", ServicerAddress: first, DeadlineHeight: 30, ExecutionId: executionID, TeeKeyId: keyID, MaxProviderCost: 100}}, Status: "authorized",
+			Assignments: []*Assignment{{Model: "model", Provider: "provider", ServicerAddress: first, ExecutionId: executionID, TeeKeyId: keyID, MaxProviderCost: 100}}, Status: "authorized",
 		})
 		store.put(t, KeyForReservation(testSettlementDomainID(), id), &ReservationRecord{SettlementDomainId: testSettlementDomainID(), RequestId: id, Requester: first, Budget: 100, Status: "reserved"})
 	}
@@ -570,7 +520,7 @@ func TestAdversarialExecutionRejectsDuplicatesAndRevokedEnclave(t *testing.T) {
 	if found, err := contract.read(KeyForServicer(first), servicer); err != nil || !found || servicer.FailureCount != 1 {
 		t.Fatalf("invalid receipt did not penalize servicer: found=%v failures=%d err=%v", found, servicer.FailureCount, err)
 	}
-	message := signedExecution(t, privateKey, publicKey, keyID, first, "request-1", assignmentExecutionID("request-1", "model", 0, first, inputHash[:]), inputHash)
+	message := signedExecution(t, privateKey, publicKey, keyID, first, "request-1", assignmentExecutionID(testSettlementDomainID(), "request-1", "model", first, inputHash[:]), inputHash)
 	if response := contract.deliverSubmitExecution(20, message); response.Error != nil {
 		t.Fatal(response.Error)
 	}
@@ -583,7 +533,7 @@ func TestAdversarialExecutionRejectsDuplicatesAndRevokedEnclave(t *testing.T) {
 		t.Fatal("conflicting execution replay was accepted")
 	}
 	putRequest("request-late")
-	late := signedExecution(t, privateKey, publicKey, keyID, first, "request-late", assignmentExecutionID("request-late", "model", 0, first, inputHash[:]), inputHash)
+	late := signedExecution(t, privateKey, publicKey, keyID, first, "request-late", assignmentExecutionID(testSettlementDomainID(), "request-late", "model", first, inputHash[:]), inputHash)
 	if response := contract.deliverSubmitExecution(31, late); response.Error == nil {
 		t.Fatal("execution submitted after its assignment deadline was accepted")
 	}
@@ -711,6 +661,7 @@ func TestExecutionSettlementDoesNotWaitForRequestPeers(t *testing.T) {
 	store.put(t, KeyForCredit(testSettlementDomainID(), requester), &CreditAccount{SettlementDomainId: testSettlementDomainID(), Requester: requester, Deposited: 100, Reserved: 100})
 	store.put(t, KeyForExecution("execution-a"), &ExecutionRecord{SettlementDomainId: testSettlementDomainID(), ExecutionId: "execution-a", RequestId: requestID, Model: "a", Cost: 20})
 	store.put(t, KeyForExecution("execution-b"), &ExecutionRecord{SettlementDomainId: testSettlementDomainID(), ExecutionId: "execution-b", RequestId: requestID, Model: "b", Cost: 20})
+	store.put(t, KeyForCertifiedSettlementIndex(requestID), &ReplayMarker{Id: uint64Bytes(7)})
 
 	partial := &MessageFinalizeRequest{SettlementDomainId: testSettlementDomainID(), RequestId: requestID, SettlementTxHash: bytes.Repeat([]byte{15}, 32), ReservedBudget: 100, RequestSpent: 40, ExecutionIds: []string{"execution-a"}}
 	for _, observer := range [][]byte{first, second} {
@@ -727,6 +678,12 @@ func TestExecutionSettlementDoesNotWaitForRequestPeers(t *testing.T) {
 	_, _ = contract.read(KeyForReservation(testSettlementDomainID(), requestID), reservation)
 	if !execution.Settled || request.Status != "ready" || reservation.Status != "reserved" {
 		t.Fatalf("partial settlement closed request: execution=%#v request=%#v reservation=%#v", execution, request, reservation)
+	}
+	if _, found := store.values[string(KeyForCertifiedSettlementIndex(requestID))]; found {
+		t.Fatal("consumed incremental certificate remained pinned")
+	}
+	if _, found := store.values[string(KeyForUncertifiedSettlementIndex(requestID))]; !found {
+		t.Fatal("later terminal execution was not requeued after partial settlement")
 	}
 
 	final := &MessageFinalizeRequest{SettlementDomainId: testSettlementDomainID(), RequestId: requestID, SettlementTxHash: bytes.Repeat([]byte{16}, 32), ReservedBudget: 100, RequestSpent: 40, ExecutionIds: []string{"execution-b"}, FinalizesRequest: true}
@@ -761,128 +718,53 @@ func TestSettlementFinalizationRejectsMissingRequestArchive(t *testing.T) {
 	}
 }
 
-func TestReassignmentRetryLimitAtomicallyReleasesAndSlashes(t *testing.T) {
-	contract, store, first, second := newMemoryContract(t)
+func TestCertifiedAssignmentExpirationIsTerminalAndNonSlashable(t *testing.T) {
+	contract, store, _, _ := newMemoryContract(t)
 	requester := bytes.Repeat([]byte{4}, 20)
 	servicerAddress := bytes.Repeat([]byte{5}, 20)
-	params := defaultProtocolParams()
-	params.Revision, params.RetryLimit, params.TimeoutSlashBps = 1, 1, 1_000
-	store.put(t, KeyForProtocolParams(), params)
-	store.put(t, KeyForServicer(servicerAddress), &Servicer{
-		OwnerAddress: servicerAddress, Models: []string{"model"}, Bond: 100, Active: true,
-	})
+	executionID := "exec:" + hex.EncodeToString(bytes.Repeat([]byte{6}, 32))
+	store.put(t, KeyForServicer(servicerAddress), &Servicer{OwnerAddress: servicerAddress, Bond: 100, Active: true})
 	store.put(t, KeyForRequest("expired"), &RequestRecord{SettlementDomainId: testSettlementDomainID(),
-		RequestId: "expired", InputHash: bytes.Repeat([]byte{6}, 32), Requester: requester,
+		RequestId: "expired", InputHash: bytes.Repeat([]byte{7}, 32), Requester: requester,
 		Models: []string{"model"}, DeadlineHeight: 10,
-		Assignments: []*Assignment{{Model: "model", ServicerAddress: servicerAddress, Attempt: 1, DeadlineHeight: 10}},
+		Assignments: []*Assignment{{Model: "model", Provider: "provider", ServicerAddress: servicerAddress, ExecutionId: executionID}},
 		Status:      "authorized",
 	})
 	store.put(t, KeyForReservation(testSettlementDomainID(), "expired"), &ReservationRecord{SettlementDomainId: testSettlementDomainID(),
 		RequestId: "expired", Requester: requester, Budget: 100, Status: "reserved",
 	})
-	store.put(t, KeyForCredit(testSettlementDomainID(), requester), &CreditAccount{SettlementDomainId: testSettlementDomainID(), Requester: requester, Deposited: 100, Reserved: 100})
-
-	message := &MessageReassignRequest{
-		ObserverAddress: first, RequestId: "expired", Model: "model", NewDeadlineHeight: 50,
+	message := &MessageExpireAssignment{RequestId: "expired", Model: "model", ExecutionId: executionID,
+		SettlementDomainId: testSettlementDomainID(), DeadlineHeight: 10}
+	if response := contract.deliverExpireAssignmentWithCertificate(10, message); response.Error == nil {
+		t.Fatal("assignment expired at rather than after its deadline")
 	}
-	if response := contract.deliverReassignRequest(20, message); response.Error != nil {
+	if response := contract.deliverExpireAssignmentWithCertificate(11, message); response.Error != nil {
 		t.Fatal(response.Error)
 	}
 	request := new(RequestRecord)
-	if found, err := contract.read(KeyForRequest("expired"), request); err != nil || !found || request.Status != "authorized" {
-		t.Fatalf("one observation changed the request: found=%v status=%q err=%v", found, request.Status, err)
+	if found, err := contract.read(KeyForRequest("expired"), request); err != nil || !found || request.Status != "ready" ||
+		!request.Assignments[0].Completed || request.Assignments[0].TerminalStatus != "timeout" {
+		t.Fatalf("expiration was not terminal: found=%v request=%#v err=%v", found, request, err)
 	}
-
-	message.ObserverAddress = second
-	if response := contract.deliverReassignRequest(21, message); response.Error != nil {
-		t.Fatal(response.Error)
-	}
-	if found, err := contract.read(KeyForRequest("expired"), request); err != nil || !found || request.Status != "ready" || request.Assignments[0].TerminalStatus != "failed" {
-		t.Fatalf("request was not ready with a terminal failure: found=%v record=%#v err=%v", found, request, err)
-	}
-	reservation := new(ReservationRecord)
-	if found, err := contract.read(KeyForReservation(testSettlementDomainID(), "expired"), reservation); err != nil || !found ||
-		reservation.Status != "reserved" || reservation.Released != 0 {
-		t.Fatalf("reservation changed before Base failure publication: found=%v record=%#v err=%v", found, reservation, err)
-	}
-	credit := new(CreditAccount)
-	if found, err := contract.read(KeyForCredit(testSettlementDomainID(), requester), credit); err != nil || !found || credit.Reserved != 100 || credit.Settled != 0 || credit.Released != 0 {
-		t.Fatalf("credit reservation changed before Base failure publication: found=%v record=%#v err=%v", found, credit, err)
+	execution := new(ExecutionRecord)
+	if found, err := contract.read(KeyForExecution(executionID), execution); err != nil || !found || execution.Status != "timeout" || execution.Cost != 0 {
+		t.Fatalf("timeout result missing: found=%v execution=%#v err=%v", found, execution, err)
 	}
 	servicer := new(Servicer)
-	if found, err := contract.read(KeyForServicer(servicerAddress), servicer); err != nil || !found || servicer.FailureCount != 1 {
-		t.Fatalf("servicer failure was not recorded: found=%v record=%#v err=%v", found, servicer, err)
+	if found, err := contract.read(KeyForServicer(servicerAddress), servicer); err != nil || !found || servicer.Bond != 100 || servicer.FailureCount != 0 {
+		t.Fatalf("expiration changed servicer accounting: found=%v servicer=%#v err=%v", found, servicer, err)
 	}
-	evidenceID := hashFields([]byte("takusen:timeout"), []byte("expired"), []byte("model"), uint32Bytes(2))
-	evidence := new(SlashEvidence)
-	if found, err := contract.read(KeyForSlashEvidence(evidenceID), evidence); err != nil || !found ||
-		evidence.Status != "queued" || evidence.Penalty != 10 || !bytes.Equal(evidence.TargetAddress, servicerAddress) {
-		t.Fatalf("timeout slash was not queued: found=%v record=%#v err=%v", found, evidence, err)
-	}
-	records := make(map[string]proto.Message)
-	deletes, _, applyErr := contract.applyEpochSlashes(2, params, records, 100)
-	if applyErr != nil {
-		t.Fatal(applyErr)
-	}
-	if writeErr := contract.writeChanges(records, deletes); writeErr != nil {
-		t.Fatal(writeErr)
-	}
-	if found, err := contract.read(KeyForServicer(servicerAddress), servicer); err != nil || !found || servicer.Bond != 90 {
-		t.Fatalf("automatic timeout slash was not applied at the next epoch: found=%v servicer=%#v err=%v", found, servicer, err)
+	if response := contract.deliverExpireAssignmentWithCertificate(12, message); response.Error == nil {
+		t.Fatal("duplicate expiration was accepted")
 	}
 }
 
-func TestReassignmentWaitsForEligibleServicerWithoutExhaustingRetries(t *testing.T) {
-	contract, store, first, second := newMemoryContract(t)
-	requester := bytes.Repeat([]byte{4}, 20)
-	previousAddress := bytes.Repeat([]byte{5}, 20)
-	replacementAddress := bytes.Repeat([]byte{6}, 20)
-	params := defaultProtocolParams()
-	params.Revision, params.RetryLimit, params.TimeoutSlashBps = 1, 3, 1_000
-	store.put(t, KeyForProtocolParams(), params)
-	store.put(t, KeyForServicer(previousAddress), &Servicer{OwnerAddress: previousAddress, Models: []string{"model"}, Bond: 100})
-	store.put(t, KeyForRequest("waiting"), &RequestRecord{SettlementDomainId: testSettlementDomainID(),
-		RequestId: "waiting", InputHash: bytes.Repeat([]byte{7}, 32), Requester: requester, Models: []string{"model"}, DeadlineHeight: 10,
-		Assignments: []*Assignment{{Model: "model", Provider: "provider", TeeKeyId: "old-key", ExecutionId: "old-execution", ServicerAddress: previousAddress, DeadlineHeight: 10}},
-		Status:      "authorized",
-	})
-
-	waiting := &MessageReassignRequest{RequestId: "waiting", Model: "model", NewDeadlineHeight: 50}
-	for _, observer := range [][]byte{first, second} {
-		waiting.ObserverAddress = observer
-		if response := contract.deliverReassignRequest(20, waiting); response.Error != nil {
-			t.Fatal(response.Error)
-		}
-	}
-	request := new(RequestRecord)
-	_, _ = contract.read(KeyForRequest("waiting"), request)
-	assignment := request.Assignments[0]
-	if assignment.Completed || assignment.Attempt != 0 || assignment.TerminalStatus != "awaiting_servicer" || assignment.DeadlineHeight != 50 {
-		t.Fatalf("transient servicer absence exhausted work: %#v", assignment)
-	}
-
-	store.put(t, KeyForServicer(replacementAddress), &Servicer{OwnerAddress: replacementAddress, Models: []string{"model"}, TeeKeyId: "new-key", Bond: 100, Active: true})
-	store.put(t, KeyForEnclave("new-key"), &EnclaveKey{OwnerAddress: replacementAddress, TeeKeyId: "new-key", Active: true})
-	retry := &MessageReassignRequest{RequestId: "waiting", Model: "model", NewDeadlineHeight: 100}
-	for _, observer := range [][]byte{first, second} {
-		retry.ObserverAddress = observer
-		if response := contract.deliverReassignRequest(60, retry); response.Error != nil {
-			t.Fatal(response.Error)
-		}
-	}
-	_, _ = contract.read(KeyForRequest("waiting"), request)
-	assignment = request.Assignments[0]
-	if assignment.Completed || assignment.Attempt != 1 || assignment.TerminalStatus != "" || !bytes.Equal(assignment.ServicerAddress, replacementAddress) {
-		t.Fatalf("waiting assignment was not resumed: %#v", assignment)
-	}
-}
-
-func TestEpochAppliesStakeUnbondingBaseRewardsAndSlashing(t *testing.T) {
+func TestEpochAppliesStakeIncreaseBaseRewardsAndSlashing(t *testing.T) {
 	contract, store, first, second := newMemoryContract(t)
 	params := defaultProtocolParams()
 	params.Revision, params.EpochBlocks, params.UnbondingEpochs = 1, 10, 1
 	params.EmissionPerEpoch, params.TreasuryBps = 1_000, 1_000
-	params.TimeoutSlashBps, params.InvalidReceiptSlashBps = 1_000, 5_000
+	params.InvalidReceiptSlashBps = 5_000
 	params.CanonicalChainId, params.ValidatorSetId = 8453, 1
 	params.CanonicalTokenAddress = bytes.Repeat([]byte{7}, 20)
 	params.CanonicalBridgeAddress = bytes.Repeat([]byte{8}, 20)
@@ -891,10 +773,10 @@ func TestEpochAppliesStakeUnbondingBaseRewardsAndSlashing(t *testing.T) {
 	store.put(t, KeyForServicer(first), &Servicer{OwnerAddress: first, Bond: 100, Active: true})
 	store.put(t, KeyForAccount(first), &Account{Address: first, Amount: 50})
 
-	if response := contract.deliverQueueServicerStake(1, &MessageQueueServicerStake{OwnerAddress: first, TargetBond: 60, Active: true, AutoCompound: true}); response.Error == nil {
+	if response := contract.deliverQueueServicerStake(1, &MessageQueueServicerStake{OwnerAddress: first, AdditionalBond: 50, AutoCompound: true}); response.Error == nil {
 		t.Fatal("Canopy-only reward compounding was accepted")
 	}
-	queue := &MessageQueueServicerStake{OwnerAddress: first, TargetBond: 60, Active: true}
+	queue := &MessageQueueServicerStake{OwnerAddress: first, AdditionalBond: 50}
 	if response := contract.deliverQueueServicerStake(1, queue); response.Error != nil {
 		t.Fatal(response.Error)
 	}
@@ -933,12 +815,11 @@ func TestEpochAppliesStakeUnbondingBaseRewardsAndSlashing(t *testing.T) {
 	if found, err := contract.read(KeyForServicer(first), servicer); err != nil || !found {
 		t.Fatal(err)
 	}
-	if servicer.Bond != 60 || servicer.AutoCompound || servicer.AccruedRewards != 900 {
+	if servicer.Bond != 150 || servicer.AutoCompound || servicer.AccruedRewards != 900 {
 		t.Fatalf("servicer after epoch = %#v", servicer)
 	}
-	unbonding := new(UnbondingRecord)
-	if found, err := contract.read(KeyForUnbonding(first, 1), unbonding); err != nil || !found || unbonding.Amount != 40 || unbonding.ReleaseEpoch != 2 {
-		t.Fatalf("unbonding = %#v, found = %v, err = %v", unbonding, found, err)
+	if found, err := contract.read(KeyForUnbonding(first, 1), new(UnbondingRecord)); err != nil || found {
+		t.Fatalf("stake increase created unbonding state: found=%v err=%v", found, err)
 	}
 	epoch := new(EpochAuthorization)
 	if found, err := contract.read(KeyForEpochAuthorization(1), epoch); err != nil || !found ||
@@ -956,16 +837,13 @@ func TestEpochAppliesStakeUnbondingBaseRewardsAndSlashing(t *testing.T) {
 	// Core installs the newly activated frozen roster at the next BeginBlock.
 	store.put(t, KeyForEpochValidator(3, first), &Validator{Address: first, StakedAmount: 100, Committees: []uint64{1}})
 	store.put(t, KeyForEpochValidator(3, second), &Validator{Address: second, StakedAmount: 100, Committees: []uint64{1}})
-	if response := contract.deliverWithdrawUnbonded(20, &MessageWithdrawUnbonded{OwnerAddress: first, Sequence: 1}); response.Error != nil {
-		t.Fatal(response.Error)
-	}
 	account := new(Account)
-	if found, err := contract.read(KeyForAccount(first), account); err != nil || !found || account.Amount != 90 {
-		t.Fatalf("withdrawn account = %#v, found = %v, err = %v", account, found, err)
+	if found, err := contract.read(KeyForAccount(first), account); err != nil || !found || account.Amount != 0 {
+		t.Fatalf("stake increase account = %#v, found = %v, err = %v", account, found, err)
 	}
 
 	evidenceID := bytes.Repeat([]byte{15}, 32)
-	slash := &MessageObserveSlashEvidence{ObserverAddress: first, EvidenceId: evidenceID, TargetAddress: first, Reason: "timeout"}
+	slash := &MessageObserveSlashEvidence{ObserverAddress: first, EvidenceId: evidenceID, TargetAddress: first, Reason: "invalid_receipt"}
 	if response := contract.deliverObserveSlashEvidence(21, slash); response.Error != nil {
 		t.Fatal(response.Error)
 	}
@@ -987,6 +865,68 @@ func TestEpochAppliesStakeUnbondingBaseRewardsAndSlashing(t *testing.T) {
 	applied := new(SlashEvidence)
 	if found, err := contract.read(KeyForSlashEvidence(evidenceID), applied); err != nil || !found || applied.Status != "applied" {
 		t.Fatalf("applied slash = %#v, found = %v, err = %v", applied, found, err)
+	}
+}
+
+func TestInvalidReceiptSlashConsumesSameEpochUnbonding(t *testing.T) {
+	contract, store, first, second := newMemoryContract(t)
+	params := defaultProtocolParams()
+	params.Revision, params.UnbondingEpochs, params.InvalidReceiptSlashBps = 1, 24, 5_000
+	store.put(t, KeyForProtocolParams(), params)
+	store.put(t, KeyForServicer(first), &Servicer{OwnerAddress: first, Bond: 100, Active: true})
+	if response := contract.deliverQueueServicerStake(1, &MessageQueueServicerStake{OwnerAddress: first, Exit: true}); response.Error != nil {
+		t.Fatal(response.Error)
+	}
+	evidenceID := hashFields([]byte("same-epoch-unbonding-slash"))
+	store.put(t, KeyForSlashEvidence(evidenceID), &SlashEvidence{
+		EvidenceId: evidenceID, TargetAddress: first, Reason: "invalid_receipt",
+		Penalty: 50, EffectiveEpoch: 1, Status: "queued",
+	})
+	store.put(t, KeyForPendingSlash(1, evidenceID), &ReplayMarker{Id: evidenceID})
+
+	records := map[string]proto.Message{}
+	stakeDeletes, err := contract.applyEpochStakeChanges(1, params, records)
+	if err != nil {
+		t.Fatal(err)
+	}
+	slashDeletes, complete, err := contract.applyEpochSlashes(1, params, records, maxEpochSlashApplications)
+	if err != nil || !complete {
+		t.Fatalf("same-epoch slash failed: complete=%v err=%v", complete, err)
+	}
+	if err := contract.writeChanges(records, append(stakeDeletes, slashDeletes...)); err != nil {
+		t.Fatal(err)
+	}
+
+	servicer := new(Servicer)
+	if found, err := contract.read(KeyForServicer(first), servicer); err != nil || !found || servicer.Bond != 0 || servicer.TotalSlashed != 50 {
+		t.Fatalf("slashed servicer = %#v found=%v err=%v", servicer, found, err)
+	}
+	unbonding := new(UnbondingRecord)
+	if found, err := contract.read(KeyForUnbonding(first, 1), unbonding); err != nil || !found || unbonding.Amount != 50 {
+		t.Fatalf("slashed unbonding = %#v found=%v err=%v", unbonding, found, err)
+	}
+	applied := new(SlashEvidence)
+	if found, err := contract.read(KeyForSlashEvidence(evidenceID), applied); err != nil || !found || applied.Status != "applied" || applied.Penalty != 50 {
+		t.Fatalf("applied evidence = %#v found=%v err=%v", applied, found, err)
+	}
+
+	// Evidence observed after the active bond reached zero must still be based
+	// on funds locked inside the unbonding delay.
+	lateEvidenceID := hashFields([]byte("late-unbonding-slash"))
+	late := &MessageObserveSlashEvidence{ObserverAddress: first, EvidenceId: lateEvidenceID, TargetAddress: first, Reason: "invalid_receipt"}
+	if response := contract.deliverObserveSlashEvidence(2, late); response.Error != nil {
+		t.Fatal(response.Error)
+	}
+	late.ObserverAddress = second
+	if response := contract.deliverObserveSlashEvidence(3, late); response.Error != nil {
+		t.Fatal(response.Error)
+	}
+	queued := new(SlashEvidence)
+	if found, err := contract.read(KeyForSlashEvidence(lateEvidenceID), queued); err != nil || !found || queued.Status != "queued" || queued.Penalty != 25 {
+		t.Fatalf("late queued slash = %#v found=%v err=%v", queued, found, err)
+	}
+	if slashable, err := contract.slashableServicerBond(first, servicer, nil, unbonding.ReleaseEpoch+1); err != nil || slashable != 0 {
+		t.Fatalf("mature unbonding remained slashable: amount=%d err=%v", slashable, err)
 	}
 }
 
@@ -1157,6 +1097,17 @@ func TestValidatorHandoffGenerationVector(t *testing.T) {
 	const want = "2b15397b65e1d5d01e5f495ef83bedbd7954583d9715b49950022e04f4870c53"
 	if got := hex.EncodeToString(validatorHandoffGeneration(clock)); got != want {
 		t.Fatalf("generation = %s, want %s", got, want)
+	}
+}
+
+func TestValidatorHandoffRecoveryDigestVector(t *testing.T) {
+	manifest := &ValidatorHandoffManifest{
+		Root: bytes.Repeat([]byte{0x11}, 32), OldValidatorSetId: 7, NewValidatorSetId: 8,
+		Generation: bytes.Repeat([]byte{0x22}, 32), HandoffTimestamp: 1_700_000_000,
+	}
+	const want = "d5f538a25a6c0c0abf11d0f103eade669a4d8f9061108a9d432266ec9f424cd8"
+	if got := hex.EncodeToString(validatorHandoffRecoveryDigest(manifest)); got != want {
+		t.Fatalf("recovery digest = %s, want %s", got, want)
 	}
 }
 
@@ -1608,6 +1559,251 @@ func TestAbortRequiresFinalizedCancellationBeforeNewAttempt(t *testing.T) {
 	}
 }
 
+func TestFinalizedCatchUpOverridesUnrecoverableCancellation(t *testing.T) {
+	contract, store, proposer, _ := newMemoryContract(t)
+	params := defaultProtocolParams()
+	params.Revision, params.EpochBlocks, params.ValidatorSetId = 1, 10, 1
+	params.ValidatorHandoffNoticeSeconds = 2_400
+	store.put(t, KeyForProtocolParams(), params)
+	if response := contract.endBlock(epochEndRequestAt(10, 10_000, proposer)); response.Error != nil || response.ValidatorSetEpochEnd {
+		t.Fatalf("boundary did not start first attempt: %#v", response)
+	}
+	clock := new(EpochClock)
+	if found, err := contract.read(KeyForEpochClock(), clock); err != nil || !found {
+		t.Fatalf("prepared epoch clock missing: found=%v err=%v", found, err)
+	}
+	if response := contract.endBlock(epochEndRequestAt(11, 11_200, proposer)); response.Error != nil || response.ValidatorSetEpochEnd {
+		t.Fatalf("abort-window cancellation preparation failed: %#v", response)
+	}
+	if found, err := contract.read(KeyForEpochClock(), clock); err != nil || !found || !clock.ValidatorHandoffCancelling {
+		t.Fatalf("cancellation state missing: found=%v err=%v clock=%#v", found, err, clock)
+	}
+	generation := validatorHandoffGeneration(clock)
+	forwardDomain := clock.ValidatorHandoffDomains[0]
+	forwardProofID := hashFields([]byte("forward-recovery"), forwardDomain, generation)
+	store.put(t, KeyForQuorumProof(forwardProofID), &QuorumProof{
+		ProofKind: "validator-set-rotation-forward", ProofId: forwardProofID,
+		ValidatorSetId: clock.ValidatorSetId, NewValidatorSetId: clock.ValidatorSetId + 1,
+		CompletedHeight: 12, SettlementDomainId: forwardDomain,
+		HandoffGeneration: generation, HandoffTimestamp: clock.ValidatorHandoffTimestamp,
+		ControlBlockNumber: 44, ControlBlockHash: bytes.Repeat([]byte{0x90}, 32),
+	})
+	store.put(t, KeyForRotationForwardIndex(forwardDomain, clock.ValidatorSetId, clock.ValidatorSetId+1), &ReplayMarker{Id: forwardProofID})
+	for _, domain := range clock.ValidatorHandoffDomains {
+		proofID := hashFields([]byte("caught-up-rotation"), domain, uint64Bytes(clock.ValidatorSetId))
+		store.put(t, KeyForQuorumProof(proofID), &QuorumProof{
+			ProofKind: "validator-set-rotation-caught-up", ProofId: proofID,
+			ValidatorSetId: clock.ValidatorSetId, NewValidatorSetId: clock.ValidatorSetId + 1,
+			CompletedHeight: 12, SettlementDomainId: domain,
+			HandoffGeneration: generation, HandoffTimestamp: clock.ValidatorHandoffTimestamp,
+			ControlBlockNumber: 45, ControlBlockHash: bytes.Repeat([]byte{0x91}, 32),
+		})
+		store.put(t, KeyForCaughtUpRotationIndex(domain, clock.ValidatorSetId, clock.ValidatorSetId+1), &ReplayMarker{Id: proofID})
+	}
+	if response := contract.endBlock(epochEndRequestAt(12, 12_400, proposer)); response.Error != nil || !response.ValidatorSetEpochEnd {
+		t.Fatalf("all-domain forward catch-up did not activate the incoming set: %#v", response)
+	}
+	if found, err := contract.read(KeyForEpochClock(), clock); err != nil || !found || clock.ValidatorSetId != 2 || clock.ValidatorHandoffCancelling {
+		t.Fatalf("catch-up did not complete the epoch: found=%v err=%v clock=%#v", found, err, clock)
+	}
+}
+
+func TestFinalizedCatchUpRejectsHistoricalAttempt(t *testing.T) {
+	contract, store, proposer, _ := newMemoryContract(t)
+	params := defaultProtocolParams()
+	params.Revision, params.EpochBlocks, params.ValidatorSetId = 1, 10, 1
+	store.put(t, KeyForProtocolParams(), params)
+	if response := contract.endBlock(epochEndRequestAt(10, 10_000, proposer)); response.Error != nil || response.ValidatorSetEpochEnd {
+		t.Fatalf("boundary did not prepare handoff: %#v", response)
+	}
+	domain := params.SettlementDomains[0].Id
+	digest := hashFields([]byte("historical-attempt-catch-up"))
+	message := &MessageSubmitQuorumSignature{
+		ProofKind: "validator-set-rotation-caught-up", ProofId: hashFields([]byte("caught-up-proof")),
+		Digest: digest, Message: digest, ValidatorSetId: 1, NewValidatorSetId: 2, RotationNonce: 1,
+		SettlementDomainId: domain, HandoffGeneration: bytes.Repeat([]byte{0x91}, 32), HandoffTimestamp: 9_900,
+		ControlBlockNumber: 44, ControlBlockHash: bytes.Repeat([]byte{0x92}, 32),
+	}
+	records := make(map[string]proto.Message)
+	certificate := &ConsensusCertificate{
+		ValidatorSetId: 1, ValidatorEpoch: 1, Digest: digest, SignerBitmap: []byte{3},
+		AggregateSignatureEip2537: bytes.Repeat([]byte{1}, 256), SignedWeight: 200, TotalWeight: 200,
+	}
+	if contract.persistCertifiedEVMControlEvidence(12, message, certificate, records) {
+		t.Fatal("historical-attempt catch-up was accepted without current recovery authorization")
+	}
+}
+
+func TestCancelledQueueCannotMasqueradeAsForwardReadiness(t *testing.T) {
+	contract, store, proposer, _ := newMemoryContract(t)
+	params := defaultProtocolParams()
+	params.Revision, params.EpochBlocks, params.ValidatorSetId = 1, 10, 1
+	params.ValidatorHandoffNoticeSeconds = 2_400
+	second := proto.Clone(params.SettlementDomains[0]).(*SettlementDomain)
+	second.Id = bytes.Repeat([]byte{0xa7}, 32)
+	second.ChainId++
+	params.SettlementDomains = append(params.SettlementDomains, second)
+	store.put(t, KeyForProtocolParams(), params)
+	if response := contract.endBlock(epochEndRequestAt(10, 10_000, proposer)); response.Error != nil || response.ValidatorSetEpochEnd {
+		t.Fatalf("boundary did not prepare handoff: %#v", response)
+	}
+	if response := contract.endBlock(epochEndRequestAt(11, 11_200, proposer)); response.Error != nil || response.ValidatorSetEpochEnd {
+		t.Fatalf("boundary did not enter cancellation: %#v", response)
+	}
+	clock := new(EpochClock)
+	if found, err := contract.read(KeyForEpochClock(), clock); err != nil || !found || !clock.ValidatorHandoffCancelling {
+		t.Fatalf("cancellation state missing: found=%v err=%v clock=%#v", found, err, clock)
+	}
+	generation := validatorHandoffGeneration(clock)
+	cancelled, forward := clock.ValidatorHandoffDomains[0], clock.ValidatorHandoffDomains[1]
+	queuedProofID := hashFields([]byte("stale-queue"), cancelled)
+	store.put(t, KeyForQuorumProof(queuedProofID), &QuorumProof{
+		ProofKind: "validator-set-rotation-queued", ProofId: queuedProofID,
+		ValidatorSetId: 1, NewValidatorSetId: 2, CompletedHeight: 11, SettlementDomainId: cancelled,
+		HandoffGeneration: generation, HandoffTimestamp: clock.ValidatorHandoffTimestamp,
+	})
+	store.put(t, KeyForQueuedRotationIndex(cancelled, 1, 2), &ReplayMarker{Id: queuedProofID})
+	cancelledProofID := hashFields([]byte("finalized-cancellation"), cancelled)
+	store.put(t, KeyForQuorumProof(cancelledProofID), &QuorumProof{
+		ProofKind: "validator-set-rotation-cancelled", ProofId: cancelledProofID,
+		ValidatorSetId: 1, NewValidatorSetId: 2, CompletedHeight: 12, SettlementDomainId: cancelled,
+		HandoffGeneration: generation, HandoffTimestamp: clock.ValidatorHandoffTimestamp,
+	})
+	store.put(t, KeyForRotationResolutionIndex(cancelled, 1, 2), &ReplayMarker{Id: cancelledProofID})
+	forwardProofID := hashFields([]byte("forward-state"), forward)
+	store.put(t, KeyForQuorumProof(forwardProofID), &QuorumProof{
+		ProofKind: "validator-set-rotation-forward", ProofId: forwardProofID,
+		ValidatorSetId: 1, NewValidatorSetId: 2, CompletedHeight: 12, SettlementDomainId: forward,
+		HandoffGeneration: generation, HandoffTimestamp: clock.ValidatorHandoffTimestamp,
+		ControlBlockNumber: 44, ControlBlockHash: bytes.Repeat([]byte{0xa8}, 32),
+	})
+	store.put(t, KeyForRotationForwardIndex(forward, 1, 2), &ReplayMarker{Id: forwardProofID})
+	catchUpProofID := hashFields([]byte("caught-up"), forward)
+	store.put(t, KeyForQuorumProof(catchUpProofID), &QuorumProof{
+		ProofKind: "validator-set-rotation-caught-up", ProofId: catchUpProofID,
+		ValidatorSetId: 1, NewValidatorSetId: 2, CompletedHeight: 12, SettlementDomainId: forward,
+		HandoffGeneration: generation, HandoffTimestamp: clock.ValidatorHandoffTimestamp,
+		ControlBlockNumber: 45, ControlBlockHash: bytes.Repeat([]byte{0xa9}, 32),
+	})
+	store.put(t, KeyForCaughtUpRotationIndex(forward, 1, 2), &ReplayMarker{Id: catchUpProofID})
+	response := contract.endBlock(epochEndRequestAt(12, 12_500, proposer))
+	if response.Error != nil || response.ValidatorSetEpochEnd {
+		t.Fatalf("cancelled domain's stale queue advanced Native authority: %#v", response)
+	}
+	if len(response.AuxiliaryCandidates) == 0 || response.AuxiliaryCandidates[0].Kind != "validator-handoff-recovery" {
+		t.Fatalf("irreversible split did not prioritize recovery certificate: %#v", response.AuxiliaryCandidates)
+	}
+}
+
+func TestDelayedCancellationEvidenceCannotAdvanceForwardRecovery(t *testing.T) {
+	contract, store, proposer, _ := newMemoryContract(t)
+	params := defaultProtocolParams()
+	params.Revision, params.EpochBlocks, params.ValidatorSetId = 1, 10, 1
+	params.ValidatorHandoffNoticeSeconds = 2_400
+	second := proto.Clone(params.SettlementDomains[0]).(*SettlementDomain)
+	second.Id = bytes.Repeat([]byte{0xb7}, 32)
+	second.ChainId++
+	params.SettlementDomains = append(params.SettlementDomains, second)
+	store.put(t, KeyForProtocolParams(), params)
+	if response := contract.endBlock(epochEndRequestAt(10, 10_000, proposer)); response.Error != nil || response.ValidatorSetEpochEnd {
+		t.Fatalf("boundary did not prepare handoff: %#v", response)
+	}
+	if response := contract.endBlock(epochEndRequestAt(11, 11_200, proposer)); response.Error != nil || response.ValidatorSetEpochEnd {
+		t.Fatalf("boundary did not enter cancellation: %#v", response)
+	}
+	clock := new(EpochClock)
+	if found, err := contract.read(KeyForEpochClock(), clock); err != nil || !found || !clock.ValidatorHandoffCancelling {
+		t.Fatalf("cancellation state missing: found=%v err=%v clock=%#v", found, err, clock)
+	}
+	generation := validatorHandoffGeneration(clock)
+	delayed, forward := clock.ValidatorHandoffDomains[0], clock.ValidatorHandoffDomains[1]
+	for _, domainID := range [][]byte{delayed, forward} {
+		proofID := hashFields([]byte("pre-cancellation-queue"), domainID)
+		store.put(t, KeyForQuorumProof(proofID), &QuorumProof{
+			ProofKind: "validator-set-rotation-queued", ProofId: proofID,
+			ValidatorSetId: 1, NewValidatorSetId: 2, CompletedHeight: 11, SettlementDomainId: domainID,
+			HandoffGeneration: generation, HandoffTimestamp: clock.ValidatorHandoffTimestamp,
+		})
+		store.put(t, KeyForQueuedRotationIndex(domainID, 1, 2), &ReplayMarker{Id: proofID})
+	}
+	forwardProofID := hashFields([]byte("post-t-forward"), forward)
+	store.put(t, KeyForQuorumProof(forwardProofID), &QuorumProof{
+		ProofKind: "validator-set-rotation-forward", ProofId: forwardProofID,
+		ValidatorSetId: 1, NewValidatorSetId: 2, CompletedHeight: 12, SettlementDomainId: forward,
+		HandoffGeneration: generation, HandoffTimestamp: clock.ValidatorHandoffTimestamp,
+		ControlBlockNumber: 55, ControlBlockHash: bytes.Repeat([]byte{0xb8}, 32),
+	})
+	store.put(t, KeyForRotationForwardIndex(forward, 1, 2), &ReplayMarker{Id: forwardProofID})
+
+	response := contract.endBlock(epochEndRequestAt(12, 12_500, proposer))
+	if response.Error != nil || response.ValidatorSetEpochEnd {
+		t.Fatalf("stale queue advanced while cancellation evidence was delayed: %#v", response)
+	}
+	if len(response.AuxiliaryCandidates) == 0 || response.AuxiliaryCandidates[0].Kind != "validator-handoff-recovery" {
+		t.Fatalf("recovery certificate was not prioritized: %#v", response.AuxiliaryCandidates)
+	}
+
+	catchUpProofID := hashFields([]byte("delayed-domain-caught-up"), delayed)
+	store.put(t, KeyForQuorumProof(catchUpProofID), &QuorumProof{
+		ProofKind: "validator-set-rotation-caught-up", ProofId: catchUpProofID,
+		ValidatorSetId: 1, NewValidatorSetId: 2, CompletedHeight: 13, SettlementDomainId: delayed,
+		HandoffGeneration: generation, HandoffTimestamp: clock.ValidatorHandoffTimestamp,
+		ControlBlockNumber: 56, ControlBlockHash: bytes.Repeat([]byte{0xb9}, 32),
+	})
+	store.put(t, KeyForCaughtUpRotationIndex(delayed, 1, 2), &ReplayMarker{Id: catchUpProofID})
+	response = contract.endBlock(epochEndRequestAt(13, 12_501, proposer))
+	if response.Error != nil || !response.ValidatorSetEpochEnd {
+		t.Fatalf("post-T evidence for every domain did not advance handoff: %#v", response)
+	}
+}
+
+func TestFinalizedCancellationAdvancesReplacementAttemptNonce(t *testing.T) {
+	contract, store, proposer, _ := newMemoryContract(t)
+	params := defaultProtocolParams()
+	params.Revision, params.EpochBlocks, params.ValidatorSetId = 1, 10, 1
+	params.ValidatorHandoffNoticeSeconds = 2_400
+	store.put(t, KeyForProtocolParams(), params)
+	if response := contract.endBlock(epochEndRequestAt(10, 10_000, proposer)); response.Error != nil {
+		t.Fatal(response.Error)
+	}
+	if response := contract.endBlock(epochEndRequestAt(11, 11_200, proposer)); response.Error != nil {
+		t.Fatal(response.Error)
+	}
+	clock := new(EpochClock)
+	if found, err := contract.read(KeyForEpochClock(), clock); err != nil || !found || !clock.ValidatorHandoffCancelling {
+		t.Fatalf("cancellation state missing: found=%v err=%v", found, err)
+	}
+	generation := validatorHandoffGeneration(clock)
+	records := make(map[string]proto.Message)
+	for _, domain := range clock.ValidatorHandoffDomains {
+		digest := hashFields([]byte("cancelled"), domain)
+		message := &MessageSubmitQuorumSignature{
+			ProofKind: "validator-set-rotation-cancelled", Digest: digest, ValidatorSetId: 1, NewValidatorSetId: 2,
+			RotationNonce: 1, SettlementDomainId: domain, HandoffGeneration: generation,
+			HandoffTimestamp: clock.ValidatorHandoffTimestamp,
+		}
+		certificate := &ConsensusCertificate{ValidatorSetId: 1, Digest: digest}
+		if !contract.persistCertifiedEVMControlEvidence(12, message, certificate, records) {
+			t.Fatalf("finalized cancellation for %x was rejected", domain)
+		}
+	}
+	if err := contract.write(records); err != nil {
+		t.Fatal(err)
+	}
+	if response := contract.endBlock(epochEndRequestAt(12, 12_500, proposer)); response.Error != nil || response.ValidatorSetEpochEnd {
+		t.Fatalf("replacement attempt was not started: %#v", response)
+	}
+	manifest := new(ValidatorHandoffManifest)
+	if found, err := contract.read(KeyForValidatorHandoffManifest(), manifest); err != nil || !found || manifest.Attempt != 2 {
+		t.Fatalf("replacement manifest missing: found=%v err=%v manifest=%#v", found, err, manifest)
+	}
+	for _, domain := range manifest.Domains {
+		if domain.RotationNonce != 2 {
+			t.Fatalf("replacement nonce for %x = %d, want 2", domain.SettlementDomainId, domain.RotationNonce)
+		}
+	}
+}
+
 func TestEpochBoundaryFailsClosedUntilRotationProofExists(t *testing.T) {
 	contract, store, proposer, _ := newMemoryContract(t)
 	params := defaultProtocolParams()
@@ -1789,7 +1985,7 @@ func TestZeroCostEnclaveReceiptQueuesSlashAndLeavesAssignmentRetryable(t *testin
 	store.put(t, KeyForRequest("request"), &RequestRecord{SettlementDomainId: testSettlementDomainID(),
 		RequestId: "request", Requester: owner, InputHash: inputHash[:], OutputType: "boolean",
 		Models: []string{"model"}, ExecutionQuorum: 1, Status: "authorized", DeadlineHeight: 100,
-		Assignments: []*Assignment{{Model: "model", Provider: "provider", ServicerAddress: owner, DeadlineHeight: 100, ExecutionId: assignmentExecutionID("request", "model", 0, owner, inputHash[:]), TeeKeyId: keyID, MaxProviderCost: 100}},
+		Assignments: []*Assignment{{Model: "model", Provider: "provider", ServicerAddress: owner, ExecutionId: assignmentExecutionID(testSettlementDomainID(), "request", "model", owner, inputHash[:]), TeeKeyId: keyID, MaxProviderCost: 100}},
 	})
 	store.put(t, KeyForReservation(testSettlementDomainID(), "request"), &ReservationRecord{SettlementDomainId: testSettlementDomainID(), RequestId: "request", Requester: owner, Budget: 100, Status: "reserved"})
 	store.put(t, KeyForServicer(owner), &Servicer{
@@ -1799,7 +1995,7 @@ func TestZeroCostEnclaveReceiptQueuesSlashAndLeavesAssignmentRetryable(t *testin
 		OwnerAddress: owner, TeeKeyId: keyID, PublicKey: publicKey, Active: true,
 	})
 
-	executionID := assignmentExecutionID("request", "model", 0, owner, inputHash[:])
+	executionID := assignmentExecutionID(testSettlementDomainID(), "request", "model", owner, inputHash[:])
 	message := signedExecution(t, privateKey, publicKey, keyID, owner, "request", executionID, inputHash)
 	parsed, parseErr := parseCanonicalReceipt(message.ReceiptJson)
 	if parseErr != nil {
@@ -1853,6 +2049,8 @@ func TestAssignmentProviderCostLimitIsConsensusAuthenticated(t *testing.T) {
 		accepted bool
 	}{
 		{name: "success at limit", cost: 100, limit: 100, status: "success", output: "true", accepted: true},
+		{name: "paid non-answer below limit", cost: 99, limit: 100, status: "non_answer", accepted: true},
+		{name: "paid non-answer above limit", cost: 101, limit: 100, status: "non_answer", accepted: false},
 		{name: "host lowers limit", cost: 10, limit: 1, status: "budget_exhausted", accepted: false},
 		{name: "budget exhausted below limit", cost: 99, limit: 100, status: "budget_exhausted", accepted: false},
 		{name: "success above limit", cost: 101, limit: 100, status: "success", output: "true", accepted: false},
@@ -1869,12 +2067,12 @@ func TestAssignmentProviderCostLimitIsConsensusAuthenticated(t *testing.T) {
 			keyDigest := sha256.Sum256(publicKey)
 			keyID := "ed25519:" + hex.EncodeToString(keyDigest[:])
 			inputHash := sha256.Sum256([]byte("cost-limit-input"))
-			executionID := assignmentExecutionID("request", "model", 0, owner, inputHash[:])
+			executionID := assignmentExecutionID(testSettlementDomainID(), "request", "model", owner, inputHash[:])
 			store.put(t, KeyForProtocolParams(), func() *ProtocolParams { p := defaultProtocolParams(); p.Revision = 1; return p }())
 			store.put(t, KeyForRequest("request"), &RequestRecord{
 				SettlementDomainId: testSettlementDomainID(), RequestId: "request", Requester: owner, InputHash: inputHash[:],
 				OutputType: "boolean", Models: []string{"model"}, ExecutionQuorum: 1, Status: "authorized", DeadlineHeight: 100,
-				Assignments: []*Assignment{{Model: "model", Provider: "provider", ServicerAddress: owner, DeadlineHeight: 100, ExecutionId: executionID, TeeKeyId: keyID, MaxProviderCost: 100}},
+				Assignments: []*Assignment{{Model: "model", Provider: "provider", ServicerAddress: owner, ExecutionId: executionID, TeeKeyId: keyID, MaxProviderCost: 100}},
 			})
 			store.put(t, KeyForReservation(testSettlementDomainID(), "request"), &ReservationRecord{SettlementDomainId: testSettlementDomainID(), RequestId: "request", Requester: owner, Budget: 100, Status: "reserved"})
 			store.put(t, KeyForServicer(owner), &Servicer{OwnerAddress: owner, TeeKeyId: keyID, Models: []string{"model"}, Bond: 100, Active: true})
@@ -1922,7 +2120,7 @@ func TestFinalReceiptMakesRequestReadyOnlyAfterAllAssignmentsResolve(t *testing.
 		OutputType: "boolean", Models: []string{"prior", "model"}, ExecutionQuorum: 1, Status: "authorized", DeadlineHeight: 100,
 		Assignments: []*Assignment{
 			{Model: "prior", Completed: true, ExecutionId: "prior-execution"},
-			{Model: "model", Provider: "provider", ServicerAddress: owner, DeadlineHeight: 100, ExecutionId: assignmentExecutionID("late", "model", 0, owner, inputHash[:]), TeeKeyId: keyID, MaxProviderCost: 100},
+			{Model: "model", Provider: "provider", ServicerAddress: owner, ExecutionId: assignmentExecutionID(testSettlementDomainID(), "late", "model", owner, inputHash[:]), TeeKeyId: keyID, MaxProviderCost: 100},
 		},
 	})
 	store.put(t, KeyForExecution("prior-execution"), &ExecutionRecord{SettlementDomainId: testSettlementDomainID(),
@@ -1932,7 +2130,7 @@ func TestFinalReceiptMakesRequestReadyOnlyAfterAllAssignmentsResolve(t *testing.
 	store.put(t, KeyForServicer(owner), &Servicer{OwnerAddress: owner, TeeKeyId: keyID, Models: []string{"model"}, Bond: 100, Active: true})
 	store.put(t, KeyForEnclave(keyID), &EnclaveKey{OwnerAddress: owner, TeeKeyId: keyID, PublicKey: publicKey, Active: true})
 
-	executionID := assignmentExecutionID("late", "model", 0, owner, inputHash[:])
+	executionID := assignmentExecutionID(testSettlementDomainID(), "late", "model", owner, inputHash[:])
 	if response := contract.deliverSubmitExecution(50, signedExecution(t, privateKey, publicKey, keyID, owner, "late", executionID, inputHash)); response.Error != nil {
 		t.Fatal(response.Error)
 	}
@@ -1946,31 +2144,24 @@ func TestFinalReceiptMakesRequestReadyOnlyAfterAllAssignmentsResolve(t *testing.
 }
 
 func TestTimeoutExhaustionBecomesReady(t *testing.T) {
-	contract, store, first, second := newMemoryContract(t)
+	contract, store, _, _ := newMemoryContract(t)
 	servicerAddress := bytes.Repeat([]byte{10}, 20)
-	params := defaultProtocolParams()
-	params.Revision, params.TimeoutSlashBps, params.RetryLimit = 1, 1_000, 0
-	store.put(t, KeyForProtocolParams(), params)
 	store.put(t, KeyForServicer(servicerAddress), &Servicer{OwnerAddress: servicerAddress, Models: []string{"model"}, Bond: 100, Active: true})
 	store.put(t, KeyForRequest("resolved"), &RequestRecord{SettlementDomainId: testSettlementDomainID(),
 		RequestId: "resolved", InputHash: bytes.Repeat([]byte{11}, 32), Models: []string{"prior", "model"}, Status: "authorized", DeadlineHeight: 10,
 		Assignments: []*Assignment{
 			{Model: "prior", Completed: true, ExecutionId: "prior-execution"},
-			{Model: "model", ServicerAddress: servicerAddress, ExecutionId: "expired-execution", DeadlineHeight: 10},
+			{Model: "model", ServicerAddress: servicerAddress, ExecutionId: "expired-execution"},
 		},
 	})
 	store.put(t, KeyForExecution("prior-execution"), &ExecutionRecord{SettlementDomainId: testSettlementDomainID(), ExecutionId: "prior-execution", RequestId: "resolved", Model: "prior", Status: "success", Output: "true", OutputHash: bytes.Repeat([]byte{12}, 32)})
-	message := &MessageReassignRequest{ObserverAddress: first, RequestId: "resolved", Model: "model", NewDeadlineHeight: 50}
-	if response := contract.deliverReassignRequest(20, message); response.Error != nil {
-		t.Fatal(response.Error)
-	}
-	message.ObserverAddress = second
-	if response := contract.deliverReassignRequest(21, message); response.Error != nil {
+	message := &MessageExpireAssignment{RequestId: "resolved", Model: "model", ExecutionId: "expired-execution", SettlementDomainId: testSettlementDomainID(), DeadlineHeight: 10}
+	if response := contract.deliverExpireAssignmentWithCertificate(20, message); response.Error != nil {
 		t.Fatal(response.Error)
 	}
 	request := new(RequestRecord)
 	if found, err := contract.read(KeyForRequest("resolved"), request); err != nil || !found || request.Status != "ready" ||
-		!request.Assignments[1].Completed || request.Assignments[1].ExecutionId != "expired-execution" || request.Assignments[1].TerminalStatus != "failed" {
+		!request.Assignments[1].Completed || request.Assignments[1].ExecutionId != "expired-execution" || request.Assignments[1].TerminalStatus != "timeout" {
 		t.Fatalf("timed-out post-quorum assignment was not terminally resolved: found=%v err=%v request=%#v", found, err, request)
 	}
 }

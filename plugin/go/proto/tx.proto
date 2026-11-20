@@ -3,7 +3,6 @@ package types;
 option go_package = "github.com/canopy-network/go-plugin/contract";
 
 import "google/protobuf/any.proto";
-import "account.proto";
 // Transaction represents a request or action submitted to the network like transfer assets or perform other operations
 // within the blockchain system - THIS MUST MATCH lib.Transaction EXACTLY for signing
 message Transaction {
@@ -31,25 +30,6 @@ message Transaction {
   // NO CONFLICT STARTING AT FIELD = 25
 }
 
-// MessageSend is a standard transfer transaction, taking tokens from the sender and transferring
-// them to the recipient
-message MessageObserveEnclave {
-  bytes observer_address = 1;
-  bytes owner_address = 2;
-  string tee_key_id = 3;
-  bytes public_key = 4;
-  bytes attestation_hash = 5;
-  bytes pcr0 = 6;
-  bytes pcr1 = 7;
-  bytes pcr2 = 8;
-  bytes nonce = 9;
-  bytes user_data = 10;
-  bytes proof_signature = 11;
-  // Complete COSE/CBOR Nitro evidence is consensus transaction history. It is
-  // intentionally not retained in active EnclaveKey state after registration.
-  bytes attestation_document = 12;
-}
-
 message MessageRevokeEnclave {
   bytes observer_address = 1;
   string tee_key_id = 2;
@@ -57,15 +37,20 @@ message MessageRevokeEnclave {
 
 message MessageRegisterServicer {
   bytes owner_address = 1;
-  repeated SettlementPayout payouts = 2;
+  bytes evm_payout_address = 2;
   string tee_key_id = 3;
   repeated string models = 4;
   uint64 bond = 5;
+  bytes public_key = 6;
+  bytes nonce = 7;
+  bytes user_data = 8;
+  bytes proof_signature = 9;
+  bytes attestation_document = 10;
 }
 
 message MessageUpdateServicer {
   bytes owner_address = 1;
-  repeated SettlementPayout payouts = 2;
+  bytes evm_payout_address = 2;
   string tee_key_id = 3;
   repeated string models = 4;
   uint64 additional_bond = 5;
@@ -171,11 +156,12 @@ message MessageSubmitExecutions {
   bytes compressed_executions = 4;
 }
 
-message MessageReassignRequest {
-  bytes observer_address = 1;
+message MessageExpireAssignment {
   string request_id = 2;
   string model = 3;
-  uint64 new_deadline_height = 4;
+  string execution_id = 4;
+  bytes settlement_domain_id = 5;
+  uint64 deadline_height = 6;
 }
 
 message MessageFinalizeRequest {
@@ -199,6 +185,17 @@ message MessageFinalizeRequests {
   uint64 validator_set_id = 3;
   bytes signer_bitmap = 4;
   bytes aggregate_signature = 5;
+}
+
+// MessageFinalizeSettlementBatch references the settlement certificate that
+// already contains the complete request cohort. Validator watchers validate
+// that certificate against the EVM transaction before certifying this compact
+// observation; Native deterministically reloads the cohort by nonce+digest.
+message MessageFinalizeSettlementBatch {
+  bytes settlement_domain_id = 1;
+  bytes settlement_tx_hash = 2;
+  uint64 batch_nonce = 3;
+  bytes settlement_certificate_digest = 4;
 }
 
 // MessageSubmitQuorumSignature lets an active validator attest to the exact
@@ -273,8 +270,8 @@ message MessageObserveEpochMint {
 
 message MessageQueueServicerStake {
   bytes owner_address = 1;
-  uint64 target_bond = 2;
-  bool active = 3;
+  uint64 additional_bond = 2;
+  bool exit = 3;
   bool auto_compound = 4;
 }
 

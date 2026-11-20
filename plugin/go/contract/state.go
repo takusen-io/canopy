@@ -57,6 +57,9 @@ var (
 	nativeAuthorizationIntentPrefix   = []byte{141}
 	pendingAuthorizationPrefix        = []byte{142}
 	timeoutCandidateCursorPrefix      = []byte{143}
+	uncertifiedSettlementIndexPrefix  = []byte{144}
+	certifiedSettlementIndexPrefix    = []byte{145}
+	settlementCandidateCursorPrefix   = []byte{146}
 )
 
 func EnclavePrefix() []byte        { return JoinLenPrefix(enclavePrefix) }
@@ -69,7 +72,10 @@ func AssignmentIndexPrefix(owner []byte) []byte {
 func EpochValidatorPrefix(epoch uint64) []byte {
 	return JoinLenPrefix(epochValidatorPrefix, uint64Bytes(epoch))
 }
-func SettlementIndexPrefix() []byte      { return JoinLenPrefix(settlementIndexPrefix) }
+func SettlementIndexPrefix() []byte { return JoinLenPrefix(settlementIndexPrefix) }
+func UncertifiedSettlementIndexPrefix() []byte {
+	return JoinLenPrefix(uncertifiedSettlementIndexPrefix)
+}
 func QuorumProofPrefix() []byte          { return JoinLenPrefix(quorumProofPrefix) }
 func ConsensusCertificatePrefix() []byte { return JoinLenPrefix(consensusCertificatePrefix) }
 func KeyForNativeAuthorizationIntent(kind string, domainID []byte) []byte {
@@ -82,8 +88,29 @@ func KeyForTimeoutCandidateCursorCurrent() []byte {
 func KeyForTimeoutCandidateCursorNext() []byte {
 	return JoinLenPrefix(timeoutCandidateCursorPrefix, []byte("next"))
 }
+func KeyForSettlementCandidateCursorCurrent() []byte {
+	return JoinLenPrefix(settlementCandidateCursorPrefix, []byte("current"))
+}
+func KeyForSettlementCandidateCursorNext() []byte {
+	return JoinLenPrefix(settlementCandidateCursorPrefix, []byte("next"))
+}
+func KeyForSettlementRepairCursorCurrent() []byte {
+	return JoinLenPrefix(settlementCandidateCursorPrefix, []byte("repair-current"))
+}
+func KeyForSettlementRepairCursorNext() []byte {
+	return JoinLenPrefix(settlementCandidateCursorPrefix, []byte("repair-next"))
+}
 func KeyForPendingAuthorization(requestID string) []byte {
 	return JoinLenPrefix(pendingAuthorizationPrefix, []byte(requestID))
+}
+func KeyForUncertifiedSettlementIndex(requestID string) []byte {
+	return JoinLenPrefix(uncertifiedSettlementIndexPrefix, []byte(requestID))
+}
+func KeyForCertifiedSettlementIndex(requestID string) []byte {
+	return JoinLenPrefix(certifiedSettlementIndexPrefix, []byte(requestID))
+}
+func CertifiedSettlementIndexPrefix() []byte {
+	return JoinLenPrefix(certifiedSettlementIndexPrefix)
 }
 func DepositPrefix() []byte     { return JoinLenPrefix(depositPrefix) }
 func CreditPrefix() []byte      { return JoinLenPrefix(creditPrefix) }
@@ -164,6 +191,12 @@ func KeyForRotationProofIndex(domainID []byte, oldSetID, newSetID uint64) []byte
 }
 func KeyForQueuedRotationIndex(domainID []byte, oldSetID, newSetID uint64) []byte {
 	return JoinLenPrefix(rotationProofIndexPrefix, []byte("queued"), domainID, uint64Bytes(oldSetID), uint64Bytes(newSetID))
+}
+func KeyForCaughtUpRotationIndex(domainID []byte, oldSetID, newSetID uint64) []byte {
+	return JoinLenPrefix(rotationProofIndexPrefix, []byte("caught-up"), domainID, uint64Bytes(oldSetID), uint64Bytes(newSetID))
+}
+func KeyForRotationForwardIndex(domainID []byte, oldSetID, newSetID uint64) []byte {
+	return JoinLenPrefix(rotationProofIndexPrefix, []byte("forward"), domainID, uint64Bytes(oldSetID), uint64Bytes(newSetID))
 }
 func KeyForRotationCancellationIndex(domainID []byte, oldSetID, newSetID uint64) []byte {
 	return JoinLenPrefix(rotationProofIndexPrefix, []byte("cancel"), domainID, uint64Bytes(oldSetID), uint64Bytes(newSetID))
@@ -428,7 +461,7 @@ func activeAssignmentOwners(request *RequestRecord) map[string][]byte {
 		return result
 	}
 	for _, assignment := range request.Assignments {
-		if assignment == nil || assignment.Completed || assignment.TerminalStatus == "awaiting_servicer" || len(assignment.ServicerAddress) != 20 {
+		if assignment == nil || assignment.Completed || len(assignment.ServicerAddress) != 20 {
 			continue
 		}
 		result[string(assignment.ServicerAddress)] = append([]byte(nil), assignment.ServicerAddress...)
@@ -445,7 +478,10 @@ func stageAssignmentIndexes(records map[string]proto.Message, request *RequestRe
 		}
 	}
 	for _, owner := range current {
-		records[string(KeyForAssignmentIndex(owner, request.RequestId))] = &RequestRecord{RequestId: request.RequestId}
+		// Active assignment discovery is a latency-sensitive hot path. Keep its
+		// bounded, temporary index self-contained so every poll does one range
+		// read rather than two random state reads per assignment.
+		records[string(KeyForAssignmentIndex(owner, request.RequestId))] = request
 	}
 	return deletes
 }

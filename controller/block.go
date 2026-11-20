@@ -300,7 +300,12 @@ func (c *Controller) ValidateProposal(rcBuildHeight uint64, qc *lib.QuorumCertif
 	return
 }
 
-const proposalExecutionBudgetPerTransaction = 25 * time.Millisecond
+// Proposal construction has already executed the candidate block before this
+// reserve is applied. Keep only a small replica/network allowance per outer
+// transaction; charging the full execution estimate twice pushed valid busy
+// blocks into later deterministic slots and caused replicas to time out before
+// receiving them.
+const proposalExecutionBudgetPerTransaction = 5 * time.Millisecond
 
 // ProposalBuildDeadline adds one bounded slot only while the local mempool is
 // busy enough that speculative proposal construction is intentionally skipped.
@@ -318,7 +323,18 @@ func (c *Controller) ProposalBuildDeadline(nominal time.Time) time.Time {
 	if !busy {
 		return nominal
 	}
-	return nominal.Add(c.Config.ConsensusConfig.RoundRobinBlockInterval())
+	return nominal.Add(proposalBuildGrace(
+		c.Config.ConsensusConfig.RoundRobinBlockInterval(),
+		c.Config.ConsensusConfig.ProposeTimeoutMS,
+	))
+}
+
+func proposalBuildGrace(interval time.Duration, proposeTimeoutMS int) time.Duration {
+	grace := time.Duration(proposeTimeoutMS) * time.Millisecond
+	if grace < interval {
+		return interval
+	}
+	return grace
 }
 
 // proposalConsensusLeadTime reserves enough of the deterministic slot for
@@ -332,18 +348,20 @@ func proposalConsensusLeadTime(configured time.Duration, transactionCount int) t
 	return configured + time.Duration(transactionCount)*proposalExecutionBudgetPerTransaction
 }
 
-// nextProposalTime() returns the first target slot with enough consensus lead time in constant time.
+// nextProposalTime() returns the next normally paced target. After a delayed
+// height, do not compress several missed slots into a burst: adjacent-height
+// consensus traffic can otherwise overtake block processing and split replicas
+// across views even though proposal execution itself is fast.
 func nextProposalTime(previous uint64, now time.Time, targetInterval, leadTime time.Duration) time.Time {
 	intervalMicros := uint64(targetInterval / time.Microsecond)
 	next := previous + intervalMicros
 	minimum := uint64(now.Add(leadTime).UnixMicro())
 	if next < minimum {
-		delta := minimum - next
-		slots := delta / intervalMicros
-		if delta%intervalMicros != 0 {
-			slots++
+		recoveryWait := targetInterval
+		if leadTime > recoveryWait {
+			recoveryWait = leadTime
 		}
-		next += slots * intervalMicros
+		next = uint64(now.Add(recoveryWait).UnixMicro())
 	}
 	return time.UnixMicro(int64(next))
 }
@@ -365,6 +383,10 @@ func (a auxiliaryCandidateSignBytes) SignBytes() []byte {
 	return lib.AuxiliaryCandidateSignBytes(a.candidate)
 }
 
+type auxiliaryDigestSignBytes struct{ digest []byte }
+
+func (a auxiliaryDigestSignBytes) SignBytes() []byte { return a.digest }
+
 // validateAuxiliaryCertificates rejects any included certificate that does not
 // independently prove strict >2/3 authorization for its complete candidate
 // envelope. Missing certificates remain optional, but malformed certificates
@@ -381,7 +403,7 @@ func (c *Controller) validateAuxiliaryCertificates(qc *lib.QuorumCertificate, va
 		candidate := certificate.GetCandidate()
 		if candidate == nil || len(candidate.Kind) == 0 || len(candidate.Kind) > lib.MaxAuxiliaryCandidateKindSize ||
 			len(candidate.Key) == 0 || len(candidate.Key) > lib.MaxAuxiliaryCandidateKeySize || len(candidate.Digest) != crypto.HashSize ||
-			len(candidate.Payload) > lib.MaxAuxiliaryCandidatePayloadSize || certificate.Signature == nil {
+			len(candidate.Payload) > lib.MaxAuxiliaryCandidatePayloadSize || certificate.Signature == nil || certificate.DigestSignature == nil {
 			return lib.ErrInvalidAggrSignature()
 		}
 		key := candidate.Kind + string(candidate.Key)
@@ -390,6 +412,10 @@ func (c *Controller) validateAuxiliaryCertificates(qc *lib.QuorumCertificate, va
 		}
 		partial, err := certificate.Signature.Check(auxiliaryCandidateSignBytes{candidate: candidate}, validatorSet)
 		if err != nil || partial {
+			return lib.ErrInvalidAggrSignature()
+		}
+		partial, err = certificate.DigestSignature.Check(auxiliaryDigestSignBytes{digest: candidate.Digest}, validatorSet)
+		if err != nil || partial || !bytes.Equal(certificate.Signature.Bitmap, certificate.DigestSignature.Bitmap) {
 			return lib.ErrInvalidAggrSignature()
 		}
 		logical[key] = struct{}{}

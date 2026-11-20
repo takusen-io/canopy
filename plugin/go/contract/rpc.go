@@ -24,9 +24,12 @@ import (
 const (
 	rpcPageSize             = 500
 	rpcUnauthenticatedLimit = 600
-	rpcAuthenticatedLimit   = 60_000
-	rpcRateWindow           = time.Minute
-	rpcStreamLifetime       = 30 * time.Second
+	// Settlement observers perform several authenticated reads per result while
+	// validating and finalizing a loaded cohort. Keep the endpoint bounded per
+	// source, but leave enough headroom for sustained 300-result/second domains.
+	rpcAuthenticatedLimit = 300_000
+	rpcRateWindow         = time.Minute
+	rpcStreamLifetime     = 30 * time.Second
 )
 
 func (p *Plugin) StartRPCServer(ctx context.Context) {
@@ -287,9 +290,14 @@ func (p *Plugin) rotationQueuesReadyHandler() http.HandlerFunc {
 			return
 		}
 		generation := validatorHandoffGeneration(clock)
-		keys := make([]*PluginKeyRead, 0, len(clock.ValidatorHandoffDomains))
+		keys := make([]*PluginKeyRead, 0, len(clock.ValidatorHandoffDomains)*4)
 		for _, domainID := range clock.ValidatorHandoffDomains {
-			keys = append(keys, &PluginKeyRead{QueryId: uint64(len(keys) + 1), Key: KeyForQueuedRotationIndex(domainID, oldSetID, newSetID)})
+			keys = append(keys,
+				&PluginKeyRead{QueryId: uint64(len(keys) + 1), Key: KeyForCaughtUpRotationIndex(domainID, oldSetID, newSetID)},
+				&PluginKeyRead{QueryId: uint64(len(keys) + 2), Key: KeyForQueuedRotationIndex(domainID, oldSetID, newSetID)},
+				&PluginKeyRead{QueryId: uint64(len(keys) + 3), Key: KeyForRotationResolutionIndex(domainID, oldSetID, newSetID)},
+				&PluginKeyRead{QueryId: uint64(len(keys) + 4), Key: KeyForRotationForwardIndex(domainID, oldSetID, newSetID)},
+			)
 		}
 		state, err = p.QueryState(height, &PluginStateReadRequest{Keys: keys})
 		if err != nil {
@@ -300,11 +308,37 @@ func (p *Plugin) rotationQueuesReadyHandler() http.HandlerFunc {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "validator handoff state response is incomplete"})
 			return
 		}
-		ready := true
+		recoveryMode := false
+		if clock.ValidatorHandoffCancelling {
+			for index := range clock.ValidatorHandoffDomains {
+				forwardResult := state.Results[index*4+3]
+				if len(forwardResult.Entries) == 1 && len(forwardResult.Entries[0].Value) != 0 {
+					recoveryMode = true
+					break
+				}
+			}
+		}
+		ready := !clock.ValidatorHandoffCancelling || recoveryMode
 		proofKeys := make([]*PluginKeyRead, 0, len(clock.ValidatorHandoffDomains))
+		proofKinds := make([]string, 0, len(clock.ValidatorHandoffDomains))
+		proofDomains := make([][]byte, 0, len(clock.ValidatorHandoffDomains))
 		for index := range clock.ValidatorHandoffDomains {
-			result := state.Results[index]
-			if len(result.Entries) != 1 || len(result.Entries[0].Value) == 0 {
+			caughtResult, queuedResult := state.Results[index*4], state.Results[index*4+1]
+			resolutionResult, forwardResult := state.Results[index*4+2], state.Results[index*4+3]
+			result := caughtResult
+			proofKind := "validator-set-rotation-caught-up"
+			caughtUp := len(caughtResult.Entries) == 1 && len(caughtResult.Entries[0].Value) != 0
+			if !caughtUp {
+				if recoveryMode {
+					result = forwardResult
+					proofKind = "validator-set-rotation-forward"
+				} else {
+					result = queuedResult
+					proofKind = "validator-set-rotation-queued"
+				}
+			}
+			if len(result.Entries) != 1 || len(result.Entries[0].Value) == 0 ||
+				!recoveryMode && !caughtUp && len(resolutionResult.Entries) != 0 {
 				ready = false
 				continue
 			}
@@ -313,26 +347,29 @@ func (p *Plugin) rotationQueuesReadyHandler() http.HandlerFunc {
 				ready = false
 				continue
 			}
-			proofKeys = append(proofKeys, &PluginKeyRead{QueryId: uint64(index + 1), Key: KeyForQuorumProof(marker.Id)})
+			proofKeys = append(proofKeys, &PluginKeyRead{QueryId: uint64(len(proofKeys) + 1), Key: KeyForQuorumProof(marker.Id)})
+			proofKinds = append(proofKinds, proofKind)
+			proofDomains = append(proofDomains, clock.ValidatorHandoffDomains[index])
 		}
 		if ready {
 			proofState, proofErr := p.QueryState(height, &PluginStateReadRequest{Keys: proofKeys})
-			if proofErr != nil || len(proofState.Results) != len(clock.ValidatorHandoffDomains) {
+			if proofErr != nil || len(proofState.Results) != len(proofKeys) {
 				ready = false
 			} else {
 				for index, result := range proofState.Results {
 					proof := new(QuorumProof)
 					if len(result.Entries) != 1 || Unmarshal(result.Entries[0].Value, proof) != nil ||
-						proof.ProofKind != "validator-set-rotation-queued" ||
-						!bytes.Equal(proof.SettlementDomainId, clock.ValidatorHandoffDomains[index]) ||
-						!bytes.Equal(proof.HandoffGeneration, generation) || proof.HandoffTimestamp != clock.ValidatorHandoffTimestamp {
+						proof.ProofKind != proofKinds[index] || proof.ValidatorSetId != oldSetID || proof.NewValidatorSetId != newSetID ||
+						proof.CompletedHeight == 0 || !bytes.Equal(proof.SettlementDomainId, proofDomains[index]) ||
+						!bytes.Equal(proof.HandoffGeneration, generation) || proof.HandoffTimestamp != clock.ValidatorHandoffTimestamp ||
+						recoveryMode && (proof.ControlBlockNumber == 0 || len(proof.ControlBlockHash) != 32) {
 						ready = false
 						break
 					}
 				}
 			}
 		}
-		renewalPending := !ready && clock.ValidatorHandoffCancelling
+		renewalPending := clock.ValidatorHandoffCancelling
 		writeJSON(w, http.StatusOK, map[string]any{
 			"ready": ready, "renewal_pending": renewalPending, "handoff_generation": generation,
 			"handoff_timestamp": clock.ValidatorHandoffTimestamp, "handoff_attempt": clock.ValidatorHandoffAttempt,
@@ -441,6 +478,13 @@ func (p *Plugin) secureRPCHandler(next http.Handler) http.Handler {
 			http.Error(w, "rate limit exceeded", http.StatusTooManyRequests)
 			return
 		}
+		// Event streams have their own bounded subscriber pool. Holding a general
+		// query slot for the stream lifetime lets admission waiters starve the
+		// exact state reads that wake them up.
+		if r.URL.Path == "/v1/takusen/events" {
+			next.ServeHTTP(w, r)
+			return
+		}
 		select {
 		case concurrency <- struct{}{}:
 			defer func() { <-concurrency }()
@@ -526,9 +570,10 @@ func (p *Plugin) settlementBundleHandler() http.HandlerFunc {
 		stateReadChunkSize   = 256
 	)
 	type settlementBundle struct {
-		Request     *RequestRecord     `json:"request"`
-		Reservation *ReservationRecord `json:"reservation"`
-		Executions  []*ExecutionRecord `json:"executions"`
+		Request        *RequestRecord     `json:"request"`
+		Reservation    *ReservationRecord `json:"reservation"`
+		Executions     []*ExecutionRecord `json:"executions"`
+		CertificateKey []byte             `json:"certificate_key,omitempty"`
 	}
 	return func(w http.ResponseWriter, r *http.Request) {
 		height, ok := queryHeight(w, r)
@@ -536,6 +581,7 @@ func (p *Plugin) settlementBundleHandler() http.HandlerFunc {
 			return
 		}
 		requestIDs := make([]string, 0)
+		recoveryLookup := r.Method == http.MethodPost
 		if r.Method == http.MethodPost {
 			var request struct {
 				RequestIDs []string `json:"requestIds"`
@@ -602,7 +648,7 @@ func (p *Plugin) settlementBundleHandler() http.HandlerFunc {
 					writeJSON(w, http.StatusInternalServerError, map[string]string{"error": decodeErr.Error()})
 					return
 				}
-				if record.Status != "authorized" && record.Status != "ready" {
+				if !settlementBundleStatusAllowed(record.Status, recoveryLookup) {
 					continue
 				}
 				completed := false
@@ -620,12 +666,16 @@ func (p *Plugin) settlementBundleHandler() http.HandlerFunc {
 		}
 		keys := make([]*PluginKeyRead, 0, len(bundles)*2)
 		type target struct {
-			bundle    int
-			execution bool
+			bundle      int
+			execution   bool
+			certificate bool
 		}
 		targets := make(map[uint64]target)
 		var queryID uint64
 		for bundleIndex := range bundles {
+			queryID++
+			keys = append(keys, &PluginKeyRead{QueryId: queryID, Key: KeyForCertifiedSettlementIndex(bundles[bundleIndex].Request.RequestId)})
+			targets[queryID] = target{bundle: bundleIndex, certificate: true}
 			queryID++
 			keys = append(keys, &PluginKeyRead{QueryId: queryID, Key: KeyForReservation(bundles[bundleIndex].Request.SettlementDomainId, bundles[bundleIndex].Request.RequestId)})
 			targets[queryID] = target{bundle: bundleIndex}
@@ -647,7 +697,23 @@ func (p *Plugin) settlementBundleHandler() http.HandlerFunc {
 			}
 			for _, result := range state.Results {
 				target, exists := targets[result.QueryId]
-				if !exists || len(result.Entries) != 1 || len(result.Entries[0].Value) == 0 {
+				if !exists {
+					writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "settlement index references missing state"})
+					return
+				}
+				if target.certificate {
+					if len(result.Entries) == 0 || len(result.Entries[0].Value) == 0 {
+						continue
+					}
+					marker := new(ReplayMarker)
+					if decodeErr := Unmarshal(result.Entries[0].Value, marker); decodeErr != nil || len(marker.Id) == 0 {
+						writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "settlement certificate index is invalid"})
+						return
+					}
+					bundles[target.bundle].CertificateKey = append([]byte(nil), marker.Id...)
+					continue
+				}
+				if len(result.Entries) != 1 || len(result.Entries[0].Value) == 0 {
 					writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "settlement index references missing state"})
 					return
 				}
@@ -676,6 +742,13 @@ func (p *Plugin) settlementBundleHandler() http.HandlerFunc {
 		}
 		writeJSON(w, http.StatusOK, bundles)
 	}
+}
+
+func settlementBundleStatusAllowed(status string, recoveryLookup bool) bool {
+	if status == "authorized" || status == "ready" {
+		return true
+	}
+	return recoveryLookup && (status == "settled" || status == "failed")
 }
 
 func (p *Plugin) settlementRequestListHandler() http.HandlerFunc {
@@ -725,27 +798,26 @@ func (p *Plugin) assignmentListHandler() http.HandlerFunc {
 			*RequestRecord
 			ReservedBudget uint64 `json:"reserved_budget"`
 		}
-		requestIDs := make([]string, 0)
+		records := make([]*RequestRecord, 0, len(entries))
+		requestKeys := make([]*PluginKeyRead, 0, len(entries))
 		for _, entry := range entries {
-			pointer := new(RequestRecord)
-			if decodeErr := Unmarshal(entry.Value, pointer); decodeErr != nil {
+			record := new(RequestRecord)
+			if decodeErr := Unmarshal(entry.Value, record); decodeErr != nil {
 				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": decodeErr.Error()})
 				return
 			}
-			if pointer.RequestId == "" {
+			if record.RequestId == "" {
 				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "assignment index contains an empty request ID"})
 				return
 			}
-			requestIDs = append(requestIDs, pointer.RequestId)
+			records = append(records, record)
+			if record.ReservedBudget == 0 {
+				requestKeys = append(requestKeys, &PluginKeyRead{QueryId: uint64(len(records)), Key: KeyForRequest(record.RequestId)})
+			}
 		}
-		if len(requestIDs) == 0 {
+		if len(records) == 0 {
 			writeJSON(w, http.StatusOK, []assignmentView{})
 			return
-		}
-		records := make([]*RequestRecord, 0, len(requestIDs))
-		requestKeys := make([]*PluginKeyRead, len(requestIDs))
-		for index, requestID := range requestIDs {
-			requestKeys[index] = &PluginKeyRead{QueryId: uint64(index + 1), Key: KeyForRequest(requestID)}
 		}
 		for start := 0; start < len(requestKeys); start += assignmentReadChunkSize {
 			end := min(start+assignmentReadChunkSize, len(requestKeys))
@@ -768,12 +840,18 @@ func (p *Plugin) assignmentListHandler() http.HandlerFunc {
 					writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "assignment index references an invalid request"})
 					return
 				}
-				records = append(records, record)
+				if item.QueryId == 0 || item.QueryId > uint64(len(records)) {
+					writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "assignment request query identity is invalid"})
+					return
+				}
+				records[item.QueryId-1] = record
 			}
 		}
-		keys := make([]*PluginKeyRead, len(records))
+		keys := make([]*PluginKeyRead, 0, len(records))
 		for index, record := range records {
-			keys[index] = &PluginKeyRead{QueryId: uint64(index + 1), Key: KeyForReservation(record.SettlementDomainId, record.RequestId)}
+			if record.ReservedBudget == 0 {
+				keys = append(keys, &PluginKeyRead{QueryId: uint64(index + 1), Key: KeyForReservation(record.SettlementDomainId, record.RequestId)})
+			}
 		}
 		byQuery := make(map[uint64]*PluginReadResult, len(keys))
 		for start := 0; start < len(keys); start += assignmentReadChunkSize {
@@ -789,17 +867,21 @@ func (p *Plugin) assignmentListHandler() http.HandlerFunc {
 		}
 		result := make([]assignmentView, 0, len(records))
 		for index, record := range records {
-			query := byQuery[uint64(index+1)]
-			if query == nil || len(query.Entries) != 1 {
-				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "active assignment reservation is missing"})
-				return
+			budget := record.ReservedBudget
+			if budget == 0 {
+				query := byQuery[uint64(index+1)]
+				if query == nil || len(query.Entries) != 1 {
+					writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "active assignment reservation is missing"})
+					return
+				}
+				reservation := new(ReservationRecord)
+				if decodeErr := Unmarshal(query.Entries[0].Value, reservation); decodeErr != nil || reservation.RequestId != record.RequestId || reservation.Budget == 0 {
+					writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "active assignment reservation is invalid"})
+					return
+				}
+				budget = reservation.Budget
 			}
-			reservation := new(ReservationRecord)
-			if decodeErr := Unmarshal(query.Entries[0].Value, reservation); decodeErr != nil || reservation.RequestId != record.RequestId || reservation.Budget == 0 {
-				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "active assignment reservation is invalid"})
-				return
-			}
-			result = append(result, assignmentView{RequestRecord: record, ReservedBudget: reservation.Budget})
+			result = append(result, assignmentView{RequestRecord: record, ReservedBudget: budget})
 		}
 		writeJSON(w, http.StatusOK, result)
 	}
@@ -945,7 +1027,7 @@ func (p *Plugin) rotationProofHandler() http.HandlerFunc {
 			writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
 			return
 		}
-		if len(index.Results) != 1 || len(index.Results[0].Entries) != 1 {
+		if len(index.Results) != 1 || len(index.Results[0].Entries) != 1 || len(index.Results[0].Entries[0].Value) == 0 {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "rotation proof not found"})
 			return
 		}
@@ -977,7 +1059,7 @@ func (p *Plugin) settlementDomainAuthorityProofHandler() http.HandlerFunc {
 			writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
 			return
 		}
-		if len(index.Results) != 1 || len(index.Results[0].Entries) != 1 {
+		if len(index.Results) != 1 || len(index.Results[0].Entries) != 1 || len(index.Results[0].Entries[0].Value) == 0 {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "settlement-domain authority proof not found"})
 			return
 		}

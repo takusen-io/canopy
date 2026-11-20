@@ -59,6 +59,7 @@ message Message {
 message AuxiliaryVote {
   AuxiliaryCandidate candidate = 1;
   bytes signature = 2;
+  bytes digest_signature = 3;
 }
 
 // double_sign_evidence is proof that a validator has signed two conflicting proposals at the same block height and round

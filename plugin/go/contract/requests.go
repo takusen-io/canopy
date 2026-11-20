@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"math/big"
 	"sort"
-	"strconv"
 
 	"google.golang.org/protobuf/proto"
 )
@@ -179,14 +178,14 @@ func (c *Contract) deliverObserveAuthorizationCertified(height uint64, message *
 			if len(servicers) == 0 {
 				return &PluginDeliverResponse{Error: ErrState("no bonded servicer supports model " + model)}
 			}
-			selected := selectServicer(message.InputHash, anchor.PreviousBlockHash, model, 0, servicers)
+			selected := selectServicer(message.InputHash, anchor.PreviousBlockHash, model, servicers)
 			maximumProviderCost, costErr := assignmentMaxProviderCost(message.ReservedBudget, modelIndex, len(message.Models), params.ServicerMarginBps, params.FoundationFeeBps)
 			if costErr != nil {
 				return &PluginDeliverResponse{Error: costErr}
 			}
 			assignments = append(assignments, &Assignment{
-				Model: model, ServicerAddress: selected.OwnerAddress, DeadlineHeight: message.DeadlineHeight,
-				ExecutionId: assignmentExecutionID(message.RequestId, model, 0, selected.OwnerAddress, message.InputHash),
+				Model: model, ServicerAddress: selected.OwnerAddress,
+				ExecutionId: assignmentExecutionID(message.SettlementDomainId, message.RequestId, model, selected.OwnerAddress, message.InputHash),
 				TeeKeyId:    selected.TeeKeyId, Provider: provider, MaxProviderCost: maximumProviderCost,
 			})
 		}
@@ -198,6 +197,7 @@ func (c *Contract) deliverObserveAuthorizationCertified(height uint64, message *
 			OutputMinimum: message.OutputMinimum, OutputMaximum: message.OutputMaximum,
 			OutputChoices: append([]string(nil), message.OutputChoices...), SchemaHash: append([]byte(nil), message.SchemaHash...),
 			ExecutionQuorum: message.ExecutionQuorum, DeadlineHeight: message.DeadlineHeight,
+			ReservedBudget:   message.ReservedBudget,
 			AuthorizedHeight: height, AssignmentSeed: anchor.PreviousBlockHash, Assignments: assignments, Status: "authorized",
 			ParameterRevision: params.Revision, FoundationFeeBps: params.FoundationFeeBps,
 			ServicerMarginBps:          params.ServicerMarginBps,
@@ -351,14 +351,14 @@ func (c *Contract) stageDirectAuthorization(height uint64, message *MessageObser
 		if len(servicers) == 0 {
 			return &PluginDeliverResponse{Error: ErrState("no bonded servicer supports model " + model)}
 		}
-		selected := selectServicer(message.InputHash, anchor.PreviousBlockHash, model, 0, servicers)
+		selected := selectServicer(message.InputHash, anchor.PreviousBlockHash, model, servicers)
 		maximumProviderCost, costErr := assignmentMaxProviderCost(message.ReservedBudget, modelIndex, len(message.Models), params.ServicerMarginBps, params.FoundationFeeBps)
 		if costErr != nil {
 			return &PluginDeliverResponse{Error: costErr}
 		}
 		assignments = append(assignments, &Assignment{
-			Model: model, ServicerAddress: selected.OwnerAddress, DeadlineHeight: message.DeadlineHeight,
-			ExecutionId: assignmentExecutionID(message.RequestId, model, 0, selected.OwnerAddress, message.InputHash),
+			Model: model, ServicerAddress: selected.OwnerAddress,
+			ExecutionId: assignmentExecutionID(message.SettlementDomainId, message.RequestId, model, selected.OwnerAddress, message.InputHash),
 			TeeKeyId:    selected.TeeKeyId, Provider: provider, MaxProviderCost: maximumProviderCost,
 		})
 	}
@@ -370,6 +370,7 @@ func (c *Contract) stageDirectAuthorization(height uint64, message *MessageObser
 		OutputMinimum: message.OutputMinimum, OutputMaximum: message.OutputMaximum,
 		OutputChoices: append([]string(nil), message.OutputChoices...), SchemaHash: append([]byte(nil), message.SchemaHash...),
 		ExecutionQuorum: message.ExecutionQuorum, DeadlineHeight: message.DeadlineHeight,
+		ReservedBudget:   message.ReservedBudget,
 		AuthorizedHeight: height, AssignmentSeed: anchor.PreviousBlockHash, Assignments: assignments, Status: "authorized",
 		ParameterRevision: params.Revision, FoundationFeeBps: params.FoundationFeeBps,
 		ServicerMarginBps:          params.ServicerMarginBps,
@@ -407,11 +408,7 @@ func assignmentMaxProviderCost(reservedBudget uint64, modelIndex, modelCount int
 	return maxProviderCost(modelBudget, marginBps, feeBps)
 }
 
-func (c *Contract) deliverReassignRequest(height uint64, message *MessageReassignRequest) *PluginDeliverResponse {
-	return c.deliverReassignRequestWithCertificate(height, message, false)
-}
-
-func (c *Contract) deliverReassignRequestWithCertificate(height uint64, message *MessageReassignRequest, certified bool) *PluginDeliverResponse {
+func (c *Contract) deliverExpireAssignmentWithCertificate(height uint64, message *MessageExpireAssignment) *PluginDeliverResponse {
 	request := new(RequestRecord)
 	if found, err := c.read(KeyForRequest(message.RequestId), request); err != nil {
 		return &PluginDeliverResponse{Error: err}
@@ -422,107 +419,33 @@ func (c *Contract) deliverReassignRequestWithCertificate(height uint64, message 
 	if assignment == nil || assignment.Completed {
 		return &PluginDeliverResponse{Error: ErrConflict("model assignment is absent or already completed")}
 	}
+	if message.DeadlineHeight == 0 || request.DeadlineHeight != message.DeadlineHeight || height <= request.DeadlineHeight ||
+		message.ExecutionId != assignment.ExecutionId || !bytes.Equal(message.SettlementDomainId, request.SettlementDomainId) {
+		return &PluginDeliverResponse{Error: ErrInvalidTransaction("assignment expiration does not match the elapsed committed assignment")}
+	}
 	previousAssignments := activeAssignmentOwners(request)
-	assignmentDeadline := assignment.DeadlineHeight
-	if assignmentDeadline == 0 {
-		return &PluginDeliverResponse{Error: ErrState("assignment deadline is missing")}
-	}
-	if height <= assignmentDeadline || message.NewDeadlineHeight <= height {
-		return &PluginDeliverResponse{Error: ErrInvalidTransaction("reassignment requires an elapsed assignment deadline and a future replacement deadline")}
-	}
-	awaitingServicer := assignment.TerminalStatus == "awaiting_servicer"
-	nextAttempt := assignment.Attempt + 1
-	params, paramsErr := c.currentProtocolParams()
-	if paramsErr != nil {
-		return &PluginDeliverResponse{Error: paramsErr}
-	}
-	if params.AuthorizationDeadlineBlocks != 0 && message.NewDeadlineHeight-height > params.AuthorizationDeadlineBlocks {
-		return &PluginDeliverResponse{Error: ErrInvalidTransaction("replacement assignment deadline exceeds the governed limit")}
-	}
-	subject := reassignmentSubject(message, nextAttempt)
-	claim := hashFields([]byte("reassignment"), []byte(message.RequestId), []byte(message.Model), uint32Bytes(nextAttempt), uint64Bytes(message.NewDeadlineHeight))
-	reached := certified
 	records := make(map[string]proto.Message)
-	if !certified {
-		observation, observed, err := c.observe(observationReassignment, subject, claim, message.ObserverAddress, height)
-		if err != nil {
-			return &PluginDeliverResponse{Error: err}
-		}
-		reached = observed
-		records = observationRecords(observationReassignment, subject, claim, message.ObserverAddress, observation)
+	var deletes [][]byte
+	if expireErr := c.expireAssignment(height, request, assignment, records, &deletes); expireErr != nil {
+		return &PluginDeliverResponse{Error: expireErr}
 	}
-	if reached {
-		if !awaitingServicer {
-			previousAddress := append([]byte(nil), assignment.ServicerAddress...)
-			previous := new(Servicer)
-			if found, readErr := c.read(KeyForServicer(previousAddress), previous); readErr != nil {
-				return &PluginDeliverResponse{Error: readErr}
-			} else if !found || previous.Bond == 0 {
-				return &PluginDeliverResponse{Error: ErrState("timed-out assignment references a missing bonded servicer")}
-			}
-			if previous.FailureCount == ^uint64(0) {
-				return &PluginDeliverResponse{Error: ErrState("servicer failure counter overflow")}
-			}
-			previous.FailureCount++
-			records[string(KeyForServicer(previousAddress))] = previous
-			if slashErr := c.queueTimeoutSlash(height, request.RequestId, message.Model, nextAttempt, previous, params, records); slashErr != nil {
-				return &PluginDeliverResponse{Error: slashErr}
-			}
-		}
-
-		if nextAttempt > params.RetryLimit {
-			if failErr := c.failAssignment(height, request, assignment, records); failErr != nil {
-				return &PluginDeliverResponse{Error: failErr}
-			}
-		} else {
-			servicers, selectErr := c.eligibleServicers(message.Model)
-			if selectErr != nil {
-				return &PluginDeliverResponse{Error: selectErr}
-			}
-			if len(servicers) == 0 {
-				assignment.DeadlineHeight = message.NewDeadlineHeight
-				assignment.TerminalStatus = "awaiting_servicer"
-				records[string(KeyForRequest(request.RequestId))] = request
-				deletes := stageAssignmentIndexes(records, request, previousAssignments)
-				return &PluginDeliverResponse{Error: c.writeChanges(records, deletes)}
-			}
-			selected := selectServicer(request.InputHash, request.AssignmentSeed, message.Model, nextAttempt, servicers)
-			policy := modelPolicy(params, message.Model)
-			if policy == nil && len(params.Models) != 0 {
-				if failErr := c.failAssignment(height, request, assignment, records); failErr != nil {
-					return &PluginDeliverResponse{Error: failErr}
-				}
-				deletes := stageAssignmentIndexes(records, request, previousAssignments)
-				return &PluginDeliverResponse{Error: c.writeChanges(records, deletes)}
-			}
-			provider := "provider"
-			if policy != nil {
-				provider = policy.Provider
-			}
-			assignment.ServicerAddress = append([]byte(nil), selected.OwnerAddress...)
-			assignment.Attempt = nextAttempt
-			assignment.DeadlineHeight = message.NewDeadlineHeight
-			assignment.ExecutionId = assignmentExecutionID(request.RequestId, message.Model, nextAttempt, selected.OwnerAddress, request.InputHash)
-			assignment.TeeKeyId = selected.TeeKeyId
-			assignment.Provider = provider
-			assignment.TerminalStatus = ""
-			records[string(KeyForRequest(request.RequestId))] = request
-		}
-		deletes := stageAssignmentIndexes(records, request, previousAssignments)
-		return &PluginDeliverResponse{Error: c.writeChanges(records, deletes)}
-	}
-	return &PluginDeliverResponse{Error: c.write(records)}
+	deletes = append(deletes, stageAssignmentIndexes(records, request, previousAssignments)...)
+	return &PluginDeliverResponse{Error: c.writeChanges(records, deletes)}
 }
 
-func (c *Contract) failAssignment(height uint64, request *RequestRecord, assignment *Assignment, records map[string]proto.Message) *PluginError {
+func (c *Contract) expireAssignment(height uint64, request *RequestRecord, assignment *Assignment, records map[string]proto.Message, deletes *[][]byte) *PluginError {
 	assignment.Completed = true
-	assignment.TerminalStatus = "failed"
-	failedHash := sha256.Sum256(nil)
+	assignment.TerminalStatus = "timeout"
+	timeoutHash := sha256.Sum256(nil)
 	records[string(KeyForExecution(assignment.ExecutionId))] = &ExecutionRecord{
 		ExecutionId: assignment.ExecutionId, RequestId: request.RequestId, Model: assignment.Model,
 		Provider: assignment.Provider, ServicerAddress: append([]byte(nil), assignment.ServicerAddress...),
-		Status: "failed", OutputHash: failedHash[:], TeeKeyId: assignment.TeeKeyId, CommittedHeight: height,
+		Status: "timeout", OutputHash: timeoutHash[:], TeeKeyId: assignment.TeeKeyId, CommittedHeight: height,
+		SettlementDomainId: append([]byte(nil), request.SettlementDomainId...),
 	}
+	records[string(KeyForSettlementIndex(request.RequestId))] = &RequestRecord{RequestId: request.RequestId}
+	records[string(KeyForUncertifiedSettlementIndex(request.RequestId))] = &RequestRecord{RequestId: request.RequestId}
+	*deletes = append(*deletes, KeyForCertifiedSettlementIndex(request.RequestId))
 	if allAssignmentsResolved(request) {
 		executions, err := c.collectExecutions(request, nil)
 		if err != nil {
@@ -539,38 +462,20 @@ func (c *Contract) failAssignment(height uint64, request *RequestRecord, assignm
 
 // assignmentExecutionID is consensus-owned assignment identity. The servicer
 // host may verify it but never chooses it.
-func assignmentExecutionID(requestID, model string, attempt uint32, servicerAddress, inputHash []byte) string {
-	material := "takusen:execution:v2\x00" + requestID + "\x00" + model + "\x00" +
-		strconv.FormatUint(uint64(attempt), 10) + "\x00" + hex.EncodeToString(servicerAddress) + "\x00" + hex.EncodeToString(inputHash)
-	digest := sha256.Sum256([]byte(material))
-	return "exec:" + hex.EncodeToString(digest[:])
-}
-
-func (c *Contract) queueTimeoutSlash(height uint64, requestID, model string, attempt uint32, servicer *Servicer, params *ProtocolParams, records map[string]proto.Message) *PluginError {
-	evidenceID := hashFields([]byte("takusen:timeout"), []byte(requestID), []byte(model), uint32Bytes(attempt))
-	if found, err := c.read(KeyForSlashEvidence(evidenceID), new(SlashEvidence)); err != nil {
-		return err
-	} else if found {
-		return ErrState("timeout slash evidence is already committed")
+func assignmentExecutionID(settlementDomain []byte, requestID, model string, servicerAddress, inputHash []byte) string {
+	if len(settlementDomain) != sha256.Size || len(servicerAddress) != 20 || len(inputHash) != sha256.Size {
+		return ""
 	}
-	penalty, valid := mulDiv64(servicer.Bond, uint64(params.TimeoutSlashBps), 10_000)
-	if !valid {
-		return ErrState("servicer timeout slash calculation overflow")
-	}
-	if params.TimeoutSlashBps != 0 && penalty == 0 {
-		penalty = 1
-	}
-	clock, err := c.currentEpochClock(params)
-	if err != nil {
-		return err
-	}
-	records[string(KeyForSlashEvidence(evidenceID))] = &SlashEvidence{
-		EvidenceId: evidenceID, TargetAddress: append([]byte(nil), servicer.OwnerAddress...),
-		Reason: "timeout", Penalty: penalty, ObservedHeight: height,
-		EffectiveEpoch: clock.CurrentEpoch, Status: "queued",
-	}
-	records[string(KeyForPendingSlash(clock.CurrentEpoch, evidenceID))] = &ReplayMarker{Id: append([]byte(nil), evidenceID...)}
-	return nil
+	requestHash := sha256.Sum256([]byte(requestID))
+	modelHash := sha256.Sum256([]byte(model))
+	hash := sha256.New()
+	_, _ = hash.Write([]byte("takusen:execution:v5"))
+	_, _ = hash.Write(settlementDomain)
+	_, _ = hash.Write(requestHash[:])
+	_, _ = hash.Write(modelHash[:])
+	_, _ = hash.Write(servicerAddress)
+	_, _ = hash.Write(inputHash)
+	return "exec:" + hex.EncodeToString(hash.Sum(nil))
 }
 
 func (c *Contract) releaseTimedOutRequest(height uint64, request *RequestRecord, records map[string]proto.Message) *PluginError {
@@ -770,6 +675,22 @@ func (c *Contract) stageFinalizeRequestCertified(height uint64, message *Message
 			records[string(KeyForExecution(executionID))] = execution
 		}
 		if !message.FinalizesRequest {
+			// This certificate has now been consumed. If another terminal execution
+			// arrived while its EVM transaction was pending, preserve a discovery
+			// pointer so the next non-overlapping incremental certificate can form.
+			*deletes = append(*deletes, KeyForCertifiedSettlementIndex(request.RequestId))
+			for _, assignment := range request.Assignments {
+				if assignment == nil || assignment.ExecutionId == "" || settling[assignment.ExecutionId] != nil {
+					continue
+				}
+				execution := new(ExecutionRecord)
+				if found, err := c.readExecutionStaged(records, loaded, KeyForExecution(assignment.ExecutionId), execution); err != nil {
+					return &PluginDeliverResponse{Error: err}
+				} else if found && !execution.Settled {
+					records[string(KeyForUncertifiedSettlementIndex(request.RequestId))] = &RequestRecord{RequestId: request.RequestId}
+					break
+				}
+			}
 			if request.Status == "ready" && len(request.SettlementTxHash) != 0 {
 				allSettled := true
 				for _, assignment := range request.Assignments {
@@ -793,7 +714,7 @@ func (c *Contract) stageFinalizeRequestCertified(height uint64, message *Message
 				}
 			}
 			if request.Status == "settled" || request.Status == "failed" {
-				*deletes = append(*deletes, KeyForSettlementIndex(request.RequestId))
+				*deletes = append(*deletes, KeyForSettlementIndex(request.RequestId), KeyForUncertifiedSettlementIndex(request.RequestId), KeyForCertifiedSettlementIndex(request.RequestId))
 			}
 			return &PluginDeliverResponse{}
 		}
@@ -804,7 +725,7 @@ func (c *Contract) stageFinalizeRequestCertified(height uint64, message *Message
 			}
 			request.SettlementTxHash = append([]byte(nil), message.SettlementTxHash...)
 			records[string(KeyForRequest(message.RequestId))] = request
-			*deletes = append(*deletes, KeyForSettlementIndex(request.RequestId))
+			*deletes = append(*deletes, KeyForSettlementIndex(request.RequestId), KeyForUncertifiedSettlementIndex(request.RequestId), KeyForCertifiedSettlementIndex(request.RequestId))
 			return &PluginDeliverResponse{}
 		}
 		if reservation.Spent > reservation.Budget {
@@ -839,7 +760,7 @@ func (c *Contract) stageFinalizeRequestCertified(height uint64, message *Message
 		records[string(KeyForReservation(request.SettlementDomainId, message.RequestId))] = reservation
 		records[string(KeyForCredit(request.SettlementDomainId, request.Requester))] = credit
 	}
-	*deletes = append(*deletes, KeyForSettlementIndex(request.RequestId))
+	*deletes = append(*deletes, KeyForSettlementIndex(request.RequestId), KeyForUncertifiedSettlementIndex(request.RequestId), KeyForCertifiedSettlementIndex(request.RequestId))
 	return &PluginDeliverResponse{}
 }
 
@@ -882,8 +803,8 @@ func (c *Contract) eligibleServicers(model string) ([]*Servicer, *PluginError) {
 	return servicers, nil
 }
 
-func selectServicer(inputHash, previousBlockHash []byte, model string, attempt uint32, servicers []*Servicer) *Servicer {
-	digest := hashFields([]byte("takusen:assignment"), inputHash, previousBlockHash, []byte(model), uint32Bytes(attempt))
+func selectServicer(inputHash, previousBlockHash []byte, model string, servicers []*Servicer) *Servicer {
+	digest := hashFields([]byte("takusen:assignment:v5"), inputHash, previousBlockHash, []byte(model))
 	total := new(big.Int)
 	for _, servicer := range servicers {
 		total.Add(total, new(big.Int).SetUint64(servicer.Bond))

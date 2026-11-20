@@ -604,11 +604,19 @@ func (b *BFT) extendRoundDeadlineFromProposal(blockBytes []byte) {
 		return
 	}
 	proposalTime := time.UnixMicro(int64(timestamp))
-	if !proposalTime.After(b.roundDeadline) {
-		return
+	if proposalTime.After(b.roundDeadline) {
+		b.roundDeadline = proposalTime
 	}
-	b.roundDeadline = proposalTime
-	b.SetWaitTimers(time.Until(b.roundDeadline))
+	// The signed timestamp remains the deterministic commit/collection target,
+	// but it is not a proposal failure detector. Validation can legitimately
+	// finish close to (or just after) that target for a busy block. Preserve the
+	// configured proposal timeout beyond it so a valid proposal cannot rearm an
+	// already-expired timer and split replicas into different rounds.
+	b.SetWaitTimers(time.Until(b.roundFailureDeadline()))
+}
+
+func (b *BFT) roundFailureDeadline() time.Time {
+	return b.roundDeadline.Add(time.Duration(b.Config.ProposeTimeoutMS) * time.Millisecond)
 }
 
 // proposalTimestamp() decodes and returns a proposal block's timestamp.
@@ -670,7 +678,6 @@ func (b *BFT) StartPrecommitVotePhase() {
 	}
 	// validate the proposer and proposal against local variables
 	if interrupt := b.CheckProposerAndProposal(msg); interrupt {
-		b.RoundInterrupt()
 		return
 	}
 	// `lock` on the proposal (only by satisfying the SAFE-NODE-PREDICATE or COMMIT can this node unlock)
@@ -753,7 +760,6 @@ func (b *BFT) StartCommitProcessPhase() {
 	}
 	// validate proposer and proposal against local variables
 	if interrupt := b.CheckProposerAndProposal(msg); interrupt {
-		b.RoundInterrupt()
 		return
 	}
 	timestamp := msg.Timestamp
@@ -796,7 +802,7 @@ func (b *BFT) RoundInterrupt() {
 		b.Config.RoundInterruptTimeoutMS = b.msLeftInRound()
 		b.log.Warnf("Starting next round in %.2f secs", (time.Duration(b.Config.RoundInterruptTimeoutMS) * time.Millisecond).Seconds())
 	} else if !b.roundDeadline.IsZero() {
-		if wait := time.Until(b.roundDeadline); wait > 0 {
+		if wait := time.Until(b.roundFailureDeadline()); wait > 0 {
 			b.log.Warnf("Round %d failed; preserving coordinated deadline in %.2f secs", b.Round, wait.Seconds())
 			b.SetWaitTimers(wait)
 			return
@@ -1002,8 +1008,11 @@ func (b *BFT) PhaseHas23Maj() bool {
 			}
 			return true
 		}
-		// Let a replica cross a no-op leader phase immediately when it has already received the leader's message.
-		return deterministic && b.getProposalAtPhase(b.Round, b.Phase) != nil
+		// Let a replica cross a no-op leader phase immediately when it has already
+		// received the leader's message. The proposer must still wait for quorum:
+		// its self-delivered phase message can arrive before replica votes and must
+		// not trigger premature aggregation and a round interrupt.
+		return deterministic && !b.SelfIsProposer() && b.getProposalAtPhase(b.Round, b.Phase) != nil
 	}
 	return false
 }
@@ -1027,15 +1036,30 @@ func (b *BFT) CheckProposerAndProposal(msg *Message) (interrupt bool) {
 	// confirm is expected proposer
 	if !b.IsProposer(msg.Signature.PublicKey) {
 		b.log.Error(lib.ErrInvalidProposerPubKey(b.ProposerKey).Error())
+		b.dropProposal(msg)
 		return true
 	}
 
 	// confirm is expected proposal
 	if !bytes.Equal(b.GetBlockHash(), msg.Qc.BlockHash) || !bytes.Equal(b.Results.Hash(), msg.Qc.ResultsHash) {
 		b.log.Error(ErrMismatchedProposals().Error())
+		b.dropProposal(msg)
 		return true
 	}
 	return
+}
+
+// dropProposal removes only the stale entry currently selected for its phase.
+// An asynchronously delivered proposal can be valid when cached and obsolete
+// after a height/committee reset; consuming it must not fail the live round.
+func (b *BFT) dropProposal(msg *Message) {
+	if msg == nil || msg.Header == nil {
+		return
+	}
+	phaseProposals := b.Proposals[msg.Header.Round][phaseToString(msg.Header.Phase)]
+	if len(phaseProposals) == 1 && phaseProposals[0] == msg {
+		delete(b.Proposals[msg.Header.Round], phaseToString(msg.Header.Phase))
+	}
 }
 
 // NewRound() initializes the VoteSet and Proposals cache for the next round
@@ -1109,11 +1133,13 @@ func (b *BFT) StartRound() {
 	b.Phase = Propose
 	b.phase.Store(int32(b.Phase))
 	b.roundDeadline = b.RoundDeadline(b.Round)
-	waitUntil := b.roundDeadline
-	// Proposal construction can briefly exceed the nominal round-zero slot when
-	// a busy mempool must be executed synchronously. This build-only grace does
-	// not change roundDeadline: once a proposal arrives, its authenticated block
-	// timestamp remains the commit and signature-collection deadline.
+	// roundDeadline is the deterministic proposal/commit target. Failure must
+	// remain a separate, later deadline so replicas do not abandon a round while
+	// its busy proposal is still being constructed or validated.
+	waitUntil := b.roundFailureDeadline()
+	// A controller may request still more construction time. This does not change
+	// roundDeadline: the authenticated block timestamp remains the deterministic
+	// commit and signature-collection target.
 	if b.Round == 0 {
 		if estimator, ok := b.Controller.(interface {
 			ProposalBuildDeadline(time.Time) time.Time
@@ -1193,6 +1219,7 @@ func (b *BFT) NewHeight(keepLocks ...bool) lib.ErrorI {
 		return err
 	}
 	keepLock := len(keepLocks) != 0 && keepLocks[0]
+	preserveLock := keepLock && b.HighQC != nil && b.HighQC.Header != nil && b.HighQC.Header.Height == b.Height
 	// A force-round recovery is scoped to the height on which it was requested.
 	b.forcedRound = 0
 	b.forcedTimeoutRound = nil
@@ -1217,7 +1244,7 @@ func (b *BFT) NewHeight(keepLocks ...bool) lib.ErrorI {
 	// if resetting due to new Canopy Block and Validator Set then KeepLocks
 	// - protecting any who may have committed against attacks like malicious proposers from withholding
 	// COMMIT_MSG and sending it after the next block is produces
-	if !keepLock {
+	if !preserveLock {
 		// fully reset the proposals
 		b.Proposals = make(ProposalsForHeight)
 		// reset PartialQCs
@@ -1282,8 +1309,9 @@ func (b *BFT) SetTimerForNextPhase(processTime time.Duration) {
 		b.Phase = Propose
 	}
 	b.phase.Store(int32(b.Phase))
-	// Successful messages advance phases optimistically, but every phase in a round shares one absolute failure deadline.
-	b.SetWaitTimers(time.Until(b.roundDeadline))
+	// Successful messages advance phases optimistically, but every phase in a
+	// round shares one absolute failure deadline after the deterministic target.
+	b.SetWaitTimers(time.Until(b.roundFailureDeadline()))
 }
 
 // WaitTime() returns the wait time (wait and receive consensus messages) for a specific Phase.Round

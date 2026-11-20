@@ -13,6 +13,7 @@ import (
 
 const handoffDomainLeafType = "ValidatorHandoffDomain(uint64 nativeChainId,uint64 epoch,uint64 oldSetId,uint64 newSetId,bytes32 frozenRosterHash,bytes32 frozenDomainSetHash,uint64 attempt,bytes32 handoffGeneration,uint64 handoffTimestamp,uint64 outgoingAuthorityCutoff,bytes32 settlementDomain,uint64 evmChainId,address verifier,uint64 rotationNonce,bytes32 validatorKeysHash,bytes32 validatorWeightsHash)"
 const handoffCancellationLeafType = "CancelValidatorHandoffDomain(uint64 nativeChainId,uint64 epoch,uint64 oldSetId,uint64 newSetId,bytes32 handoffGeneration,uint64 handoffTimestamp,bytes32 settlementDomain,uint64 evmChainId,address verifier,uint64 rotationNonce,bytes32 pendingValidatorSetHash)"
+const handoffRecoveryType = "AuthorizeValidatorHandoffRecovery(bytes32 handoffRoot,uint64 oldSetId,uint64 newSetId,bytes32 handoffGeneration,uint64 handoffTimestamp)"
 
 func keccakParts(parts ...[]byte) []byte {
 	hash := sha3.NewLegacyKeccak256()
@@ -156,6 +157,17 @@ func handoffCancellationLeafHash(manifest *ValidatorHandoffCancellationManifest,
 		abiWordUint64(manifest.HandoffTimestamp), domain.SettlementDomainId,
 		abiWordUint64(domain.EvmChainId), abiWordBytes(domain.VerifierAddress),
 		abiWordUint64(domain.RotationNonce), domain.PendingValidatorSetHash,
+	)
+}
+
+func validatorHandoffRecoveryDigest(manifest *ValidatorHandoffManifest) []byte {
+	if manifest == nil || len(manifest.Root) != 32 || len(manifest.Generation) != 32 {
+		return nil
+	}
+	return keccakParts(
+		keccak256([]byte(handoffRecoveryType)), manifest.Root,
+		abiWordUint64(manifest.OldValidatorSetId), abiWordUint64(manifest.NewValidatorSetId),
+		manifest.Generation, abiWordUint64(manifest.HandoffTimestamp),
 	)
 }
 
