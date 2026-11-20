@@ -24,12 +24,9 @@ import (
 const (
 	rpcPageSize             = 500
 	rpcUnauthenticatedLimit = 600
-	// Settlement observers perform several authenticated reads per result while
-	// validating and finalizing a loaded cohort. Keep the endpoint bounded per
-	// source, but leave enough headroom for sustained 300-result/second domains.
-	rpcAuthenticatedLimit = 300_000
-	rpcRateWindow         = time.Minute
-	rpcStreamLifetime     = 30 * time.Second
+	rpcAuthenticatedLimit   = 60_000
+	rpcRateWindow           = time.Minute
+	rpcStreamLifetime       = 30 * time.Second
 )
 
 func (p *Plugin) StartRPCServer(ctx context.Context) {
@@ -54,15 +51,14 @@ func (p *Plugin) StartRPCServer(ctx context.Context) {
 	mux.HandleFunc("GET /v1/takusen/domains/{domain}/credits/{id}", p.domainHexRecordHandler(20, KeyForCredit, func() proto.Message { return new(CreditAccount) }))
 	mux.HandleFunc("GET /v1/takusen/domains/{domain}/reservations/{id}", p.domainRecordHandler(KeyForReservation, func() proto.Message { return new(ReservationRecord) }))
 	mux.HandleFunc("GET /v1/takusen/domains/{domain}/deactivation", p.domainMarkerHandler(KeyForSettlementDomainDeactivation))
-	mux.HandleFunc("GET /v1/takusen/domains/{domain}/deactivation-epoch", p.domainMarkerHandler(KeyForSettlementDomainDeactivationEpoch))
+	mux.HandleFunc("GET /v1/takusen/domains/{domain}/deactivation-timestamp", p.domainMarkerHandler(KeyForSettlementDomainDeactivationTimestamp))
 	mux.HandleFunc("GET /v1/takusen/domains/{domain}/retirement", p.domainMarkerHandler(KeyForSettlementDomainRetirement))
 	mux.HandleFunc("GET /v1/takusen/domains/{domain}/lifecycle-intent", p.domainRecordValueHandler(KeyForSettlementDomainLifecycleIntent, func() proto.Message { return new(SettlementDomainLifecycleIntent) }))
 	mux.HandleFunc("GET /v1/takusen/params", p.singletonHandler(KeyForProtocolParams(), func() proto.Message { return new(ProtocolParams) }))
 	mux.HandleFunc("GET /v1/takusen/epoch-clock", p.singletonHandler(KeyForEpochClock(), func() proto.Message { return new(EpochClock) }))
 	mux.HandleFunc("GET /v1/takusen/validators/next", p.nextValidatorSetHandler())
 	mux.HandleFunc("GET /v1/takusen/validator-rotations/{old}/{new}/queues-ready", p.rotationQueuesReadyHandler())
-	mux.HandleFunc("GET /v1/takusen/validator-handoffs/current/{domain}", p.validatorHandoffManifestHandler(false))
-	mux.HandleFunc("GET /v1/takusen/validator-handoffs/cancellation/{domain}", p.validatorHandoffManifestHandler(true))
+	mux.HandleFunc("GET /v1/takusen/validator-handoffs/current/{domain}", p.validatorHandoffManifestHandler())
 	mux.HandleFunc("GET /v1/takusen/slashes/{id}", p.hexRecordHandler(32, KeyForSlashEvidence, func() proto.Message { return new(SlashEvidence) }))
 	mux.HandleFunc("GET /v1/takusen/producer-payouts/{id}", p.hexRecordHandler(20, KeyForProducerPayout, func() proto.Message { return new(ProducerPayout) }))
 	mux.HandleFunc("GET /v1/takusen/epochs/{id}", p.uintRecordHandler(KeyForEpochAuthorization, func() proto.Message { return new(EpochAuthorization) }))
@@ -179,7 +175,7 @@ func (p *Plugin) consensusCertificateHandler() http.HandlerFunc {
 	}
 }
 
-func (p *Plugin) validatorHandoffManifestHandler(cancellation bool) http.HandlerFunc {
+func (p *Plugin) validatorHandoffManifestHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		domainID, err := decodePathHex(r.PathValue("domain"), 32)
 		if err != nil {
@@ -190,34 +186,9 @@ func (p *Plugin) validatorHandoffManifestHandler(cancellation bool) http.Handler
 		if !ok {
 			return
 		}
-		key := KeyForValidatorHandoffManifest()
-		if cancellation {
-			key = KeyForValidatorHandoffCancellationManifest()
-		}
-		state, queryErr := p.QueryState(height, &PluginStateReadRequest{Keys: []*PluginKeyRead{{QueryId: 1, Key: key}}})
+		state, queryErr := p.QueryState(height, &PluginStateReadRequest{Keys: []*PluginKeyRead{{QueryId: 1, Key: KeyForValidatorHandoffManifest()}}})
 		if queryErr != nil || len(state.Results) != 1 || len(state.Results[0].Entries) != 1 {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "validator handoff manifest is unavailable"})
-			return
-		}
-		if cancellation {
-			manifest := new(ValidatorHandoffCancellationManifest)
-			if Unmarshal(state.Results[0].Entries[0].Value, manifest) != nil {
-				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "validator cancellation manifest is invalid"})
-				return
-			}
-			leaves := make([][]byte, len(manifest.Domains))
-			position := -1
-			for index, domain := range manifest.Domains {
-				leaves[index] = domain.LeafHash
-				if bytes.Equal(domain.SettlementDomainId, domainID) {
-					position = index
-				}
-			}
-			if position < 0 {
-				writeJSON(w, http.StatusNotFound, map[string]string{"error": "settlement domain is absent from the cancellation manifest"})
-				return
-			}
-			writeJSON(w, http.StatusOK, map[string]any{"manifest": manifest, "domain": manifest.Domains[position], "leaf_index": position, "merkle_proof": handoffMerkleProof(leaves, position)})
 			return
 		}
 		manifest := new(ValidatorHandoffManifest)
@@ -279,7 +250,7 @@ func (p *Plugin) rotationQueuesReadyHandler() http.HandlerFunc {
 			return
 		}
 		if !clock.ValidatorHandoffPrepared || len(clock.ValidatorHandoffDomains) == 0 || clock.ValidatorHandoffTimestamp == 0 {
-			writeJSON(w, http.StatusConflict, map[string]string{"error": "validator handoff attempt is not prepared"})
+			writeJSON(w, http.StatusConflict, map[string]string{"error": "validator handoff is not prepared"})
 			return
 		}
 		if stateErr := validatePreparedValidatorHandoff(clock, p.config.ChainId); stateErr != nil {
@@ -287,91 +258,14 @@ func (p *Plugin) rotationQueuesReadyHandler() http.HandlerFunc {
 			return
 		}
 		generation := validatorHandoffGeneration(clock)
-		keys := make([]*PluginKeyRead, 0, len(clock.ValidatorHandoffDomains)*4)
-		for _, domainID := range clock.ValidatorHandoffDomains {
-			keys = append(keys,
-				&PluginKeyRead{QueryId: uint64(len(keys) + 1), Key: KeyForCaughtUpRotationIndex(domainID, oldSetID, newSetID)},
-				&PluginKeyRead{QueryId: uint64(len(keys) + 2), Key: KeyForQueuedRotationIndex(domainID, oldSetID, newSetID)},
-				&PluginKeyRead{QueryId: uint64(len(keys) + 3), Key: KeyForRotationResolutionIndex(domainID, oldSetID, newSetID)},
-				&PluginKeyRead{QueryId: uint64(len(keys) + 4), Key: KeyForRotationForwardIndex(domainID, oldSetID, newSetID)},
-			)
-		}
-		state, err = p.QueryState(height, &PluginStateReadRequest{Keys: keys})
-		if err != nil {
-			writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "validator handoff state is unavailable"})
-			return
-		}
-		if len(state.Results) != len(keys) {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "validator handoff state response is incomplete"})
-			return
-		}
-		recoveryMode := false
-		if clock.ValidatorHandoffCancelling {
-			for index := range clock.ValidatorHandoffDomains {
-				forwardResult := state.Results[index*4+3]
-				if len(forwardResult.Entries) == 1 && len(forwardResult.Entries[0].Value) != 0 {
-					recoveryMode = true
-					break
-				}
-			}
-		}
-		ready := !clock.ValidatorHandoffCancelling || recoveryMode
-		proofKeys := make([]*PluginKeyRead, 0, len(clock.ValidatorHandoffDomains))
-		proofKinds := make([]string, 0, len(clock.ValidatorHandoffDomains))
-		proofDomains := make([][]byte, 0, len(clock.ValidatorHandoffDomains))
-		for index := range clock.ValidatorHandoffDomains {
-			caughtResult, queuedResult := state.Results[index*4], state.Results[index*4+1]
-			resolutionResult, forwardResult := state.Results[index*4+2], state.Results[index*4+3]
-			result := caughtResult
-			proofKind := "validator-set-rotation-caught-up"
-			caughtUp := len(caughtResult.Entries) == 1 && len(caughtResult.Entries[0].Value) != 0
-			if !caughtUp {
-				if recoveryMode {
-					result = forwardResult
-					proofKind = "validator-set-rotation-forward"
-				} else {
-					result = queuedResult
-					proofKind = "validator-set-rotation-queued"
-				}
-			}
-			if len(result.Entries) != 1 || len(result.Entries[0].Value) == 0 ||
-				!recoveryMode && !caughtUp && len(resolutionResult.Entries) != 0 {
-				ready = false
-				continue
-			}
-			marker := new(ReplayMarker)
-			if Unmarshal(result.Entries[0].Value, marker) != nil || len(marker.Id) == 0 {
-				ready = false
-				continue
-			}
-			proofKeys = append(proofKeys, &PluginKeyRead{QueryId: uint64(len(proofKeys) + 1), Key: KeyForQuorumProof(marker.Id)})
-			proofKinds = append(proofKinds, proofKind)
-			proofDomains = append(proofDomains, clock.ValidatorHandoffDomains[index])
-		}
-		if ready {
-			proofState, proofErr := p.QueryState(height, &PluginStateReadRequest{Keys: proofKeys})
-			if proofErr != nil || len(proofState.Results) != len(proofKeys) {
-				ready = false
-			} else {
-				for index, result := range proofState.Results {
-					proof := new(QuorumProof)
-					if len(result.Entries) != 1 || Unmarshal(result.Entries[0].Value, proof) != nil ||
-						proof.ProofKind != proofKinds[index] || proof.ValidatorSetId != oldSetID || proof.NewValidatorSetId != newSetID ||
-						proof.CompletedHeight == 0 || !bytes.Equal(proof.SettlementDomainId, proofDomains[index]) ||
-						!bytes.Equal(proof.HandoffGeneration, generation) || proof.HandoffTimestamp != clock.ValidatorHandoffTimestamp ||
-						recoveryMode && (proof.ControlBlockNumber == 0 || len(proof.ControlBlockHash) != 32) {
-						ready = false
-						break
-					}
-				}
-			}
-		}
-		renewalPending := clock.ValidatorHandoffCancelling
+		ready := clock.ValidatorHandoffDomainCount == uint64(len(clock.ValidatorHandoffDomains)) &&
+			clock.ValidatorHandoffResolvedCount == clock.ValidatorHandoffDomainCount
 		writeJSON(w, http.StatusOK, map[string]any{
-			"ready": ready, "renewal_pending": renewalPending, "handoff_generation": generation,
-			"handoff_timestamp": clock.ValidatorHandoffTimestamp, "handoff_attempt": clock.ValidatorHandoffAttempt,
-			"epoch_end_height": clock.EndHeight, "native_chain_id": clock.ValidatorHandoffNativeChainId,
-			"epoch": clock.CurrentEpoch, "old_validator_set_id": clock.ValidatorSetId,
+			"ready": ready, "resolved_domains": clock.ValidatorHandoffResolvedCount,
+			"domain_count": clock.ValidatorHandoffDomainCount, "handoff_generation": generation,
+			"handoff_timestamp": clock.ValidatorHandoffTimestamp,
+			"native_chain_id":   clock.ValidatorHandoffNativeChainId,
+			"epoch":             clock.CurrentEpoch, "old_validator_set_id": clock.ValidatorSetId,
 			"new_validator_set_id":      clock.ValidatorSetId + 1,
 			"frozen_roster_hash":        clock.ValidatorHandoffRosterHash,
 			"frozen_domain_set_hash":    clock.ValidatorHandoffDomainSetHash,
@@ -473,6 +367,13 @@ func (p *Plugin) secureRPCHandler(next http.Handler) http.Handler {
 		}
 		if !authenticated.allow(identity) {
 			http.Error(w, "rate limit exceeded", http.StatusTooManyRequests)
+			return
+		}
+		// Event streams have their own bounded subscriber pool. Holding a general
+		// query slot for the stream lifetime lets admission waiters starve the
+		// exact state reads that wake them up.
+		if r.URL.Path == "/v1/takusen/events" {
+			next.ServeHTTP(w, r)
 			return
 		}
 		// Event streams have their own bounded subscriber pool. Holding a general
@@ -1024,7 +925,7 @@ func (p *Plugin) rotationProofHandler() http.HandlerFunc {
 			writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
 			return
 		}
-		if len(index.Results) != 1 || len(index.Results[0].Entries) != 1 || len(index.Results[0].Entries[0].Value) == 0 {
+		if len(index.Results) != 1 || len(index.Results[0].Entries) != 1 {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "rotation proof not found"})
 			return
 		}
@@ -1056,7 +957,7 @@ func (p *Plugin) settlementDomainAuthorityProofHandler() http.HandlerFunc {
 			writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
 			return
 		}
-		if len(index.Results) != 1 || len(index.Results[0].Entries) != 1 || len(index.Results[0].Entries[0].Value) == 0 {
+		if len(index.Results) != 1 || len(index.Results[0].Entries) != 1 {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "settlement-domain authority proof not found"})
 			return
 		}

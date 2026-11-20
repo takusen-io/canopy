@@ -11,9 +11,7 @@ import (
 	"golang.org/x/crypto/sha3"
 )
 
-const handoffDomainLeafType = "ValidatorHandoffDomain(uint64 nativeChainId,uint64 epoch,uint64 oldSetId,uint64 newSetId,bytes32 frozenRosterHash,bytes32 frozenDomainSetHash,uint64 attempt,bytes32 handoffGeneration,uint64 handoffTimestamp,uint64 outgoingAuthorityCutoff,bytes32 settlementDomain,uint64 evmChainId,address verifier,uint64 rotationNonce,bytes32 validatorKeysHash,bytes32 validatorWeightsHash)"
-const handoffCancellationLeafType = "CancelValidatorHandoffDomain(uint64 nativeChainId,uint64 epoch,uint64 oldSetId,uint64 newSetId,bytes32 handoffGeneration,uint64 handoffTimestamp,bytes32 settlementDomain,uint64 evmChainId,address verifier,uint64 rotationNonce,bytes32 pendingValidatorSetHash)"
-const handoffRecoveryType = "AuthorizeValidatorHandoffRecovery(bytes32 handoffRoot,uint64 oldSetId,uint64 newSetId,bytes32 handoffGeneration,uint64 handoffTimestamp)"
+const handoffDomainLeafType = "ValidatorHandoffDomain(uint64 nativeChainId,uint64 epoch,uint64 oldSetId,uint64 newSetId,bytes32 frozenRosterHash,bytes32 frozenDomainSetHash,bytes32 handoffGeneration,uint64 handoffTimestamp,uint64 outgoingAuthorityCutoff,bytes32 settlementDomain,uint64 evmChainId,address verifier,uint64 rotationNonce,bytes32 validatorKeysHash,bytes32 validatorWeightsHash)"
 
 func keccakParts(parts ...[]byte) []byte {
 	hash := sha3.NewLegacyKeccak256()
@@ -141,33 +139,11 @@ func handoffLeafHash(manifest *ValidatorHandoffManifest, domain *ValidatorHandof
 		keccak256([]byte(handoffDomainLeafType)),
 		abiWordUint64(manifest.NativeChainId), abiWordUint64(manifest.Epoch),
 		abiWordUint64(manifest.OldValidatorSetId), abiWordUint64(manifest.NewValidatorSetId),
-		manifest.FrozenRosterHash, manifest.FrozenDomainSetHash, abiWordUint64(manifest.Attempt),
-		manifest.Generation, abiWordUint64(manifest.HandoffTimestamp),
+		manifest.FrozenRosterHash, manifest.FrozenDomainSetHash, manifest.Generation,
+		abiWordUint64(manifest.HandoffTimestamp),
 		abiWordUint64(manifest.OutgoingAuthorityCutoff), domain.SettlementDomainId,
 		abiWordUint64(domain.EvmChainId), abiWordBytes(domain.VerifierAddress),
 		abiWordUint64(domain.RotationNonce), domain.ValidatorKeysHash, domain.ValidatorWeightsHash,
-	)
-}
-
-func handoffCancellationLeafHash(manifest *ValidatorHandoffCancellationManifest, domain *ValidatorHandoffCancellationDomainManifest) []byte {
-	return keccakParts(
-		keccak256([]byte(handoffCancellationLeafType)), abiWordUint64(manifest.NativeChainId),
-		abiWordUint64(manifest.Epoch), abiWordUint64(manifest.OldValidatorSetId),
-		abiWordUint64(manifest.NewValidatorSetId), manifest.HandoffGeneration,
-		abiWordUint64(manifest.HandoffTimestamp), domain.SettlementDomainId,
-		abiWordUint64(domain.EvmChainId), abiWordBytes(domain.VerifierAddress),
-		abiWordUint64(domain.RotationNonce), domain.PendingValidatorSetHash,
-	)
-}
-
-func validatorHandoffRecoveryDigest(manifest *ValidatorHandoffManifest) []byte {
-	if manifest == nil || len(manifest.Root) != 32 || len(manifest.Generation) != 32 {
-		return nil
-	}
-	return keccakParts(
-		keccak256([]byte(handoffRecoveryType)), manifest.Root,
-		abiWordUint64(manifest.OldValidatorSetId), abiWordUint64(manifest.NewValidatorSetId),
-		manifest.Generation, abiWordUint64(manifest.HandoffTimestamp),
 	)
 }
 
@@ -218,16 +194,16 @@ func handoffMerkleProof(leaves [][]byte, position int) [][]byte {
 }
 
 func (c *Contract) buildValidatorHandoffManifest(clock *EpochClock, params *ProtocolParams, height uint64, encodedRoster []byte) (*ValidatorHandoffManifest, *PluginError) {
-	keysHash, weightsHash, pendingHash, err := c.evmRosterHashes(clock.CurrentEpoch+1, encodedRoster)
+	keysHash, weightsHash, scheduledHash, err := c.evmRosterHashes(clock.CurrentEpoch+1, encodedRoster)
 	if err != nil {
 		return nil, err
 	}
 	manifest := &ValidatorHandoffManifest{
 		CreatedHeight: height, NativeChainId: clock.ValidatorHandoffNativeChainId, Epoch: clock.CurrentEpoch,
 		OldValidatorSetId: clock.ValidatorSetId, NewValidatorSetId: clock.ValidatorSetId + 1,
-		FrozenRosterHash:    append([]byte(nil), clock.ValidatorHandoffRosterHash...),
-		FrozenDomainSetHash: append([]byte(nil), clock.ValidatorHandoffDomainSetHash...),
-		Attempt:             clock.ValidatorHandoffAttempt, Generation: validatorHandoffGeneration(clock),
+		FrozenRosterHash:        append([]byte(nil), clock.ValidatorHandoffRosterHash...),
+		FrozenDomainSetHash:     append([]byte(nil), clock.ValidatorHandoffDomainSetHash...),
+		Generation:              validatorHandoffGeneration(clock),
 		HandoffTimestamp:        clock.ValidatorHandoffTimestamp,
 		OutgoingAuthorityCutoff: clock.ValidatorHandoffOutgoingAuthorityCutoff,
 	}
@@ -270,7 +246,7 @@ func (c *Contract) buildValidatorHandoffManifest(clock *EpochClock, params *Prot
 			SettlementDomainId: append([]byte(nil), domainID...), EvmChainId: chainID,
 			VerifierAddress: verifier, RotationNonce: nonce,
 			ValidatorKeysHash: append([]byte(nil), keysHash...), ValidatorWeightsHash: append([]byte(nil), weightsHash...),
-			PendingValidatorSetHash: append([]byte(nil), pendingHash...),
+			ScheduledValidatorSetHash: append([]byte(nil), scheduledHash...),
 		})
 	}
 	sort.Slice(manifest.Domains, func(i, j int) bool {
@@ -279,31 +255,6 @@ func (c *Contract) buildValidatorHandoffManifest(clock *EpochClock, params *Prot
 	leaves := make([][]byte, len(manifest.Domains))
 	for index, domain := range manifest.Domains {
 		domain.LeafHash = handoffLeafHash(manifest, domain)
-		leaves[index] = domain.LeafHash
-	}
-	manifest.Root = handoffMerkleRoot(leaves)
-	return manifest, nil
-}
-
-func buildValidatorHandoffCancellationManifest(handoff *ValidatorHandoffManifest, height uint64) (*ValidatorHandoffCancellationManifest, *PluginError) {
-	if handoff == nil || len(handoff.Root) != 32 || len(handoff.Domains) == 0 {
-		return nil, ErrState("validator handoff cancellation is missing its canonical attempt")
-	}
-	manifest := &ValidatorHandoffCancellationManifest{
-		CreatedHeight: height, NativeChainId: handoff.NativeChainId, Epoch: handoff.Epoch,
-		OldValidatorSetId: handoff.OldValidatorSetId, NewValidatorSetId: handoff.NewValidatorSetId,
-		HandoffGeneration: append([]byte(nil), handoff.Generation...), HandoffTimestamp: handoff.HandoffTimestamp,
-	}
-	for _, domain := range handoff.Domains {
-		manifest.Domains = append(manifest.Domains, &ValidatorHandoffCancellationDomainManifest{
-			SettlementDomainId: append([]byte(nil), domain.SettlementDomainId...), EvmChainId: domain.EvmChainId,
-			VerifierAddress: append([]byte(nil), domain.VerifierAddress...), RotationNonce: domain.RotationNonce,
-			PendingValidatorSetHash: append([]byte(nil), domain.PendingValidatorSetHash...),
-		})
-	}
-	leaves := make([][]byte, len(manifest.Domains))
-	for index, domain := range manifest.Domains {
-		domain.LeafHash = handoffCancellationLeafHash(manifest, domain)
 		leaves[index] = domain.LeafHash
 	}
 	manifest.Root = handoffMerkleRoot(leaves)

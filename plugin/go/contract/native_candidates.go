@@ -10,7 +10,7 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-const emergencyDomainAbandonmentDelayEpochs uint64 = 168
+const emergencyDomainAbandonmentDelaySeconds uint64 = 7 * 24 * 60 * 60
 
 const (
 	// Leave capacity for validator-local finalized-EVM observations even when
@@ -150,27 +150,28 @@ func (c *Contract) nativeAuxiliaryCandidates(height uint64, params *ProtocolPara
 		intent := new(SettlementDomainLifecycleIntent)
 		if found, readErr := c.read(KeyForSettlementDomainLifecycleIntent(domain.Id), intent); readErr != nil {
 			return nil, readErr
-		} else if !found || intent.Action != "abandon" || intent.ExpiresAtEpoch < clock.CurrentEpoch {
+		} else if !found || intent.Action != "abandon" || intent.ExpiresAtTimestamp < clock.ConsensusTimeSeconds {
 			continue
 		}
 		deactivated := new(ReplayMarker)
-		if found, readErr := c.read(KeyForSettlementDomainDeactivationEpoch(domain.Id), deactivated); readErr != nil {
+		if found, readErr := c.read(KeyForSettlementDomainDeactivationTimestamp(domain.Id), deactivated); readErr != nil {
 			return nil, readErr
 		} else if !found {
 			continue
 		}
-		deactivationEpoch, valid := settlementDomainDeactivationEpoch(deactivated)
-		if !valid || clock.CurrentEpoch < deactivationEpoch || clock.CurrentEpoch-deactivationEpoch < emergencyDomainAbandonmentDelayEpochs {
+		deactivationTimestamp, valid := settlementDomainDeactivationTimestamp(deactivated)
+		if !valid || clock.ConsensusTimeSeconds < deactivationTimestamp ||
+			clock.ConsensusTimeSeconds-deactivationTimestamp < emergencyDomainAbandonmentDelaySeconds {
 			continue
 		}
 		message := &EVMControlEvidence{
 			ProofKind: "settlement-domain-abandonment", ValidatorSetId: clock.ValidatorSetId,
 			SettlementDomainId: append([]byte(nil), domain.Id...), HandoffGeneration: append([]byte(nil), intent.DeactivationGeneration...),
-			LifecycleIntentId: append([]byte(nil), intent.Id...), Epoch: deactivationEpoch, ControlBlockNumber: clock.CurrentEpoch,
+			LifecycleIntentId: append([]byte(nil), intent.Id...), Epoch: deactivationTimestamp, ControlBlockNumber: clock.ConsensusTimeSeconds,
 		}
 		message.Digest = hashFields(
 			[]byte("takusen:settlement-domain-abandonment"), domain.Id, uint64Bytes(clock.ValidatorSetId),
-			intent.DeactivationGeneration, intent.Id, uint64Bytes(deactivationEpoch), uint64Bytes(clock.CurrentEpoch),
+			intent.DeactivationGeneration, intent.Id, uint64Bytes(deactivationTimestamp), uint64Bytes(clock.ConsensusTimeSeconds),
 		)
 		message.ProofId = quorumProofID(message.ProofKind, message.ValidatorSetId, message.Digest)
 		payload, marshalErr := Marshal(message)
@@ -187,7 +188,7 @@ func (c *Contract) nativeAuxiliaryCandidates(height uint64, params *ProtocolPara
 		intent := new(SettlementDomainLifecycleIntent)
 		if found, readErr := c.read(KeyForSettlementDomainLifecycleIntent(domain.Id), intent); readErr != nil {
 			return nil, readErr
-		} else if !found || intent.ExpiresAtEpoch < clock.CurrentEpoch || intent.Action != "retire" && intent.Action != "cancel" {
+		} else if !found || intent.ExpiresAtTimestamp < clock.ConsensusTimeSeconds || intent.Action != "retire" && intent.Action != "cancel" {
 			continue
 		}
 		readinessKind, authorizationKind := "settlement-domain-retirement-readiness", "settlement-domain-retirement-action"
@@ -327,7 +328,7 @@ func (c *Contract) applyNativeAuxiliaryCertificate(height uint64, candidate *Aux
 		}
 		clock, clockErr := c.currentEpochClock(params)
 		if readErr != nil || !found || readinessErr != nil || !foundReadiness || clockErr != nil ||
-			intent.Action != expectedAction || intent.ExpiresAtEpoch < clock.CurrentEpoch || message.HandoffTimestamp <= clock.ConsensusTimeSeconds ||
+			intent.Action != expectedAction || intent.ExpiresAtTimestamp < clock.ConsensusTimeSeconds || message.HandoffTimestamp <= clock.ConsensusTimeSeconds ||
 			readiness.RotationNonce != message.RotationNonce || !bytes.Equal(readiness.Digest, message.Digest) ||
 			!bytes.Equal(intent.Id, message.LifecycleIntentId) || !bytes.Equal(intent.DeactivationGeneration, message.HandoffGeneration) {
 			return false
@@ -343,21 +344,6 @@ func (c *Contract) applyNativeAuxiliaryCertificate(height uint64, candidate *Aux
 		proof.LifecycleIntentId = append([]byte(nil), message.LifecycleIntentId...)
 		records[string(KeyForQuorumProof(proof.ProofId))] = proof
 		return true
-	case "validator-handoff-recovery":
-		clock, clockErr := c.currentEpochClockFromState()
-		if clockErr != nil || clock == nil {
-			return false
-		}
-		manifest := new(ValidatorHandoffManifest)
-		found, manifestErr := c.read(KeyForValidatorHandoffManifest(), manifest)
-		forward, forwardErr := c.validatorHandoffForwardReady(clock)
-		expected := handoffRecoveryAuxiliaryCandidate(manifest)
-		if manifestErr != nil || !found || forwardErr != nil || !forward ||
-			certificate.ValidatorSetId != clock.ValidatorSetId || !clock.ValidatorHandoffCancelling ||
-			expected == nil || candidate.Kind != expected.Kind || !bytes.Equal(candidate.Key, expected.Key) ||
-			!bytes.Equal(candidate.Digest, expected.Digest) || !bytes.Equal(candidate.Payload, expected.Payload) {
-			return false
-		}
 	default:
 		return true
 	}
@@ -376,15 +362,16 @@ func (c *Contract) persistCertifiedNativeAbandonment(height uint64, message *EVM
 	intent := new(SettlementDomainLifecycleIntent)
 	foundIntent, intentErr := c.read(KeyForSettlementDomainLifecycleIntent(message.SettlementDomainId), intent)
 	deactivated := new(ReplayMarker)
-	foundDeactivation, deactivationErr := c.read(KeyForSettlementDomainDeactivationEpoch(message.SettlementDomainId), deactivated)
-	deactivationEpoch, validEpoch := settlementDomainDeactivationEpoch(deactivated)
+	foundDeactivation, deactivationErr := c.read(KeyForSettlementDomainDeactivationTimestamp(message.SettlementDomainId), deactivated)
+	deactivationTimestamp, validTimestamp := settlementDomainDeactivationTimestamp(deactivated)
 	if domainErr != nil || domain.Active || clockErr != nil || intentErr != nil || !foundIntent || deactivationErr != nil || !foundDeactivation ||
-		intent.Action != "abandon" || intent.ExpiresAtEpoch < clock.CurrentEpoch || !validEpoch || message.Epoch != deactivationEpoch ||
-		clock.CurrentEpoch != message.ControlBlockNumber || clock.CurrentEpoch < deactivationEpoch || clock.CurrentEpoch-deactivationEpoch < emergencyDomainAbandonmentDelayEpochs ||
+		intent.Action != "abandon" || intent.ExpiresAtTimestamp < clock.ConsensusTimeSeconds || !validTimestamp || message.Epoch != deactivationTimestamp ||
+		clock.ConsensusTimeSeconds != message.ControlBlockNumber || clock.ConsensusTimeSeconds < deactivationTimestamp ||
+		clock.ConsensusTimeSeconds-deactivationTimestamp < emergencyDomainAbandonmentDelaySeconds ||
 		!bytes.Equal(intent.Id, message.LifecycleIntentId) || !bytes.Equal(intent.DeactivationGeneration, message.HandoffGeneration) {
 		return false
 	}
-	expected := hashFields([]byte("takusen:settlement-domain-abandonment"), message.SettlementDomainId, uint64Bytes(clock.ValidatorSetId), message.HandoffGeneration, message.LifecycleIntentId, uint64Bytes(deactivationEpoch), uint64Bytes(clock.CurrentEpoch))
+	expected := hashFields([]byte("takusen:settlement-domain-abandonment"), message.SettlementDomainId, uint64Bytes(clock.ValidatorSetId), message.HandoffGeneration, message.LifecycleIntentId, uint64Bytes(deactivationTimestamp), uint64Bytes(clock.ConsensusTimeSeconds))
 	if !bytes.Equal(expected, candidateDigest(message)) {
 		return false
 	}
@@ -397,6 +384,11 @@ func (c *Contract) persistCertifiedNativeAbandonment(height uint64, message *EVM
 		LifecycleIntentId: append([]byte(nil), message.LifecycleIntentId...), ControlBlockNumber: message.ControlBlockNumber,
 	}
 	records[string(KeyForSettlementDomainRetirement(message.SettlementDomainId))] = &ReplayMarker{Id: proofID}
+	if clock.ValidatorHandoffPrepared && handoffIncludesDomain(clock, message.SettlementDomainId) {
+		if c.markValidatorHandoffResolved(clock, message.SettlementDomainId, proofID, records) != nil {
+			return false
+		}
+	}
 	return true
 }
 
@@ -469,7 +461,7 @@ func (c *Contract) applyEVMObservationCertificate(height uint64, candidate *Auxi
 		}
 		claim := hashFields(reference.SettlementTxHash)
 		return apply(settlementReferenceSubject(reference), claim, func() *PluginDeliverResponse { return c.deliverFinalizeRequestsConsensus(height, message) })
-	case "validator-set-rotation-queued", "validator-set-rotation-caught-up", "validator-set-rotation-forward", "validator-set-rotation-cancelled", "validator-set-rotation-absent",
+	case "validator-set-rotation-queued",
 		"settlement-domain-authority", "settlement-domain-retirement-readiness", "settlement-domain-retirement-cancellation-readiness",
 		"settlement-domain-retirement-cancelled", "settlement-domain-retired":
 		message := new(EVMControlEvidence)
@@ -546,7 +538,8 @@ func (c *Contract) finalizationsForSettlementReference(reference *MessageFinaliz
 }
 
 func (c *Contract) persistCertifiedEVMControlEvidence(height uint64, message *EVMControlEvidence, certificate *ConsensusCertificate, records map[string]proto.Message) bool {
-	if message.ProofKind == "validator-set-rotation-queued" || message.ProofKind == "validator-set-rotation-caught-up" || message.ProofKind == "validator-set-rotation-forward" || message.ProofKind == "validator-set-rotation-cancelled" || message.ProofKind == "validator-set-rotation-absent" {
+	var handoffClock *EpochClock
+	if message.ProofKind == "validator-set-rotation-queued" {
 		clock, err := c.currentEpochClockFromState()
 		if err != nil || !clock.ValidatorHandoffPrepared || !handoffIncludesDomain(clock, message.SettlementDomainId) ||
 			message.ValidatorSetId != clock.ValidatorSetId || message.NewValidatorSetId != clock.ValidatorSetId+1 {
@@ -555,16 +548,7 @@ func (c *Contract) persistCertifiedEVMControlEvidence(height uint64, message *EV
 		if !bytes.Equal(message.HandoffGeneration, validatorHandoffGeneration(clock)) || message.HandoffTimestamp != clock.ValidatorHandoffTimestamp {
 			return false
 		}
-		if (message.ProofKind == "validator-set-rotation-caught-up" || message.ProofKind == "validator-set-rotation-forward") &&
-			(message.ControlBlockNumber == 0 || len(message.ControlBlockHash) != 32) {
-			return false
-		}
-		if (message.ProofKind == "validator-set-rotation-cancelled" || message.ProofKind == "validator-set-rotation-absent") && !clock.ValidatorHandoffCancelling {
-			return false
-		}
-		if message.ProofKind == "validator-set-rotation-forward" && !clock.ValidatorHandoffCancelling {
-			return false
-		}
+		handoffClock = clock
 	}
 	if message.ProofKind == "settlement-domain-retirement-readiness" || message.ProofKind == "settlement-domain-retirement-cancellation-readiness" {
 		params, err := c.currentProtocolParams()
@@ -580,7 +564,7 @@ func (c *Contract) persistCertifiedEVMControlEvidence(height uint64, message *EV
 			expectedAction = "cancel"
 		}
 		if clockErr != nil || domainErr != nil || domain.Active || intentErr != nil || !found ||
-			intent.Action != expectedAction || intent.ExpiresAtEpoch < clock.CurrentEpoch || message.RotationNonce == 0 ||
+			intent.Action != expectedAction || intent.ExpiresAtTimestamp < clock.ConsensusTimeSeconds || message.RotationNonce == 0 ||
 			message.HandoffTimestamp == 0 || message.ControlBlockNumber == 0 || len(message.ControlBlockHash) != 32 ||
 			!bytes.Equal(intent.Id, message.LifecycleIntentId) || !bytes.Equal(intent.DeactivationGeneration, message.HandoffGeneration) {
 			return false
@@ -624,7 +608,7 @@ func (c *Contract) persistCertifiedEVMControlEvidence(height uint64, message *EV
 		HandoffTimestamp: message.HandoffTimestamp, ControlBlockNumber: message.ControlBlockNumber,
 		ControlBlockHash: append([]byte(nil), message.ControlBlockHash...), LifecycleIntentId: append([]byte(nil), message.LifecycleIntentId...),
 	}
-	if (message.ProofKind == "validator-set-rotation-queued" || message.ProofKind == "validator-set-rotation-caught-up" || message.ProofKind == "validator-set-rotation-forward" || message.ProofKind == "validator-set-rotation-cancelled") &&
+	if message.ProofKind == "validator-set-rotation-queued" &&
 		!c.stageDomainRotationNonce(message.SettlementDomainId, message.RotationNonce, records) {
 		return false
 	}
@@ -632,12 +616,9 @@ func (c *Contract) persistCertifiedEVMControlEvidence(height uint64, message *EV
 	switch message.ProofKind {
 	case "validator-set-rotation-queued":
 		records[string(KeyForQueuedRotationIndex(message.SettlementDomainId, message.ValidatorSetId, message.NewValidatorSetId))] = &ReplayMarker{Id: proofID}
-	case "validator-set-rotation-caught-up":
-		records[string(KeyForCaughtUpRotationIndex(message.SettlementDomainId, message.ValidatorSetId, message.NewValidatorSetId))] = &ReplayMarker{Id: proofID}
-	case "validator-set-rotation-forward":
-		records[string(KeyForRotationForwardIndex(message.SettlementDomainId, message.ValidatorSetId, message.NewValidatorSetId))] = &ReplayMarker{Id: proofID}
-	case "validator-set-rotation-cancelled", "validator-set-rotation-absent":
-		records[string(KeyForRotationResolutionIndex(message.SettlementDomainId, message.ValidatorSetId, message.NewValidatorSetId))] = &ReplayMarker{Id: proofID}
+		if c.markValidatorHandoffResolved(handoffClock, message.SettlementDomainId, proofID, records) != nil {
+			return false
+		}
 	case "settlement-domain-authority":
 		records[string(KeyForSettlementDomainAuthority(message.SettlementDomainId, message.ValidatorSetId))] = &ReplayMarker{Id: proofID}
 	case "settlement-domain-retirement-readiness", "settlement-domain-retirement-cancellation-readiness":

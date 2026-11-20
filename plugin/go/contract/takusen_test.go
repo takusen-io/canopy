@@ -274,17 +274,6 @@ func TestGovernedParamsRejectUnsafeValues(t *testing.T) {
 	if err := validateProtocolParams(excessiveMarkup); err == nil {
 		t.Fatal("accepted foundation markup above the safety ceiling")
 	}
-	invalidQuorum := proto.Clone(valid).(*ProtocolParams)
-	invalidQuorum.QuorumNumerator = 3
-	invalidQuorum.QuorumDenominator = 5
-	if err := validateProtocolParams(invalidQuorum); err == nil {
-		t.Fatal("accepted a quorum threshold below two thirds")
-	}
-	impossibleQuorum := proto.Clone(valid).(*ProtocolParams)
-	impossibleQuorum.QuorumNumerator = impossibleQuorum.QuorumDenominator
-	if err := validateProtocolParams(impossibleQuorum); err == nil {
-		t.Fatal("accepted an unreachable quorum threshold")
-	}
 	missingValidatorBond := proto.Clone(valid).(*ProtocolParams)
 	missingValidatorBond.MinimumValidatorBond = 0
 	if err := validateProtocolParams(missingValidatorBond); err == nil {
@@ -340,7 +329,7 @@ func TestGovernedParamsRejectUnsafeValues(t *testing.T) {
 
 func TestBridgeReleaseDigestMatchesSolidityABI(t *testing.T) {
 	params := &ProtocolParams{
-		CanonicalChainId: 8453, CanonicalBridgeAddress: bytes.Repeat([]byte{0x11}, 20), ValidatorSetId: 7,
+		CanonicalChainId: 8453, CanonicalBridgeAddress: bytes.Repeat([]byte{0x11}, 20),
 	}
 	digest := bridgeReleaseDigest(params, 7, 9, bytes.Repeat([]byte{0x22}, 20), 123, bytes.Repeat([]byte{0xaa}, 32))
 	if got := "0x" + hex.EncodeToString(digest); got != "0xf1ef0fcefcc4b5d2851b9809469bb86c326fc5bf2a8e8d6850e40fc99fb17981" {
@@ -350,7 +339,7 @@ func TestBridgeReleaseDigestMatchesSolidityABI(t *testing.T) {
 
 func TestEpochAuthorizationDigestMatchesSolidityABI(t *testing.T) {
 	params := &ProtocolParams{
-		CanonicalChainId: 8453, CanonicalTokenAddress: bytes.Repeat([]byte{0x44}, 20), ValidatorSetId: 7,
+		CanonicalChainId: 8453, CanonicalTokenAddress: bytes.Repeat([]byte{0x44}, 20),
 	}
 	digest := epochAuthorizationDigest(params, 7, 5, [][]byte{bytes.Repeat([]byte{0x22}, 20), bytes.Repeat([]byte{0x33}, 20)}, []uint64{100, 20})
 	if got := "0x" + hex.EncodeToString(digest); got != "0xcaa7c62240f7b95ba96771c2493180ebe65a7240d8e7010e1b6a977c757239c5" {

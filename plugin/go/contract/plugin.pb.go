@@ -480,20 +480,20 @@ type PluginConfig struct {
 	// supported_transactions: a list of custom transaction names that are supported (order must match transaction_type_urls)
 	SupportedTransactions []string `protobuf:"bytes,4,rep,name=supported_transactions,json=supportedTransactions,proto3" json:"supported_transactions,omitempty"`
 	// file_descriptor_protos: serialized FileDescriptorProto bytes
-	FileDescriptorProtos [][]byte `protobuf:"bytes,5,rep,name=file_descriptor_protos,json=fileDescriptorProtos,proto3" json:"fileDescriptorProtos"` // @gotags: json:"fileDescriptorProtos"
+	FileDescriptorProtos [][]byte `protobuf:"bytes,5,rep,name=file_descriptor_protos,json=fileDescriptorProtos,proto3" json:"file_descriptor_protos,omitempty"` // @gotags: json:"fileDescriptorProtos"
 	// transaction_type_urls: protobuf type URLs for transaction messages (aligned by index with supported_transactions)
-	TransactionTypeUrls []string `protobuf:"bytes,6,rep,name=transaction_type_urls,json=transactionTypeUrls,proto3" json:"transactionTypeUrls"` // @gotags: json:"transactionTypeUrls"
+	TransactionTypeUrls []string `protobuf:"bytes,6,rep,name=transaction_type_urls,json=transactionTypeUrls,proto3" json:"transaction_type_urls,omitempty"` // @gotags: json:"transactionTypeUrls"
 	// event_type_urls: protobuf type URLs for event messages
-	EventTypeUrls []string `protobuf:"bytes,7,rep,name=event_type_urls,json=eventTypeUrls,proto3" json:"eventTypeUrls"` // @gotags: json:"eventTypeUrls"
+	EventTypeUrls []string `protobuf:"bytes,7,rep,name=event_type_urls,json=eventTypeUrls,proto3" json:"event_type_urls,omitempty"` // @gotags: json:"eventTypeUrls"
 	// custom_state_prefixes: the store key prefixes the plugin owns for its custom records (each entry
 	// is the raw prefix bytes, e.g. [100] for faucet). Canopy panics at handshake if any collides with
 	// a core-reserved prefix (1-16), preventing silent state corruption from colliding keyspaces.
-	CustomStatePrefixes [][]byte `protobuf:"bytes,8,rep,name=custom_state_prefixes,json=customStatePrefixes,proto3" json:"customStatePrefixes"` // @gotags: json:"customStatePrefixes"
+	CustomStatePrefixes [][]byte `protobuf:"bytes,8,rep,name=custom_state_prefixes,json=customStatePrefixes,proto3" json:"custom_state_prefixes,omitempty"` // @gotags: json:"customStatePrefixes"
 	// validator_set_epochs: when true, the plugin controls validator-set epoch boundaries.
-	ValidatorSetEpochs bool `protobuf:"varint,9,opt,name=validator_set_epochs,json=validatorSetEpochs,proto3" json:"validatorSetEpochs"` // @gotags: json:"validatorSetEpochs"
+	ValidatorSetEpochs bool `protobuf:"varint,9,opt,name=validator_set_epochs,json=validatorSetEpochs,proto3" json:"validator_set_epochs,omitempty"` // @gotags: json:"validatorSetEpochs"
 	// governance_parameter_spaces: standard Canopy MessageChangeParameter spaces
 	// delegated to this plugin after the native proposal lifecycle approves them.
-	GovernanceParameterSpaces []string `protobuf:"bytes,10,rep,name=governance_parameter_spaces,json=governanceParameterSpaces,proto3" json:"governanceParameterSpaces"` // @gotags: json:"governanceParameterSpaces"
+	GovernanceParameterSpaces []string `protobuf:"bytes,10,rep,name=governance_parameter_spaces,json=governanceParameterSpaces,proto3" json:"governance_parameter_spaces,omitempty"` // @gotags: json:"governanceParameterSpaces"
 	unknownFields             protoimpl.UnknownFields
 	sizeCache                 protoimpl.SizeCache
 }
@@ -1106,7 +1106,7 @@ func (x *PluginCheckRequest) GetHeight() uint64 {
 type PluginCheckResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// authorized_signers: addresses who are authorized to sign the transaction
-	AuthorizedSigners [][]byte `protobuf:"bytes,1,rep,name=authorized_signers,json=authorizedSigners,proto3" json:"authorizedSigners"` // @gotags: json:"authorizedSigners"
+	AuthorizedSigners [][]byte `protobuf:"bytes,1,rep,name=authorized_signers,json=authorizedSigners,proto3" json:"authorized_signers,omitempty"` // @gotags: json:"authorizedSigners"
 	// recipient: address of the recipient of the transaction (nil if not applicable)
 	Recipient []byte `protobuf:"bytes,2,opt,name=recipient,proto3" json:"recipient,omitempty"`
 	// error: an error occurred when checking the transaction
@@ -1314,7 +1314,7 @@ type PluginEndRequest struct {
 	ProposerAddress []byte                 `protobuf:"bytes,2,opt,name=proposer_address,json=proposerAddress,proto3" json:"proposer_address,omitempty"`
 	TimeMicros      uint64                 `protobuf:"varint,3,opt,name=time_micros,json=timeMicros,proto3" json:"time_micros,omitempty"`
 	// next_validator_set is the exact candidate committee derived by core from
-	// end-block state. The plugin consumes it only at the nominal boundary.
+	// end-block state. The plugin consumes it at the epoch's roster-freeze time.
 	NextValidatorSet []byte `protobuf:"bytes,4,opt,name=next_validator_set,json=nextValidatorSet,proto3" json:"next_validator_set,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
@@ -1383,12 +1383,12 @@ type PluginEndResponse struct {
 	state  protoimpl.MessageState `protogen:"open.v1"`
 	Events []*Event               `protobuf:"bytes,1,rep,name=events,proto3" json:"events,omitempty"`
 	// validator_set_epoch_end: the current block is the final block of the governed validator-set epoch.
-	ValidatorSetEpochEnd bool `protobuf:"varint,2,opt,name=validator_set_epoch_end,json=validatorSetEpochEnd,proto3" json:"validatorSetEpochEnd"` // @gotags: json:"validatorSetEpochEnd"
+	ValidatorSetEpochEnd bool `protobuf:"varint,2,opt,name=validator_set_epoch_end,json=validatorSetEpochEnd,proto3" json:"validator_set_epoch_end,omitempty"` // @gotags: json:"validatorSetEpochEnd"
 	// validator_set_epoch_prepare freezes the next core committee atomically at
-	// the nominal boundary while the current committee remains authoritative.
-	ValidatorSetEpochPrepare   bool                  `protobuf:"varint,3,opt,name=validator_set_epoch_prepare,json=validatorSetEpochPrepare,proto3" json:"validatorSetEpochPrepare"`      // @gotags: json:"validatorSetEpochPrepare"
-	AuxiliaryCandidates        []*AuxiliaryCandidate `protobuf:"bytes,4,rep,name=auxiliary_candidates,json=auxiliaryCandidates,proto3" json:"auxiliaryCandidates,omitempty"`              // @gotags: json:"auxiliaryCandidates,omitempty"
-	ReplaceAuxiliaryCandidates bool                  `protobuf:"varint,5,opt,name=replace_auxiliary_candidates,json=replaceAuxiliaryCandidates,proto3" json:"replaceAuxiliaryCandidates"` // @gotags: json:"replaceAuxiliaryCandidates"
+	// S + 1,200 seconds while the current committee remains authoritative.
+	ValidatorSetEpochPrepare   bool                  `protobuf:"varint,3,opt,name=validator_set_epoch_prepare,json=validatorSetEpochPrepare,proto3" json:"validator_set_epoch_prepare,omitempty"`     // @gotags: json:"validatorSetEpochPrepare"
+	AuxiliaryCandidates        []*AuxiliaryCandidate `protobuf:"bytes,4,rep,name=auxiliary_candidates,json=auxiliaryCandidates,proto3" json:"auxiliary_candidates,omitempty"`                         // @gotags: json:"auxiliaryCandidates,omitempty"
+	ReplaceAuxiliaryCandidates bool                  `protobuf:"varint,5,opt,name=replace_auxiliary_candidates,json=replaceAuxiliaryCandidates,proto3" json:"replace_auxiliary_candidates,omitempty"` // @gotags: json:"replaceAuxiliaryCandidates"
 	Error                      *PluginError          `protobuf:"bytes,99,opt,name=error,proto3" json:"error,omitempty"`
 	unknownFields              protoimpl.UnknownFields
 	sizeCache                  protoimpl.SizeCache
@@ -1696,7 +1696,7 @@ func (x *PluginStateReadRequest) GetRanges() []*PluginRangeRead {
 type PluginKeyRead struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// query_id to correlate requests and responses
-	QueryId uint64 `protobuf:"varint,1,opt,name=query_id,json=queryId,proto3" json:"queryId"` // @gotags: json:"queryId"
+	QueryId uint64 `protobuf:"varint,1,opt,name=query_id,json=queryId,proto3" json:"query_id,omitempty"` // @gotags: json:"queryId"
 	// key to read from state
 	Key           []byte `protobuf:"bytes,2,opt,name=key,proto3" json:"key,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -1751,7 +1751,7 @@ func (x *PluginKeyRead) GetKey() []byte {
 type PluginRangeRead struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// query_id to correlate requests and responses
-	QueryId uint64 `protobuf:"varint,1,opt,name=query_id,json=queryId,proto3" json:"queryId"` // @gotags: json:"queryId"
+	QueryId uint64 `protobuf:"varint,1,opt,name=query_id,json=queryId,proto3" json:"query_id,omitempty"` // @gotags: json:"queryId"
 	// prefix: the prefix to iterate over
 	Prefix []byte `protobuf:"bytes,2,opt,name=prefix,proto3" json:"prefix,omitempty"`
 	// limit: maximum number of entries to return
@@ -1760,7 +1760,7 @@ type PluginRangeRead struct {
 	Reverse bool `protobuf:"varint,4,opt,name=reverse,proto3" json:"reverse,omitempty"`
 	// start_after resumes strictly after this full state key in the requested
 	// direction. It must belong to the same prefix.
-	StartAfter    []byte `protobuf:"bytes,5,opt,name=start_after,json=startAfter,proto3" json:"startAfter"` // @gotags: json:"startAfter"
+	StartAfter    []byte `protobuf:"bytes,5,opt,name=start_after,json=startAfter,proto3" json:"start_after,omitempty"` // @gotags: json:"startAfter"
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1889,7 +1889,7 @@ func (x *PluginStateReadResponse) GetError() *PluginError {
 type PluginReadResult struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// query_id: matching the original read request
-	QueryId uint64 `protobuf:"varint,1,opt,name=query_id,json=queryId,proto3" json:"queryId"` // @gotags: json:"queryId"
+	QueryId uint64 `protobuf:"varint,1,opt,name=query_id,json=queryId,proto3" json:"query_id,omitempty"` // @gotags: json:"queryId"
 	// entries: returned for this query
 	Entries       []*PluginStateEntry `protobuf:"bytes,2,rep,name=entries,proto3" json:"entries,omitempty"`
 	unknownFields protoimpl.UnknownFields

@@ -23,7 +23,7 @@ import (
 var nitroFixtureTime = time.Unix(1_800_000_000, 0).UTC()
 
 type nitroFixture struct {
-	message *MessageManageServicer
+	message *MessageRegisterServicer
 	rootDER []byte
 	pcr0    []byte
 	pcr1    []byte
@@ -40,9 +40,9 @@ func newNitroFixture(t *testing.T, attestedAt time.Time, owner []byte) nitroFixt
 	userData := registrationUserData(owner)
 	keyDigest := sha256.Sum256(publicKey)
 	params := defaultProtocolParams()
-	message := &MessageManageServicer{
+	message := &MessageRegisterServicer{
 		OwnerAddress: owner, TeeKeyId: "ed25519:" + hex.EncodeToString(keyDigest[:]), PublicKey: publicKey,
-		Nonce: nonce, UserData: userData, EvmPayoutAddress: append([]byte(nil), owner...), Models: []string{"model"}, Bond: params.MinimumServicerBond, Active: true,
+		Nonce: nonce, UserData: userData, EvmPayoutAddress: append([]byte(nil), owner...), Models: []string{"model"}, Bond: params.MinimumServicerBond,
 	}
 	registrationDigest := sha256.New()
 	_, _ = registrationDigest.Write([]byte("takusen:nitro-registration\x00"))
@@ -153,10 +153,10 @@ func TestRegisterServicerAtomicallyValidatesEvidenceBondsAndActivates(t *testing
 	store.put(t, KeyForProtocolParams(), params)
 	store.put(t, KeyForAccount(owner), &Account{Address: owner, Amount: 100})
 	blockMicros := uint64(nitroFixtureTime.Add(time.Minute).UnixMicro())
-	if signer, err := checkManageServicer(fixture.message); err != nil || !bytes.Equal(signer, owner) {
+	if signer, err := checkRegisterServicer(fixture.message); err != nil || !bytes.Equal(signer, owner) {
 		t.Fatalf("registration check signer=%x err=%v", signer, err)
 	}
-	if response := contract.deliverManageServicer(10, blockMicros, fixture.message); response.Error != nil {
+	if response := contract.deliverRegisterServicer(10, blockMicros, fixture.message); response.Error != nil {
 		t.Fatal(response.Error)
 	}
 	if _, found := store.values[string(KeyForEnclave(fixture.message.TeeKeyId))]; !found {
@@ -272,7 +272,7 @@ func TestRegisterServicerRejectsMalformedStaleFutureRootPCRAndBindings(t *testin
 	}
 	wrongOwner := *valid.message
 	wrongOwner.OwnerAddress = bytes.Repeat([]byte{8}, 20)
-	if _, err := checkManageServicer(&wrongOwner); err == nil {
+	if _, err := checkRegisterServicer(&wrongOwner); err == nil {
 		t.Fatal("owner-bound user data was accepted for another owner")
 	}
 	otherPublic, otherPrivate, err := ed25519.GenerateKey(rand.Reader)
@@ -297,12 +297,12 @@ func TestRegisterServicerRejectsMalformedStaleFutureRootPCRAndBindings(t *testin
 	contract, store, _, _ := newMemoryContract(t)
 	store.put(t, KeyForProtocolParams(), params)
 	store.put(t, KeyForAccount(owner), &Account{Address: owner, Amount: valid.message.Bond})
-	if response := contract.deliverManageServicer(10, blockMicros, valid.message); response.Error == nil {
+	if response := contract.deliverRegisterServicer(10, blockMicros, valid.message); response.Error == nil {
 		t.Fatal("registration with an unapproved PCR tuple was accepted")
 	}
 	oversized := *valid.message
 	oversized.AttestationDocument = make([]byte, maxNitroAttestationSize+1)
-	if _, err := checkManageServicer(&oversized); err == nil {
+	if _, err := checkRegisterServicer(&oversized); err == nil {
 		t.Fatal("oversized evidence was accepted")
 	}
 }
@@ -317,10 +317,10 @@ func TestRegisterServicerHistoricalReplayIsDeterministic(t *testing.T) {
 	firstStore.put(t, KeyForAccount(owner), &Account{Address: owner, Amount: fixture.message.Bond})
 	secondStore.put(t, KeyForAccount(owner), &Account{Address: owner, Amount: fixture.message.Bond})
 	blockMicros := uint64(nitroFixtureTime.Add(time.Minute).UnixMicro())
-	if response := first.deliverManageServicer(77, blockMicros, fixture.message); response.Error != nil {
+	if response := first.deliverRegisterServicer(77, blockMicros, fixture.message); response.Error != nil {
 		t.Fatal(response.Error)
 	}
-	if response := second.deliverManageServicer(77, blockMicros, fixture.message); response.Error != nil {
+	if response := second.deliverRegisterServicer(77, blockMicros, fixture.message); response.Error != nil {
 		t.Fatal(response.Error)
 	}
 	key := string(KeyForEnclave(fixture.message.TeeKeyId))
@@ -333,7 +333,7 @@ func TestRegisterServicerFailsClosedWithoutGovernedVerificationState(t *testing.
 	contract, store, owner, _ := newMemoryContract(t)
 	fixture := newNitroFixture(t, nitroFixtureTime, owner)
 	delete(store.values, string(KeyForProtocolParams()))
-	if response := contract.deliverManageServicer(10, uint64(nitroFixtureTime.UnixMicro()), fixture.message); response.Error == nil {
+	if response := contract.deliverRegisterServicer(10, uint64(nitroFixtureTime.UnixMicro()), fixture.message); response.Error == nil {
 		t.Fatal("registration was accepted without governed Nitro root and PCR state")
 	}
 }

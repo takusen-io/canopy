@@ -128,12 +128,8 @@ func (c *Contract) observe(kind byte, subject, claim, observer []byte, height ui
 		}
 		observedStake.Add(observedStake, new(big.Int).SetUint64(observation.ObserverWeight))
 	}
-	params, paramsErr := c.currentProtocolParams()
-	if paramsErr != nil {
-		return nil, false, paramsErr
-	}
-	left := new(big.Int).Mul(observedStake, new(big.Int).SetUint64(uint64(params.QuorumDenominator)))
-	right := new(big.Int).Mul(new(big.Int).SetUint64(snapshot.totalStake), new(big.Int).SetUint64(uint64(params.QuorumNumerator)))
+	left := new(big.Int).Mul(observedStake, big.NewInt(3))
+	right := new(big.Int).Mul(new(big.Int).SetUint64(snapshot.totalStake), big.NewInt(2))
 	return &Observation{
 		SubjectHash: subject, ObserverAddress: observer, ObservedHeight: height, ClaimHash: claim,
 		ValidatorSetId: snapshot.validatorSetID, ObserverWeight: observerValidator.StakedAmount,

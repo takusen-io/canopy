@@ -221,17 +221,17 @@ func TestTakusenConsensusE2E(t *testing.T) {
 			!bytes.Equal(userData, expectedUserData) || !ed25519.Verify(publicKey, registration.Sum(nil), proof) {
 			t.Fatal("TAKUSEN_E2E_REGISTRATION_BUNDLE is invalid or does not bind the fixture owner and enclave key")
 		}
-		message := &contract.MessageManageServicer{
+		message := &contract.MessageRegisterServicer{
 			OwnerAddress: mustHex(t, localValidatorOneAddress), TeeKeyId: teeKeyID, PublicKey: publicKey,
 			Nonce: nonce, UserData: userData, ProofSignature: proof, AttestationDocument: attestation,
-			EvmPayoutAddress: mustHex(t, localValidatorOneAddress), Models: models, Bond: 100_000, Active: true,
+			EvmPayoutAddress: mustHex(t, localValidatorOneAddress), Models: models, Bond: 100_000,
 		}
 		fields := map[string]any{
 			"ownerAddress": localValidatorOneAddress, "teeKeyId": teeKeyID, "publicKey": hex.EncodeToString(publicKey),
 			"nonce": hex.EncodeToString(nonce), "userData": hex.EncodeToString(userData), "proofSignature": hex.EncodeToString(proof),
-			"attestationDocument": hex.EncodeToString(attestation), "evmPayoutAddress": localValidatorOneAddress, "models": models, "bond": message.Bond, "active": true,
+			"attestationDocument": hex.EncodeToString(attestation), "evmPayoutAddress": localValidatorOneAddress, "models": models, "bond": message.Bond,
 		}
-		submit(t, ctx, rpcURL, validatorOne, contract.MessageManageServicerName, message, fields)
+		submit(t, ctx, rpcURL, validatorOne, contract.MessageRegisterServicerName, message, fields)
 		waitStatus(t, ctx, pluginURL+"/v1/takusen/servicers", func(body []byte) bool { return containsServicer(body, localValidatorOneAddress) })
 	}
 
@@ -326,7 +326,7 @@ func TestTakusenConsensusE2E(t *testing.T) {
 	execution := &contract.ExecutionSubmission{ReceiptJson: canonical, Signature: receiptSignature}
 	executionBatch := &contract.MessageSubmitExecutions{
 		ServicerAddress: mustHex(t, localValidatorOneAddress),
-		Executions: []*contract.ExecutionSubmission{execution},
+		Executions:      []*contract.ExecutionSubmission{execution},
 	}
 	executionFields := map[string]any{
 		"servicerAddress": localValidatorOneAddress,
@@ -355,10 +355,10 @@ func TestTakusenConsensusE2E(t *testing.T) {
 	bitmap, aggregate := e2eValidatorCertificate(t, e2eSettlementBatchSubject([]*contract.RequestFinalization{finalize}), validatorOne, validatorTwo)
 	finalizationBatch := &contract.MessageFinalizeRequests{
 		ObserverAddress: mustHex(t, validatorOne.address), Requests: []*contract.RequestFinalization{finalize},
-		ValidatorSetId: params.ValidatorSetId, SignerBitmap: bitmap, AggregateSignature: aggregate,
+		ValidatorSetId: 1, SignerBitmap: bitmap, AggregateSignature: aggregate,
 	}
 	submit(t, ctx, rpcURL, validatorOne, contract.MessageFinalizeRequestsName, finalizationBatch, map[string]any{
-		"observerAddress": validatorOne.address, "requests": []any{finalizeFields}, "validatorSetId": params.ValidatorSetId,
+		"observerAddress": validatorOne.address, "requests": []any{finalizeFields}, "validatorSetId": uint64(1),
 		"signerBitmap": hex.EncodeToString(bitmap), "aggregateSignature": hex.EncodeToString(aggregate),
 	})
 	waitStatus(t, ctx, requestURL, func(body []byte) bool {

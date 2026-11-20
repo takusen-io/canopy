@@ -80,9 +80,11 @@ var ContractConfig = &PluginConfig{
 		assignmentIndexPrefix, epochValidatorPrefix, settlementIndexPrefix, producerIdentityPrefix,
 		rotationProofIndexPrefix, latestEpochPrefix, provisionalReservationIndexPrefix,
 		activeServicerIndexPrefix, pendingEpochAuthorizationPrefix, pendingBridgeBurnPrefix,
-		handoffManifestPrefix, domainRotationStatePrefix, handoffCancellationManifestPrefix,
+		handoffManifestPrefix, domainRotationStatePrefix,
 		consensusCertificatePrefix, nativeAuthorizationIntentPrefix, pendingAuthorizationPrefix,
-		uncertifiedSettlementIndexPrefix, certifiedSettlementIndexPrefix,
+		timeoutCandidateCursorPrefix, uncertifiedSettlementIndexPrefix, certifiedSettlementIndexPrefix,
+		settlementCandidateCursorPrefix,
+		pendingEpochAccountingPrefix,
 	},
 }
 

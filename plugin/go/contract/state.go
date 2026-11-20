@@ -48,7 +48,6 @@ var (
 	pendingBridgeBurnPrefix           = []byte{131}
 	handoffManifestPrefix             = []byte{132}
 	domainRotationStatePrefix         = []byte{133}
-	handoffCancellationManifestPrefix = []byte{134}
 	consensusCertificatePrefix        = []byte{135}
 	nativeAuthorizationIntentPrefix   = []byte{136}
 	pendingAuthorizationPrefix        = []byte{137}
@@ -56,6 +55,7 @@ var (
 	uncertifiedSettlementIndexPrefix  = []byte{139}
 	certifiedSettlementIndexPrefix    = []byte{140}
 	settlementCandidateCursorPrefix   = []byte{141}
+	pendingEpochAccountingPrefix      = []byte{142}
 )
 
 func EnclavePrefix() []byte        { return JoinLenPrefix(enclavePrefix) }
@@ -111,6 +111,7 @@ func ProducerPrefix(epoch uint64) []byte      { return JoinLenPrefix(producerPre
 func ProducerIdentityPrefix() []byte          { return JoinLenPrefix(producerIdentityPrefix) }
 func EpochAuthorizationPrefix() []byte        { return JoinLenPrefix(epochAuthorizationPrefix) }
 func PendingEpochAuthorizationPrefix() []byte { return JoinLenPrefix(pendingEpochAuthorizationPrefix) }
+func PendingEpochAccountingPrefix() []byte    { return JoinLenPrefix(pendingEpochAccountingPrefix) }
 func BridgeMintPrefix() []byte                { return JoinLenPrefix(bridgeMintPrefix) }
 func BridgeBurnPrefix() []byte                { return JoinLenPrefix(bridgeBurnPrefix) }
 func PendingBridgeBurnPrefix() []byte         { return JoinLenPrefix(pendingBridgeBurnPrefix) }
@@ -121,13 +122,6 @@ func KeyForValidatorHandoffManifestRoot(root []byte) []byte {
 func KeyForDomainRotationState(domainID []byte) []byte {
 	return JoinLenPrefix(domainRotationStatePrefix, domainID)
 }
-func KeyForValidatorHandoffCancellationManifest() []byte {
-	return JoinLenPrefix(handoffCancellationManifestPrefix)
-}
-func KeyForValidatorHandoffCancellationManifestRoot(root []byte) []byte {
-	return JoinLenPrefix(handoffCancellationManifestPrefix, root)
-}
-
 func KeyForAccount(address []byte) []byte   { return JoinLenPrefix(accountPrefix, address) }
 func KeyForValidator(address []byte) []byte { return JoinLenPrefix(validatorPrefix, address) }
 func ValidatorPrefix() []byte               { return JoinLenPrefix(validatorPrefix) }
@@ -176,15 +170,6 @@ func KeyForRotationProofIndex(domainID []byte, oldSetID, newSetID uint64) []byte
 func KeyForQueuedRotationIndex(domainID []byte, oldSetID, newSetID uint64) []byte {
 	return JoinLenPrefix(rotationProofIndexPrefix, []byte("queued"), domainID, uint64Bytes(oldSetID), uint64Bytes(newSetID))
 }
-func KeyForCaughtUpRotationIndex(domainID []byte, oldSetID, newSetID uint64) []byte {
-	return JoinLenPrefix(rotationProofIndexPrefix, []byte("caught-up"), domainID, uint64Bytes(oldSetID), uint64Bytes(newSetID))
-}
-func KeyForRotationForwardIndex(domainID []byte, oldSetID, newSetID uint64) []byte {
-	return JoinLenPrefix(rotationProofIndexPrefix, []byte("forward"), domainID, uint64Bytes(oldSetID), uint64Bytes(newSetID))
-}
-func KeyForRotationCancellationIndex(domainID []byte, oldSetID, newSetID uint64) []byte {
-	return JoinLenPrefix(rotationProofIndexPrefix, []byte("cancel"), domainID, uint64Bytes(oldSetID), uint64Bytes(newSetID))
-}
 func KeyForRotationResolutionIndex(domainID []byte, oldSetID, newSetID uint64) []byte {
 	return JoinLenPrefix(rotationProofIndexPrefix, []byte("resolved"), domainID, uint64Bytes(oldSetID), uint64Bytes(newSetID))
 }
@@ -194,8 +179,8 @@ func KeyForSettlementDomainAuthority(domainID []byte, validatorSetID uint64) []b
 func KeyForSettlementDomainDeactivation(domainID []byte) []byte {
 	return JoinLenPrefix(rotationProofIndexPrefix, []byte("domain-deactivated"), domainID)
 }
-func KeyForSettlementDomainDeactivationEpoch(domainID []byte) []byte {
-	return JoinLenPrefix(rotationProofIndexPrefix, []byte("domain-deactivated-epoch"), domainID)
+func KeyForSettlementDomainDeactivationTimestamp(domainID []byte) []byte {
+	return JoinLenPrefix(rotationProofIndexPrefix, []byte("domain-deactivated-timestamp"), domainID)
 }
 func KeyForSettlementDomainRetirementCancellation(domainID, generation []byte) []byte {
 	return JoinLenPrefix(rotationProofIndexPrefix, []byte("domain-retirement-cancelled"), domainID, generation)
@@ -240,6 +225,9 @@ func KeyForEpochAuthorization(epoch uint64) []byte {
 }
 func KeyForPendingEpochAuthorization(epoch uint64) []byte {
 	return JoinLenPrefix(pendingEpochAuthorizationPrefix, uint64Bytes(epoch))
+}
+func KeyForPendingEpochAccounting(epoch uint64) []byte {
+	return JoinLenPrefix(pendingEpochAccountingPrefix, uint64Bytes(epoch))
 }
 func KeyForLatestEpoch() []byte { return JoinLenPrefix(latestEpochPrefix) }
 func KeyForEpochClock() []byte  { return JoinLenPrefix(epochClockPrefix) }

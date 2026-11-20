@@ -14,16 +14,16 @@ import (
 	"github.com/drand/kyber/sign/bdn"
 )
 
-func storeLifecycleIntent(t *testing.T, store *memoryStateStore, domainID, generation []byte, action string, nonce, expiresAtEpoch uint64) []byte {
+func storeLifecycleIntent(t *testing.T, store *memoryStateStore, domainID, generation []byte, action string, nonce, expiresAtTimestamp uint64) []byte {
 	t.Helper()
-	intentID := settlementDomainLifecycleIntentID(domainID, generation, action, nonce, expiresAtEpoch)
+	intentID := settlementDomainLifecycleIntentID(domainID, generation, action, nonce, expiresAtTimestamp)
 	store.put(t, KeyForSettlementDomainLifecycleIntent(domainID), &SettlementDomainLifecycleIntent{
 		Id:                     intentID,
 		SettlementDomainId:     append([]byte(nil), domainID...),
 		DeactivationGeneration: append([]byte(nil), generation...),
 		Action:                 action,
 		Nonce:                  nonce,
-		ExpiresAtEpoch:         expiresAtEpoch,
+		ExpiresAtTimestamp:     expiresAtTimestamp,
 	})
 	return intentID
 }
@@ -32,8 +32,9 @@ func TestValidatorCertificateRequiresStrictTwoThirds(t *testing.T) {
 	contract, store, _, _ := newMemoryContract(t)
 	store.values = make(map[string][]byte)
 	params := defaultProtocolParams()
-	params.Revision, params.ValidatorSetId = 1, 5
+	params.Revision = 1
 	store.put(t, KeyForProtocolParams(), params)
+	store.put(t, KeyForEpochClock(), testEpochClock(params, 1, 5, 1, 100))
 
 	suite := drandbls.NewBLS12381Suite()
 	for i := int64(1); i <= 4; i++ {
@@ -179,7 +180,7 @@ func TestPreparedRotationRequiresExactRawVotingPower(t *testing.T) {
 			contract, store, _, _ := newMemoryContract(t)
 			store.values = make(map[string][]byte)
 			params := defaultProtocolParams()
-			params.Revision, params.ValidatorSetId = 1, 5
+			params.Revision = 1
 			store.put(t, KeyForProtocolParams(), params)
 			suite := drandbls.NewBLS12381Suite()
 			validators := make([]*Validator, len(weights))

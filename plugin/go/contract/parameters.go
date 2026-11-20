@@ -12,21 +12,15 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// AWS Nitro Enclaves Root-G1 DER. Genesis and later governance documents carry
-// this value explicitly; the default keeps test and genesis construction on the
-// same fail-closed trust anchor.
-const defaultNitroTrustRootBase64 = "MIICETCCAZagAwIBAgIRAPkxdWgbkK/hHUbMtOTn+FYwCgYIKoZIzj0EAwMwSTELMAkGA1UEBhMCVVMxDzANBgNVBAoMBkFtYXpvbjEMMAoGA1UECwwDQVdTMRswGQYDVQQDDBJhd3Mubml0cm8tZW5jbGF2ZXMwHhcNMTkxMDI4MTMyODA1WhcNNDkxMDI4MTQyODA1WjBJMQswCQYDVQQGEwJVUzEPMA0GA1UECgwGQW1hem9uMQwwCgYDVQQLDANBV1MxGzAZBgNVBAMMEmF3cy5uaXRyby1lbmNsYXZlczB2MBAGByqGSM49AgEGBSuBBAAiA2IABPwCVOumCMHzaHDimtqQvkY4MpJzbolL//Zy2YlES1BR5TSksfbb48C8WBoyt7F2Bw7eEtaaP+ohG2bnUs990d0JX28TcPQXCEPZ3BABIeTPYwEoCWZEh8l5YoQwTcU/9KNCMEAwDwYDVR0TAQH/BAUwAwEB/zAdBgNVHQ4EFgQUkCW1DdkFR+eWw5b6cp3PmanfS5YwDgYDVR0PAQH/BAQDAgGGMAoGCCqGSM49BAMDA2kAMGYCMQCjfy+Rocm9Xue4YnwWmNJVA44fA0P5W2OpYow9OYCVRaEevL8uO1XYru5xtMPWrfMCMQCi85sWBbJwKKXdS6BptQFuZbT73o/gBh1qUxl/nNr12UO8Yfwr6wPLb+6NIwLz3/Y="
+// AWS Nitro Enclaves Root-G1 DER.
+const defaultNitroTrustRootBase64 = "MIICETCCAZagAwIBAgIRAPkxdWgbkK/hHUbMtOTn+FYwCgYIKoZIzj0EAwMwSTELMAkGA1UEBhMCVVMxDzANBgNVBAoMBkFtYXpvbjEMMAoGA1UECwwDQVdTMRswGQYDVQQDDBJhd3Mubml0cm8tZW5jbGF2ZXMwHhcNMTkxMDI4MTMyODA1WhcNNDkxMDI4MTQyODA1WjBJMQswCQYDVQQGEwJVUzEPMA0GA1UECgwGQW1hem9uMQwwCgYDVQQLDANBV1MxGzAZBgNVBAMMEmF3cy5uaXRyby1lbmNsYXZlczB2MBAGByqGSM49AgEGBSuBBAAiA2IABPwCVOumCMHzaHDimtqQvkY4MpJzbolL//Zy2YlES1BR5TSksfbb48C8WBoyt7F2Bw7eEtaaP+ohG2bnUs990d0JX28TcPQXCEPZ3BABIeTPYwEoCWZEh8l5YoQwTcU/9KNCMEAwDwYDVR0TAQH/BAQDAgGGMAoGCCqGSM49BAMDA2kAMGYCMQCjfy+Rocm9Xue4YnwWmNJVA44fA0P5W2OpYow9OYCVRaEevL8uO1XYru5xtMPWrfMCMQCi85sWBbJwKKXdS6BptQFuZbT73o/gBh1qUxl/nNr12UO8Yfwr6wPLb+6NIwLz3/Y="
 
-// maxChargeBps permits a governed markup of up to 1,000% per destination.
-// mulDiv64 independently rejects arithmetic overflow at execution time.
 const maxChargeBps uint32 = 100_000
 
 func defaultProtocolParams() *ProtocolParams {
 	nitroRoot, _ := base64.StdEncoding.DecodeString(defaultNitroTrustRootBase64)
 	return &ProtocolParams{
-		QuorumNumerator: 2, QuorumDenominator: 3,
-		MinimumServicerBond: 1, MinimumValidatorBond: 1,
-		EpochBlocks: 3600, ValidatorHandoffNoticeSeconds: 2400, ServicerUnbondingBlocks: 86_400,
+		MinimumServicerBond: 1, MinimumValidatorBond: 1, ServicerUnbondingBlocks: 86_400,
 		BridgeEpochMintLimit: math.MaxUint64, BridgeTransferLimit: math.MaxUint64,
 		SupportedOutputSchemas: []string{"boolean", "score", "choice", "private_hash"},
 		SettlementDomains:      []*SettlementDomain{defaultSettlementDomain()},
@@ -60,21 +54,17 @@ func (c *Contract) currentProtocolParams() (*ProtocolParams, *PluginError) {
 }
 
 func validateProtocolParams(params *ProtocolParams) *PluginError {
-	if params == nil || params.Revision == 0 || params.QuorumDenominator == 0 ||
-		params.QuorumNumerator >= params.QuorumDenominator ||
-		uint64(params.QuorumNumerator)*3 < uint64(params.QuorumDenominator)*2 ||
+	if params == nil || params.Revision == 0 ||
 		params.FoundationFeeBps > maxChargeBps || params.ServicerMarginBps > maxChargeBps ||
 		(params.ServicerMarginBps > 0 && params.ServicerMarginBps >= params.FoundationFeeBps) ||
-		params.InvalidReceiptSlashBps > 10_000 ||
-		params.TreasuryBps > 10_000 || params.EpochBlocks == 0 || params.ServicerUnbondingBlocks == 0 ||
-		params.ServicerUnbondingBlocks <= params.AuthorizationDeadlineBlocks ||
-		params.ValidatorHandoffNoticeSeconds < 1200 || params.ValidatorHandoffNoticeSeconds > 7*24*60*60 ||
+		params.InvalidReceiptSlashBps > 10_000 || params.TreasuryBps > 10_000 ||
+		params.ServicerUnbondingBlocks == 0 || params.ServicerUnbondingBlocks <= params.AuthorizationDeadlineBlocks ||
 		params.MinimumServicerBond == 0 || params.MinimumValidatorBond == 0 {
 		return ErrInvalidTransaction("invalid governed protocol parameters")
 	}
 	if params.CanonicalChainId != 0 || len(params.CanonicalTokenAddress) != 0 || len(params.CanonicalBridgeAddress) != 0 || params.EmissionPerEpoch != 0 {
 		if params.CanonicalChainId == 0 || !validAddress(params.CanonicalTokenAddress) || !validAddress(params.CanonicalBridgeAddress) ||
-			params.ValidatorSetId == 0 || !validAddress(params.TreasuryAddress) {
+			!validAddress(params.TreasuryAddress) {
 			return ErrInvalidTransaction("canonical reward and bridge parameters are incomplete")
 		}
 	}
@@ -246,9 +236,6 @@ func (c *Contract) deliverGovernedParameter(space, key string, value []byte) *Pl
 	if params.Revision != current.Revision+1 {
 		return &PluginDeliverResponse{Error: ErrConflict("protocol parameter revision must increase by one")}
 	}
-	if params.ValidatorSetId != current.ValidatorSetId {
-		return &PluginDeliverResponse{Error: ErrInvalidTransaction("validator set identifiers advance only at epoch handoff")}
-	}
 	currentDomains := make(map[string]*SettlementDomain, len(current.SettlementDomains))
 	for _, domain := range current.SettlementDomains {
 		currentDomains[string(domain.Id)] = domain
@@ -274,7 +261,7 @@ func (c *Contract) deliverGovernedParameter(space, key string, value []byte) *Pl
 			if domain.Active {
 				return &PluginDeliverResponse{Error: ErrInvalidTransaction("new settlement domains must enter governance inactive")}
 			}
-			if found, readErr := c.read(KeyForSettlementDomainAuthority(domain.Id, current.ValidatorSetId), new(ReplayMarker)); readErr != nil {
+			if found, readErr := c.read(KeyForSettlementDomainAuthority(domain.Id, clock.ValidatorSetId), new(ReplayMarker)); readErr != nil {
 				return &PluginDeliverResponse{Error: readErr}
 			} else if !found {
 				return &PluginDeliverResponse{Error: ErrUnauthorized("new settlement domain lacks quorum-certified finalized validator authority")}
@@ -298,11 +285,11 @@ func (c *Contract) deliverGovernedParameter(space, key string, value []byte) *Pl
 				deletes = append(
 					deletes,
 					KeyForSettlementDomainDeactivation(domain.Id),
-					KeyForSettlementDomainDeactivationEpoch(domain.Id),
+					KeyForSettlementDomainDeactivationTimestamp(domain.Id),
 					KeyForSettlementDomainRetirementCancellation(domain.Id, deactivation.Id),
 				)
 			}
-			if found, readErr := c.read(KeyForSettlementDomainAuthority(domain.Id, current.ValidatorSetId), new(ReplayMarker)); readErr != nil {
+			if found, readErr := c.read(KeyForSettlementDomainAuthority(domain.Id, clock.ValidatorSetId), new(ReplayMarker)); readErr != nil {
 				return &PluginDeliverResponse{Error: readErr}
 			} else if !found {
 				return &PluginDeliverResponse{Error: ErrUnauthorized("settlement domain activation lacks quorum-certified finalized validator authority")}
@@ -310,13 +297,13 @@ func (c *Contract) deliverGovernedParameter(space, key string, value []byte) *Pl
 		}
 		if prior.Active && !domain.Active {
 			deactivatesDomain = true
-			generation := settlementDomainDeactivationGeneration(domain.Id, params.Revision, clock.CurrentEpoch)
+			generation := settlementDomainDeactivationGeneration(domain.Id, params.Revision, clock.ConsensusTimeSeconds)
 			records[string(KeyForSettlementDomainDeactivation(domain.Id))] = &ReplayMarker{Id: generation}
-			records[string(KeyForSettlementDomainDeactivationEpoch(domain.Id))] = &ReplayMarker{Id: uint64Bytes(clock.CurrentEpoch)}
+			records[string(KeyForSettlementDomainDeactivationTimestamp(domain.Id))] = &ReplayMarker{Id: uint64Bytes(clock.ConsensusTimeSeconds)}
 		}
 	}
-	if authorityMembershipChanged || activatesDomain || deactivatesDomain {
-		if clock.ValidatorHandoffPrepared || clock.ValidatorHandoffTimestamp != 0 {
+	if authorityMembershipChanged || activatesDomain {
+		if clock.ValidatorRosterFrozen || clock.ValidatorHandoffPrepared || clock.ValidatorHandoffTimestamp != 0 {
 			return &PluginDeliverResponse{Error: ErrConflict("settlement-domain membership or traffic state cannot change during a prepared validator handoff")}
 		}
 	}
@@ -349,18 +336,17 @@ func (c *Contract) deliverGovernedParameter(space, key string, value []byte) *Pl
 			}
 		}
 	}
-	if removesDomain && (clock.ValidatorHandoffPrepared || clock.ValidatorHandoffTimestamp != 0) {
-		return &PluginDeliverResponse{Error: ErrConflict("settlement-domain retirement cannot overlap a prepared validator handoff")}
-	}
+	_ = deactivatesDomain
+	_ = removesDomain
 	return &PluginDeliverResponse{Error: c.writeChanges(records, deletes)}
 }
 
-const maximumLifecycleIntentEpochs = 168
+const maximumLifecycleIntentSeconds uint64 = 7 * 24 * 60 * 60
 
-func settlementDomainLifecycleIntentID(domainID, generation []byte, action string, nonce, expiresAtEpoch uint64) []byte {
+func settlementDomainLifecycleIntentID(domainID, generation []byte, action string, nonce, expiresAtTimestamp uint64) []byte {
 	return hashFields(
 		[]byte("takusen:settlement-domain-lifecycle-intent"), domainID, generation, []byte(action),
-		uint64Bytes(nonce), uint64Bytes(expiresAtEpoch),
+		uint64Bytes(nonce), uint64Bytes(expiresAtTimestamp),
 	)
 }
 
@@ -389,11 +375,9 @@ func (c *Contract) deliverGovernedSettlementDomainLifecycleIntent(value []byte) 
 	if clockErr != nil {
 		return &PluginDeliverResponse{Error: clockErr}
 	}
-	if clock.ValidatorHandoffPrepared || clock.ValidatorHandoffTimestamp != 0 {
-		return &PluginDeliverResponse{Error: ErrConflict("lifecycle intent cannot begin during a prepared validator handoff")}
-	}
-	if intent.ExpiresAtEpoch <= clock.CurrentEpoch || intent.ExpiresAtEpoch-clock.CurrentEpoch > maximumLifecycleIntentEpochs {
-		return &PluginDeliverResponse{Error: ErrInvalidTransaction("lifecycle intent expiry must be within 168 epochs")}
+	if clock.ConsensusTimeSeconds == 0 || intent.ExpiresAtTimestamp <= clock.ConsensusTimeSeconds ||
+		intent.ExpiresAtTimestamp-clock.ConsensusTimeSeconds > maximumLifecycleIntentSeconds {
+		return &PluginDeliverResponse{Error: ErrInvalidTransaction("lifecycle intent expiry must be within seven days")}
 	}
 	deactivation := new(ReplayMarker)
 	if found, readErr := c.read(KeyForSettlementDomainDeactivation(intent.SettlementDomainId), deactivation); readErr != nil {
@@ -405,7 +389,7 @@ func (c *Contract) deliverGovernedSettlementDomainLifecycleIntent(value []byte) 
 	if found, readErr := c.read(KeyForSettlementDomainLifecycleIntent(intent.SettlementDomainId), prior); readErr != nil {
 		return &PluginDeliverResponse{Error: readErr}
 	} else if found {
-		if prior.ExpiresAtEpoch >= clock.CurrentEpoch {
+		if prior.ExpiresAtTimestamp >= clock.ConsensusTimeSeconds {
 			return &PluginDeliverResponse{Error: ErrConflict("an unexpired settlement-domain lifecycle intent already exists")}
 		}
 		if intent.Nonce != prior.Nonce+1 {
@@ -415,7 +399,7 @@ func (c *Contract) deliverGovernedSettlementDomainLifecycleIntent(value []byte) 
 		return &PluginDeliverResponse{Error: ErrConflict("first lifecycle intent nonce must be one")}
 	}
 	expectedID := settlementDomainLifecycleIntentID(
-		intent.SettlementDomainId, intent.DeactivationGeneration, intent.Action, intent.Nonce, intent.ExpiresAtEpoch,
+		intent.SettlementDomainId, intent.DeactivationGeneration, intent.Action, intent.Nonce, intent.ExpiresAtTimestamp,
 	)
 	if !bytes.Equal(intent.Id, expectedID) {
 		return &PluginDeliverResponse{Error: ErrInvalidTransaction("lifecycle intent identifier does not match its governed fields")}
@@ -426,16 +410,16 @@ func (c *Contract) deliverGovernedSettlementDomainLifecycleIntent(value []byte) 
 	return &PluginDeliverResponse{}
 }
 
-func settlementDomainDeactivationEpoch(marker *ReplayMarker) (uint64, bool) {
+func settlementDomainDeactivationTimestamp(marker *ReplayMarker) (uint64, bool) {
 	if marker == nil || len(marker.Id) != 8 {
 		return 0, false
 	}
 	return binary.BigEndian.Uint64(marker.Id), true
 }
 
-func settlementDomainDeactivationGeneration(domainID []byte, revision, epoch uint64) []byte {
+func settlementDomainDeactivationGeneration(domainID []byte, revision, timestamp uint64) []byte {
 	return hashFields(
-		[]byte("takusen:settlement-domain-deactivation"), domainID, uint64Bytes(revision), uint64Bytes(epoch),
+		[]byte("takusen:settlement-domain-deactivation"), domainID, uint64Bytes(revision), uint64Bytes(timestamp),
 	)
 }
 

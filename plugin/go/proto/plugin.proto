@@ -172,7 +172,7 @@ message PluginEndRequest {
   bytes proposer_address = 2;
   uint64 time_micros = 3;
   // next_validator_set is the exact candidate committee derived by core from
-  // end-block state. The plugin consumes it only at the nominal boundary.
+  // end-block state. The plugin consumes it at the epoch's roster-freeze time.
   bytes next_validator_set = 4;
 }
 
@@ -182,7 +182,7 @@ message PluginEndResponse {
   // validator_set_epoch_end: the current block is the final block of the governed validator-set epoch.
   bool validator_set_epoch_end = 2; // @gotags: json:"validatorSetEpochEnd"
   // validator_set_epoch_prepare freezes the next core committee atomically at
-  // the nominal boundary while the current committee remains authoritative.
+  // S + 1,200 seconds while the current committee remains authoritative.
   bool validator_set_epoch_prepare = 3; // @gotags: json:"validatorSetEpochPrepare"
   repeated AuxiliaryCandidate auxiliary_candidates = 4; // @gotags: json:"auxiliaryCandidates,omitempty"
   bool replace_auxiliary_candidates = 5; // @gotags: json:"replaceAuxiliaryCandidates"

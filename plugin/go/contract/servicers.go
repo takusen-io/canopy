@@ -46,15 +46,9 @@ func validateServicerModels(params *ProtocolParams, models []string) *PluginErro
 	return nil
 }
 
-func attestationProvided(message *MessageManageServicer) bool {
-	return len(message.PublicKey) != 0 || len(message.Nonce) != 0 || len(message.UserData) != 0 ||
-		len(message.ProofSignature) != 0 || len(message.AttestationDocument) != 0
-}
-
-// deliverManageServicer is the owner-authorized, block-effective lifecycle
-// transition. It atomically manages registration, configuration, target bond,
-// activation, and enclave rotation or removal.
-func (c *Contract) deliverManageServicer(height, timeMicros uint64, message *MessageManageServicer) *PluginDeliverResponse {
+// deliverRegisterServicer atomically registers the first enclave, locks the
+// initial bond, and creates the active servicer record.
+func (c *Contract) deliverRegisterServicer(height, timeMicros uint64, message *MessageRegisterServicer) *PluginDeliverResponse {
 	params, paramsErr := c.currentProtocolParams()
 	if paramsErr != nil {
 		return &PluginDeliverResponse{Error: paramsErr}
@@ -106,18 +100,6 @@ func (c *Contract) deliverManageServicer(height, timeMicros uint64, message *Mes
 		string(KeyForServicer(message.OwnerAddress)):       servicer,
 		string(KeyForActiveServicer(message.OwnerAddress)): &ReplayMarker{Id: append([]byte(nil), message.OwnerAddress...)},
 	})}
-}
-
-func validateServicerModels(params *ProtocolParams, models []string) *PluginError {
-	if len(params.Models) == 0 {
-		return nil
-	}
-	for _, model := range models {
-		if modelPolicy(params, model) == nil {
-			return ErrUnauthorized("servicer model is not governed")
-		}
-	}
-	return nil
 }
 
 // deliverManageServicer applies only the explicitly supplied components while

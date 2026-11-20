@@ -16,9 +16,8 @@ import (
 func TestCertifiedEVMDepositAppliesWithoutObservationTransactions(t *testing.T) {
 	contract, store, _, _ := newMemoryContract(t)
 	params := defaultProtocolParams()
-	params.ValidatorSetId = 7
 	store.put(t, KeyForProtocolParams(), params)
-	store.put(t, KeyForEpochClock(), &EpochClock{CurrentEpoch: 1, ValidatorSetId: 7, StartHeight: 1, EndHeight: 100})
+	store.put(t, KeyForEpochClock(), testEpochClock(params, 1, 7, 1, 100))
 	domain := params.SettlementDomains[0]
 	message := &MessageObserveDeposit{
 		SettlementDomainId: domain.Id, ChainTxHash: bytes.Repeat([]byte{0x31}, 32),
@@ -178,10 +177,9 @@ func TestCompactSettlementFinalizationReloadsCertifiedCohort(t *testing.T) {
 func TestAuxiliaryCertificatePersistsCoreValidatedRelayArtifact(t *testing.T) {
 	contract, store, _, _ := newMemoryContract(t)
 	params := defaultProtocolParams()
-	params.ValidatorSetId = 7
 	store.put(t, KeyForProtocolParams(), params)
 	// BeginBlock is already in N+1, but the predecessor QC was signed by N.
-	store.put(t, KeyForEpochClock(), &EpochClock{CurrentEpoch: 2, ValidatorSetId: 8, StartHeight: 13, EndHeight: 100})
+	store.put(t, KeyForEpochClock(), testEpochClock(params, 2, 8, 13, 100))
 	var outgoing []*Validator
 	for epoch, firstIndex := range map[uint64]byte{1: 1, 2: 3} {
 		for index := firstIndex; index < firstIndex+2; index++ {
@@ -272,9 +270,8 @@ func TestAuxiliaryCertificatePersistsCoreValidatedRelayArtifact(t *testing.T) {
 func TestUnchangedRosterPredecessorCertificateRetainsSignerEpoch(t *testing.T) {
 	contract, store, _, _ := newMemoryContract(t)
 	params := defaultProtocolParams()
-	params.ValidatorSetId = 7
 	store.put(t, KeyForProtocolParams(), params)
-	store.put(t, KeyForEpochClock(), &EpochClock{CurrentEpoch: 2, ValidatorSetId: 7, StartHeight: 13, EndHeight: 100})
+	store.put(t, KeyForEpochClock(), testEpochClock(params, 2, 7, 13, 100))
 	for epoch := uint64(1); epoch <= 2; epoch++ {
 		for index := byte(1); index <= 2; index++ {
 			address := bytes.Repeat([]byte{index}, addressSize)
