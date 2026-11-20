@@ -303,7 +303,6 @@ message RewardAllocation {
   bytes canonical_chain_recipient = 2;
   uint64 blocks = 3;
   uint64 amount = 4;
-  bool compounded = 5;
 }
 
 message EpochAuthorization {
@@ -318,7 +317,6 @@ message EpochAuthorization {
   uint64 total_amount = 9;
   bytes canonical_chain_digest = 10;
   string status = 11;
-  uint64 compounded_amount = 12;
   bytes canonical_chain_mint_tx_hash = 13;
 }
 

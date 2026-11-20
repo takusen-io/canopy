@@ -221,17 +221,17 @@ func TestTakusenConsensusE2E(t *testing.T) {
 			!bytes.Equal(userData, expectedUserData) || !ed25519.Verify(publicKey, registration.Sum(nil), proof) {
 			t.Fatal("TAKUSEN_E2E_REGISTRATION_BUNDLE is invalid or does not bind the fixture owner and enclave key")
 		}
-		message := &contract.MessageRegisterServicer{
+		message := &contract.MessageManageServicer{
 			OwnerAddress: mustHex(t, localValidatorOneAddress), TeeKeyId: teeKeyID, PublicKey: publicKey,
 			Nonce: nonce, UserData: userData, ProofSignature: proof, AttestationDocument: attestation,
-			EvmPayoutAddress: mustHex(t, localValidatorOneAddress), Models: models, Bond: 100_000,
+			EvmPayoutAddress: mustHex(t, localValidatorOneAddress), Models: models, Bond: 100_000, Active: true,
 		}
 		fields := map[string]any{
 			"ownerAddress": localValidatorOneAddress, "teeKeyId": teeKeyID, "publicKey": hex.EncodeToString(publicKey),
 			"nonce": hex.EncodeToString(nonce), "userData": hex.EncodeToString(userData), "proofSignature": hex.EncodeToString(proof),
-			"attestationDocument": hex.EncodeToString(attestation), "evmPayoutAddress": localValidatorOneAddress, "models": models, "bond": message.Bond,
+			"attestationDocument": hex.EncodeToString(attestation), "evmPayoutAddress": localValidatorOneAddress, "models": models, "bond": message.Bond, "active": true,
 		}
-		submit(t, ctx, rpcURL, validatorOne, contract.MessageRegisterServicerName, message, fields)
+		submit(t, ctx, rpcURL, validatorOne, contract.MessageManageServicerName, message, fields)
 		waitStatus(t, ctx, pluginURL+"/v1/takusen/servicers", func(body []byte) bool { return containsServicer(body, localValidatorOneAddress) })
 	}
 

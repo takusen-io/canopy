@@ -194,7 +194,7 @@ func (c *Contract) endBlock(request *PluginEndRequest) *PluginEndResponse {
 				return &PluginEndResponse{Error: ErrState("epoch handoff wait overflow")}
 			}
 			// Fail closed while retaining the old committee. The precommitted next
-			// snapshot and late stake changes remain untouched.
+			// snapshot remains untouched.
 			clock.EndHeight++
 			priority, priorityErr := c.currentHandoffAuxiliaryCandidate(clock)
 			if priorityErr != nil {
@@ -791,7 +791,6 @@ func (c *Contract) finalizeEpoch(clock *EpochClock, currentAddress []byte, curre
 	}
 	authorization.TreasuryAddress = append([]byte(nil), params.TreasuryAddress...)
 	authorization.TreasuryAmount = treasury
-	authorization.CompoundedAmount = 0
 	authorization.ProducerAmount = producerTotal
 	authorization.TotalAmount = authorization.ProducerAmount + treasury
 	if authorization.TotalAmount != 0 {

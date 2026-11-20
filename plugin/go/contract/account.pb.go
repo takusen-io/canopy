@@ -2421,7 +2421,6 @@ type RewardAllocation struct {
 	CanonicalChainRecipient []byte                 `protobuf:"bytes,2,opt,name=canonical_chain_recipient,json=canonicalChainRecipient,proto3" json:"canonical_chain_recipient,omitempty"`
 	Blocks                  uint64                 `protobuf:"varint,3,opt,name=blocks,proto3" json:"blocks,omitempty"`
 	Amount                  uint64                 `protobuf:"varint,4,opt,name=amount,proto3" json:"amount,omitempty"`
-	Compounded              bool                   `protobuf:"varint,5,opt,name=compounded,proto3" json:"compounded,omitempty"`
 	unknownFields           protoimpl.UnknownFields
 	sizeCache               protoimpl.SizeCache
 }
@@ -2484,13 +2483,6 @@ func (x *RewardAllocation) GetAmount() uint64 {
 	return 0
 }
 
-func (x *RewardAllocation) GetCompounded() bool {
-	if x != nil {
-		return x.Compounded
-	}
-	return false
-}
-
 type EpochAuthorization struct {
 	state                    protoimpl.MessageState `protogen:"open.v1"`
 	Epoch                    uint64                 `protobuf:"varint,1,opt,name=epoch,proto3" json:"epoch,omitempty"`
@@ -2504,7 +2496,6 @@ type EpochAuthorization struct {
 	TotalAmount              uint64                 `protobuf:"varint,9,opt,name=total_amount,json=totalAmount,proto3" json:"total_amount,omitempty"`
 	CanonicalChainDigest     []byte                 `protobuf:"bytes,10,opt,name=canonical_chain_digest,json=canonicalChainDigest,proto3" json:"canonical_chain_digest,omitempty"`
 	Status                   string                 `protobuf:"bytes,11,opt,name=status,proto3" json:"status,omitempty"`
-	CompoundedAmount         uint64                 `protobuf:"varint,12,opt,name=compounded_amount,json=compoundedAmount,proto3" json:"compounded_amount,omitempty"`
 	CanonicalChainMintTxHash []byte                 `protobuf:"bytes,13,opt,name=canonical_chain_mint_tx_hash,json=canonicalChainMintTxHash,proto3" json:"canonical_chain_mint_tx_hash,omitempty"`
 	unknownFields            protoimpl.UnknownFields
 	sizeCache                protoimpl.SizeCache
@@ -2615,13 +2606,6 @@ func (x *EpochAuthorization) GetStatus() string {
 		return x.Status
 	}
 	return ""
-}
-
-func (x *EpochAuthorization) GetCompoundedAmount() uint64 {
-	if x != nil {
-		return x.CompoundedAmount
-	}
-	return 0
 }
 
 func (x *EpochAuthorization) GetCanonicalChainMintTxHash() []byte {
@@ -4333,15 +4317,12 @@ const file_account_proto_rawDesc = "" +
 	"\x10producer_address\x18\x02 \x01(\fR\x0fproducerAddress\x12\x16\n" +
 	"\x06blocks\x18\x03 \x01(\x04R\x06blocks\"7\n" +
 	"\x10ProducerIdentity\x12#\n" +
-	"\rowner_address\x18\x01 \x01(\fR\fownerAddress\"\xc9\x01\n" +
+	"\rowner_address\x18\x01 \x01(\fR\fownerAddress\"\xa9\x01\n" +
 	"\x10RewardAllocation\x12)\n" +
 	"\x10producer_address\x18\x01 \x01(\fR\x0fproducerAddress\x12:\n" +
 	"\x19canonical_chain_recipient\x18\x02 \x01(\fR\x17canonicalChainRecipient\x12\x16\n" +
 	"\x06blocks\x18\x03 \x01(\x04R\x06blocks\x12\x16\n" +
-	"\x06amount\x18\x04 \x01(\x04R\x06amount\x12\x1e\n" +
-	"\n" +
-	"compounded\x18\x05 \x01(\bR\n" +
-	"compounded\"\xac\x04\n" +
+	"\x06amount\x18\x04 \x01(\x04R\x06amount\"\xff\x03\n" +
 	"\x12EpochAuthorization\x12\x14\n" +
 	"\x05epoch\x18\x01 \x01(\x04R\x05epoch\x12!\n" +
 	"\fstart_height\x18\x02 \x01(\x04R\vstartHeight\x12\x1d\n" +

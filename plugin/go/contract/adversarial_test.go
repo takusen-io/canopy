@@ -275,7 +275,7 @@ func TestActiveServicerIndexTracksRegistrationAndDeactivation(t *testing.T) {
 	register := fixture.message
 	register.EvmPayoutAddress = append([]byte(nil), owner...)
 	register.Bond = params.MinimumServicerBond
-	if response := contract.deliverRegisterServicer(1, uint64(nitroFixtureTime.Add(time.Minute).UnixMicro()), register); response.Error != nil {
+	if response := contract.deliverManageServicer(1, uint64(nitroFixtureTime.Add(time.Minute).UnixMicro()), register); response.Error != nil {
 		t.Fatal(response.Error)
 	}
 	if found, err := contract.read(KeyForActiveServicer(owner), new(ReplayMarker)); err != nil || !found {
