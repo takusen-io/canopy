@@ -104,7 +104,13 @@ func TestTakusenConsensusE2E(t *testing.T) {
 		userData, userDataErr := base64.StdEncoding.DecodeString(bundle.UserData)
 		attestedPublicKey, publicKeyErr := base64.RawURLEncoding.DecodeString(bundle.PublicKey)
 		proof, proofErr := base64.RawURLEncoding.DecodeString(bundle.Proof)
-		expectedUserData := []byte("takusen:servicer-registration:v1:" + localValidatorOneAddress)
+		userDataParts := strings.Split(string(userData), ":")
+		var validatorSetID uint64
+		var rosterHash []byte
+		if len(userDataParts) == 6 {
+			validatorSetID, _ = strconv.ParseUint(userDataParts[4], 10, 64)
+			rosterHash, _ = hex.DecodeString(userDataParts[5])
+		}
 		registration := sha256.New()
 		_, _ = registration.Write([]byte("takusen:nitro-registration\x00"))
 		_, _ = registration.Write(nonce)
@@ -112,18 +118,22 @@ func TestTakusenConsensusE2E(t *testing.T) {
 		_, _ = registration.Write(userData)
 		if attestationErr != nil || nonceErr != nil || userDataErr != nil || publicKeyErr != nil || proofErr != nil ||
 			len(attestation) == 0 || len(attestation) > 16<<10 || !bytes.Equal(attestedPublicKey, publicKey) ||
-			!bytes.Equal(userData, expectedUserData) || !ed25519.Verify(publicKey, registration.Sum(nil), proof) {
+			len(userDataParts) != 6 || userDataParts[0] != "takusen" || userDataParts[1] != "servicer-registration" ||
+			userDataParts[2] != "v2" || userDataParts[3] != localValidatorOneAddress || validatorSetID == 0 || len(rosterHash) != 32 ||
+			!ed25519.Verify(publicKey, registration.Sum(nil), proof) {
 			t.Fatal("TAKUSEN_E2E_REGISTRATION_BUNDLE is invalid or does not bind the fixture owner and enclave key")
 		}
 		message := &contract.MessageManageServicer{
 			OwnerAddress: mustHex(t, localValidatorOneAddress), TeeKeyId: teeKeyID, PublicKey: publicKey,
 			Nonce: nonce, UserData: userData, ProofSignature: proof, AttestationDocument: attestation,
-			EvmPayoutAddress: mustHex(t, localValidatorOneAddress), Models: models, Bond: 100_000, Active: true,
+			EvmPayoutAddress: mustHex(t, localValidatorOneAddress), Models: models, Bond: 100_000, OwnerEnabled: true,
+			MaxDebit: 100_000, NativeValidatorSetId: validatorSetID, NativeRosterHash: rosterHash,
 		}
 		fields := map[string]any{
 			"ownerAddress": localValidatorOneAddress, "teeKeyId": teeKeyID, "publicKey": hex.EncodeToString(publicKey),
 			"nonce": hex.EncodeToString(nonce), "userData": hex.EncodeToString(userData), "proofSignature": hex.EncodeToString(proof),
-			"attestationDocument": hex.EncodeToString(attestation), "evmPayoutAddress": localValidatorOneAddress, "models": models, "bond": message.Bond, "active": true,
+			"attestationDocument": hex.EncodeToString(attestation), "evmPayoutAddress": localValidatorOneAddress, "models": models, "bond": message.Bond, "ownerEnabled": true,
+			"maxDebit": message.MaxDebit, "nativeValidatorSetId": validatorSetID, "nativeRosterHash": hex.EncodeToString(rosterHash),
 		}
 		submit(t, ctx, rpcURL, validatorOne, contract.MessageManageServicerName, message, fields)
 		waitStatus(t, ctx, pluginURL+"/v1/takusen/servicers", func(body []byte) bool { return containsServicer(body, localValidatorOneAddress) })
@@ -362,7 +372,7 @@ func containsServicer(body []byte, address string) bool {
 		return false
 	}
 	for _, value := range values {
-		if hex.EncodeToString(value.OwnerAddress) == address && value.Active {
+		if hex.EncodeToString(value.OwnerAddress) == address && value.OwnerEnabled {
 			return true
 		}
 	}

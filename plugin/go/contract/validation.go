@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
+	"strconv"
 	"strings"
 
 	"golang.org/x/crypto/sha3"
@@ -58,7 +59,7 @@ func validOutputType(outputType string) bool {
 
 func checkManageServicer(message *MessageManageServicer) ([]byte, *PluginError) {
 	if message == nil || !validAddress(message.OwnerAddress) || !validPayoutAddress(message.EvmPayoutAddress) ||
-		!validModels(message.Models) || len(message.TeeKeyId) > 128 || (message.TeeKeyId == "" && message.Active) {
+		!validModels(message.Models) || len(message.TeeKeyId) > 128 || (message.TeeKeyId == "" && message.OwnerEnabled) {
 		return nil, ErrInvalidTransaction("invalid servicer management")
 	}
 	hasAttestation := len(message.PublicKey) != 0 || len(message.Nonce) != 0 || len(message.UserData) != 0 ||
@@ -68,7 +69,8 @@ func checkManageServicer(message *MessageManageServicer) ([]byte, *PluginError) 
 	}
 	if message.TeeKeyId == "" || len(message.PublicKey) != ed25519.PublicKeySize || len(message.Nonce) < 16 || len(message.Nonce) > 64 ||
 		len(message.ProofSignature) != ed25519.SignatureSize || len(message.AttestationDocument) == 0 ||
-		len(message.AttestationDocument) > maxNitroAttestationSize || !bytes.Equal(message.UserData, registrationUserData(message.OwnerAddress)) {
+		len(message.AttestationDocument) > maxNitroAttestationSize || !validHash(message.NativeRosterHash) || message.NativeValidatorSetId == 0 ||
+		!bytes.Equal(message.UserData, registrationUserData(message.OwnerAddress, message.NativeValidatorSetId, message.NativeRosterHash)) {
 		return nil, ErrInvalidTransaction("invalid attested servicer management")
 	}
 	keyDigest := sha256.Sum256(message.PublicKey)
@@ -86,8 +88,18 @@ func checkManageServicer(message *MessageManageServicer) ([]byte, *PluginError) 
 	return message.OwnerAddress, nil
 }
 
-func registrationUserData(owner []byte) []byte {
-	return []byte("takusen:servicer-registration:v1:" + hex.EncodeToString(owner))
+func registrationUserData(owner []byte, validatorSetID uint64, rosterHash []byte) []byte {
+	return []byte("takusen:servicer-registration:v2:" + hex.EncodeToString(owner) + ":" +
+		strconv.FormatUint(validatorSetID, 10) + ":" + hex.EncodeToString(rosterHash))
+}
+
+func checkRenewServicerLease(message *MessageRenewServicerLease) ([]byte, *PluginError) {
+	if message == nil || !validAddress(message.OwnerAddress) || message.TeeKeyId == "" || len(message.TeeKeyId) > 128 ||
+		message.ExpiryHeight == 0 || message.Capacity == 0 || message.LeaseNonce == 0 ||
+		len(message.EnclaveSignature) != ed25519.SignatureSize {
+		return nil, ErrInvalidTransaction("invalid servicer availability lease")
+	}
+	return message.OwnerAddress, nil
 }
 
 func checkForceRevokeEnclave(message *MessageForceRevokeEnclave) ([]byte, *PluginError) {

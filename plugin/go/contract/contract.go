@@ -13,6 +13,7 @@ import (
 const (
 	MessageForceRevokeEnclaveName    = "takusenForceRevokeEnclave"
 	MessageManageServicerName        = "takusenManageServicer"
+	MessageRenewServicerLeaseName    = "takusenRenewServicerLease"
 	MessageObserveDepositName        = "takusenObserveDeposit"
 	MessageResolveDepositName        = "takusenResolveDeposit"
 	MessageResolveSettlementName     = "takusenResolveSettlement"
@@ -40,6 +41,7 @@ var ContractConfig = &PluginConfig{
 	SupportedTransactions: []string{
 		MessageForceRevokeEnclaveName,
 		MessageManageServicerName,
+		MessageRenewServicerLeaseName,
 		MessageObserveDepositName,
 		MessageResolveDepositName,
 		MessageResolveSettlementName,
@@ -60,6 +62,7 @@ var ContractConfig = &PluginConfig{
 	TransactionTypeUrls: []string{
 		"type.googleapis.com/types.MessageForceRevokeEnclave",
 		"type.googleapis.com/types.MessageManageServicer",
+		"type.googleapis.com/types.MessageRenewServicerLease",
 		"type.googleapis.com/types.MessageObserveDeposit",
 		"type.googleapis.com/types.MessageResolveDeposit",
 		"type.googleapis.com/types.MessageResolveSettlement",
@@ -88,10 +91,11 @@ var ContractConfig = &PluginConfig{
 		bridgeMintPrefix, bridgeNoncePrefix, bridgeBurnPrefix, epochClockPrefix,
 		assignmentIndexPrefix, epochValidatorPrefix, settlementIndexPrefix, producerIdentityPrefix,
 		rotationProofIndexPrefix, latestEpochPrefix, provisionalReservationIndexPrefix,
-		activeServicerIndexPrefix, pendingEpochAuthorizationPrefix, pendingBridgeBurnPrefix,
+		modelServicerIndexPrefix, pendingEpochAuthorizationPrefix, pendingBridgeBurnPrefix,
 		handoffManifestPrefix, domainRotationStatePrefix, handoffCancellationManifestPrefix,
 		consensusCertificatePrefix, nativeAuthorizationIntentPrefix, pendingAuthorizationPrefix,
 		uncertifiedSettlementIndexPrefix, certifiedSettlementIndexPrefix,
+		pendingTerminalExecutionPrefix,
 	},
 }
 
@@ -238,6 +242,8 @@ func (c *Contract) CheckTx(request *PluginCheckRequest) *PluginCheckResponse {
 		signer, err = checkForceRevokeEnclave(message)
 	case *MessageManageServicer:
 		signer, err = checkManageServicer(message)
+	case *MessageRenewServicerLease:
+		signer, err = checkRenewServicerLease(message)
 	case *MessageObserveDeposit:
 		signer, err = checkObserveDeposit(message)
 	case *MessageResolveDeposit:
@@ -295,6 +301,8 @@ func (c *Contract) DeliverTx(request *PluginDeliverRequest) *PluginDeliverRespon
 		return c.deliverForceRevokeEnclave(request.Height, message)
 	case *MessageManageServicer:
 		return c.deliverManageServicer(request.Height, request.TimeMicros, message)
+	case *MessageRenewServicerLease:
+		return c.deliverRenewServicerLease(request.Height, message)
 	case *MessageObserveDeposit:
 		return c.deliverObserveDeposit(request.Height, message)
 	case *MessageResolveDeposit:

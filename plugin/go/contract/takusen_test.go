@@ -22,7 +22,7 @@ func testSettlementDomainID() []byte {
 }
 
 func testPCRPolicy() *PCRPolicy {
-	return &PCRPolicy{Pcr0: bytes.Repeat([]byte{1}, 48), Pcr1: bytes.Repeat([]byte{2}, 48), Pcr2: bytes.Repeat([]byte{3}, 48), Active: true}
+	return &PCRPolicy{PolicyId: "test-policy", Pcr0: bytes.Repeat([]byte{1}, 48), Pcr1: bytes.Repeat([]byte{2}, 48), Pcr2: bytes.Repeat([]byte{3}, 48), Lifecycle: PCRPolicyLifecycle_PCR_POLICY_LIFECYCLE_ADMITTING}
 }
 
 func TestGenesisPersistsProtocolParameters(t *testing.T) {
@@ -293,11 +293,11 @@ func TestGovernedParamsRejectUnsafeValues(t *testing.T) {
 		t.Fatal("accepted an empty governed PCR allowlist")
 	}
 	inactivePCRs := proto.Clone(valid).(*ProtocolParams)
-	inactivePCRs.ApprovedPcrs[0].Active = false
+	inactivePCRs.ApprovedPcrs[0].Lifecycle = PCRPolicyLifecycle_PCR_POLICY_LIFECYCLE_DRAINING
 	if err := validateProtocolParams(inactivePCRs); err == nil {
 		t.Fatal("accepted a governed PCR allowlist with no active policy")
 	}
-	if pcrApproved(&ProtocolParams{}, bytes.Repeat([]byte{1}, 48), bytes.Repeat([]byte{2}, 48), bytes.Repeat([]byte{3}, 48)) {
+	if pcrPolicyForMeasurements(&ProtocolParams{}, bytes.Repeat([]byte{1}, 48), bytes.Repeat([]byte{2}, 48), bytes.Repeat([]byte{3}, 48)) != nil {
 		t.Fatal("empty consensus PCR policy approved an enclave")
 	}
 	for bank := 0; bank < 3; bank++ {
@@ -313,7 +313,7 @@ func TestGovernedParamsRejectUnsafeValues(t *testing.T) {
 		if err := validateProtocolParams(zeroPCR); err == nil {
 			t.Fatalf("accepted all-zero PCR bank %d", bank)
 		}
-		if pcrApproved(zeroPCR, zeroPCR.ApprovedPcrs[0].Pcr0, zeroPCR.ApprovedPcrs[0].Pcr1, zeroPCR.ApprovedPcrs[0].Pcr2) {
+		if pcrPolicyForMeasurements(zeroPCR, zeroPCR.ApprovedPcrs[0].Pcr0, zeroPCR.ApprovedPcrs[0].Pcr1, zeroPCR.ApprovedPcrs[0].Pcr2) != nil {
 			t.Fatalf("consensus approved all-zero PCR bank %d", bank)
 		}
 	}

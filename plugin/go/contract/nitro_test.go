@@ -36,12 +36,17 @@ func newNitroFixture(t *testing.T, attestedAt time.Time, owner []byte) nitroFixt
 		t.Fatal(err)
 	}
 	nonce := bytes.Repeat([]byte{0x41}, 32)
-	userData := registrationUserData(owner)
+	rosterHash := validatorRosterHash([]*Validator{
+		{Address: bytes.Repeat([]byte{1}, 20), PublicKey: testBDNPublicKey(1), StakedAmount: 100, Committees: []uint64{1}},
+		{Address: bytes.Repeat([]byte{2}, 20), PublicKey: testBDNPublicKey(2), StakedAmount: 100, Committees: []uint64{1}},
+	})
+	userData := registrationUserData(owner, 1, rosterHash)
 	keyDigest := sha256.Sum256(publicKey)
 	params := defaultProtocolParams()
 	message := &MessageManageServicer{
 		OwnerAddress: owner, TeeKeyId: "ed25519:" + hex.EncodeToString(keyDigest[:]), PublicKey: publicKey,
-		Nonce: nonce, UserData: userData, EvmPayoutAddress: append([]byte(nil), owner...), Models: []string{"model"}, Bond: params.MinimumServicerBond, Active: true,
+		Nonce: nonce, UserData: userData, EvmPayoutAddress: append([]byte(nil), owner...), Models: []string{"model"}, Bond: params.MinimumServicerBond, OwnerEnabled: true,
+		NativeValidatorSetId: 1, NativeRosterHash: rosterHash, MaxDebit: params.MinimumServicerBond,
 	}
 	registrationDigest := sha256.New()
 	_, _ = registrationDigest.Write([]byte("takusen:nitro-registration\x00"))
@@ -139,12 +144,13 @@ func protocolParamsForNitroFixture(fixture nitroFixture) *ProtocolParams {
 	params := defaultProtocolParams()
 	params.Revision = 1
 	params.NitroTrustRoot = append([]byte(nil), fixture.rootDER...)
-	params.ApprovedPcrs = []*PCRPolicy{{Pcr0: fixture.pcr0, Pcr1: fixture.pcr1, Pcr2: fixture.pcr2, Active: true}}
+	params.ApprovedPcrs = []*PCRPolicy{{PolicyId: "nitro-test", Pcr0: fixture.pcr0, Pcr1: fixture.pcr1, Pcr2: fixture.pcr2, Lifecycle: PCRPolicyLifecycle_PCR_POLICY_LIFECYCLE_ADMITTING}}
 	return params
 }
 
 func TestRegisterServicerAtomicallyValidatesEvidenceBondsAndActivates(t *testing.T) {
 	contract, store, owner, _ := newMemoryContract(t)
+	seedTestEpochClock(t, store)
 	fixture := newNitroFixture(t, nitroFixtureTime, owner)
 	params := protocolParamsForNitroFixture(fixture)
 	params.Models = []*ModelParams{{Model: "model", Provider: "provider", Active: true}}
@@ -162,10 +168,12 @@ func TestRegisterServicerAtomicallyValidatesEvidenceBondsAndActivates(t *testing
 		t.Fatal("atomic registration did not commit the enclave key")
 	}
 	servicer := new(Servicer)
-	if err := Unmarshal(store.values[string(KeyForServicer(owner))], servicer); err != nil || servicer.Bond != fixture.message.Bond || !servicer.Active {
+	if err := Unmarshal(store.values[string(KeyForServicer(owner))], servicer); err != nil || servicer.Bond != fixture.message.Bond || !servicer.OwnerEnabled {
 		t.Fatalf("atomic registration did not commit the bonded servicer: servicer=%+v err=%v", servicer, err)
 	}
-	eligible, err := contract.eligibleServicers("model")
+	servicer.LeaseExpiryHeight, servicer.LeaseCapacity = 20, 1
+	store.put(t, KeyForServicer(owner), servicer)
+	eligible, err := contract.eligibleServicers(10, "model", nil)
 	if err != nil || len(eligible) != 1 || !bytes.Equal(selectServicer([]byte("input"), []byte("anchor"), "model", eligible).OwnerAddress, owner) {
 		t.Fatalf("registered enclave did not become assignable: eligible=%d err=%v", len(eligible), err)
 	}
@@ -239,6 +247,7 @@ func TestRegisterServicerRejectsMalformedStaleFutureRootPCRAndBindings(t *testin
 	params := protocolParamsForNitroFixture(valid)
 	params.ApprovedPcrs[0].Pcr2 = bytes.Repeat([]byte{9}, 48)
 	contract, store, _, _ := newMemoryContract(t)
+	seedTestEpochClock(t, store)
 	store.put(t, KeyForProtocolParams(), params)
 	store.put(t, KeyForAccount(owner), &Account{Address: owner, Amount: valid.message.Bond})
 	if response := contract.deliverManageServicer(10, blockMicros, valid.message); response.Error == nil {
@@ -254,6 +263,8 @@ func TestRegisterServicerRejectsMalformedStaleFutureRootPCRAndBindings(t *testin
 func TestRegisterServicerHistoricalReplayIsDeterministic(t *testing.T) {
 	first, firstStore, owner, _ := newMemoryContract(t)
 	second, secondStore, _, _ := newMemoryContract(t)
+	seedTestEpochClock(t, firstStore)
+	seedTestEpochClock(t, secondStore)
 	fixture := newNitroFixture(t, nitroFixtureTime, owner)
 	params := protocolParamsForNitroFixture(fixture)
 	firstStore.put(t, KeyForProtocolParams(), params)

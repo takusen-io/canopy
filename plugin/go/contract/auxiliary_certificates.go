@@ -64,7 +64,7 @@ func (c *Contract) consumeAuxiliaryCertificates(height uint64, certificates []*A
 			// idempotent even when the durable relay artifact already exists.
 			if existing.Kind == candidate.Kind && bytes.Equal(existing.Key, candidate.Key) &&
 				bytes.Equal(existing.Digest, candidate.Digest) && bytes.Equal(existing.Payload, candidate.Payload) {
-				certificateRecords, certificateDeletes := settlementCertificateIndex(candidate)
+				certificateRecords, certificateDeletes := auxiliaryCertificateIndex(candidate)
 				for indexKey, indexRecord := range certificateRecords {
 					records[indexKey] = indexRecord
 				}
@@ -81,7 +81,7 @@ func (c *Contract) consumeAuxiliaryCertificates(height uint64, certificates []*A
 		if !c.applyNativeAuxiliaryCertificate(height, candidate, record, records) {
 			continue
 		}
-		certificateRecords, certificateDeletes := settlementCertificateIndex(candidate)
+		certificateRecords, certificateDeletes := auxiliaryCertificateIndex(candidate)
 		for indexKey, indexRecord := range certificateRecords {
 			records[indexKey] = indexRecord
 		}
@@ -91,9 +91,23 @@ func (c *Contract) consumeAuxiliaryCertificates(height uint64, certificates []*A
 	return records, deletes
 }
 
-func settlementCertificateIndex(candidate *AuxiliaryCandidate) (map[string]proto.Message, [][]byte) {
+func auxiliaryCertificateIndex(candidate *AuxiliaryCandidate) (map[string]proto.Message, [][]byte) {
 	records := make(map[string]proto.Message)
-	if candidate == nil || candidate.Kind != "settlement" {
+	if candidate == nil {
+		return records, nil
+	}
+	if candidate.Kind == "execution-terminal" {
+		batch := new(certifiedTerminalExecutions)
+		if json.Unmarshal(candidate.Payload, batch) != nil || batch.TEEKeyID == "" {
+			return records, nil
+		}
+		deletes := make([][]byte, 0, len(batch.ExecutionIDs))
+		for _, executionID := range batch.ExecutionIDs {
+			deletes = append(deletes, KeyForPendingTerminalExecution(batch.TEEKeyID, executionID))
+		}
+		return records, deletes
+	}
+	if candidate.Kind != "settlement" {
 		return records, nil
 	}
 	batch := new(certifiedSettlementBatch)

@@ -44,7 +44,7 @@ var (
 	rotationProofIndexPrefix          = []byte{129}
 	latestEpochPrefix                 = []byte{131}
 	provisionalReservationIndexPrefix = []byte{132}
-	activeServicerIndexPrefix         = []byte{133}
+	modelServicerIndexPrefix          = []byte{133}
 	pendingEpochAuthorizationPrefix   = []byte{135}
 	pendingBridgeBurnPrefix           = []byte{136}
 	handoffManifestPrefix             = []byte{137}
@@ -57,12 +57,15 @@ var (
 	uncertifiedSettlementIndexPrefix  = []byte{144}
 	certifiedSettlementIndexPrefix    = []byte{145}
 	settlementCandidateCursorPrefix   = []byte{146}
+	pendingTerminalExecutionPrefix    = []byte{147}
 )
 
-func EnclavePrefix() []byte        { return JoinLenPrefix(enclavePrefix) }
-func ServicerPrefix() []byte       { return JoinLenPrefix(servicerPrefix) }
-func ActiveServicerPrefix() []byte { return JoinLenPrefix(activeServicerIndexPrefix) }
-func RequestPrefix() []byte        { return JoinLenPrefix(requestPrefix) }
+func EnclavePrefix() []byte  { return JoinLenPrefix(enclavePrefix) }
+func ServicerPrefix() []byte { return JoinLenPrefix(servicerPrefix) }
+func ModelServicerPrefix(model string) []byte {
+	return JoinLenPrefix(modelServicerIndexPrefix, []byte(model))
+}
+func RequestPrefix() []byte { return JoinLenPrefix(requestPrefix) }
 func AssignmentIndexPrefix(owner []byte) []byte {
 	return JoinLenPrefix(assignmentIndexPrefix, owner)
 }
@@ -109,6 +112,12 @@ func KeyForCertifiedSettlementIndex(requestID string) []byte {
 func CertifiedSettlementIndexPrefix() []byte {
 	return JoinLenPrefix(certifiedSettlementIndexPrefix)
 }
+func PendingTerminalExecutionPrefix() []byte {
+	return JoinLenPrefix(pendingTerminalExecutionPrefix)
+}
+func KeyForPendingTerminalExecution(teeKeyID, executionID string) []byte {
+	return JoinLenPrefix(pendingTerminalExecutionPrefix, []byte(teeKeyID), []byte(executionID))
+}
 func DepositPrefix() []byte     { return JoinLenPrefix(depositPrefix) }
 func CreditPrefix() []byte      { return JoinLenPrefix(creditPrefix) }
 func ReservationPrefix() []byte { return JoinLenPrefix(reservationPrefix) }
@@ -148,8 +157,8 @@ func KeyForFeePool(chainID uint64) []byte {
 }
 func KeyForEnclave(keyID string) []byte    { return JoinLenPrefix(enclavePrefix, []byte(keyID)) }
 func KeyForServicer(address []byte) []byte { return JoinLenPrefix(servicerPrefix, address) }
-func KeyForActiveServicer(address []byte) []byte {
-	return JoinLenPrefix(activeServicerIndexPrefix, address)
+func KeyForModelServicer(model string, address []byte) []byte {
+	return JoinLenPrefix(modelServicerIndexPrefix, []byte(model), address)
 }
 func KeyForRequest(requestID string) []byte { return JoinLenPrefix(requestPrefix, []byte(requestID)) }
 func KeyForAssignmentIndex(owner []byte, requestID string) []byte {

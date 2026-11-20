@@ -59,6 +59,7 @@ func (p *Plugin) StartRPCServer(ctx context.Context) {
 	mux.HandleFunc("GET /v1/takusen/domains/{domain}/lifecycle-intent", p.domainRecordValueHandler(KeyForSettlementDomainLifecycleIntent, func() proto.Message { return new(SettlementDomainLifecycleIntent) }))
 	mux.HandleFunc("GET /v1/takusen/params", p.singletonHandler(KeyForProtocolParams(), func() proto.Message { return new(ProtocolParams) }))
 	mux.HandleFunc("GET /v1/takusen/epoch-clock", p.singletonHandler(KeyForEpochClock(), func() proto.Message { return new(EpochClock) }))
+	mux.HandleFunc("GET /v1/takusen/native-trust", p.nativeTrustHandler())
 	mux.HandleFunc("GET /v1/takusen/validators/next", p.nextValidatorSetHandler())
 	mux.HandleFunc("GET /v1/takusen/validator-rotations/{old}/{new}/queues-ready", p.rotationQueuesReadyHandler())
 	mux.HandleFunc("GET /v1/takusen/validator-handoffs/current/{domain}", p.validatorHandoffManifestHandler(false))
@@ -71,6 +72,7 @@ func (p *Plugin) StartRPCServer(ctx context.Context) {
 	mux.HandleFunc("GET /v1/takusen/bridge/burns/{id}", p.hexRecordHandler(32, KeyForBridgeBurn, func() proto.Message { return new(BridgeBurn) }))
 	mux.HandleFunc("GET /v1/takusen/bridge/burns/pending", p.listHandler(PendingBridgeBurnPrefix(), func() proto.Message { return new(ReplayMarker) }))
 	mux.HandleFunc("GET /v1/takusen/servicers", p.listHandler(ServicerPrefix(), func() proto.Message { return new(Servicer) }))
+	mux.HandleFunc("GET /v1/takusen/servicers/{id}", p.hexRecordHandler(20, KeyForServicer, func() proto.Message { return new(Servicer) }))
 	mux.HandleFunc("GET /v1/takusen/requests", p.listHandler(RequestPrefix(), func() proto.Message { return new(RequestRecord) }))
 	mux.HandleFunc("GET /v1/takusen/authorizations/pending", p.listHandler(PendingAuthorizationPrefix(), func() proto.Message { return new(PendingAuthorization) }))
 	mux.HandleFunc("GET /v1/takusen/assignments/{id}", p.assignmentListHandler())
@@ -91,6 +93,7 @@ func (p *Plugin) StartRPCServer(ctx context.Context) {
 	mux.HandleFunc("GET /v1/takusen/quorum-proofs", p.listHandler(QuorumProofPrefix(), func() proto.Message { return new(QuorumProof) }))
 	mux.HandleFunc("GET /v1/takusen/consensus-certificates", p.listHandler(ConsensusCertificatePrefix(), func() proto.Message { return new(ConsensusCertificate) }))
 	mux.HandleFunc("GET /v1/takusen/consensus-certificates/{kind}/{key}", p.latestConsensusCertificateHandler())
+	mux.HandleFunc("GET /v1/takusen/consensus-certificates/{kind}/{key}/all", p.consensusCertificateIdentityListHandler())
 	mux.HandleFunc("GET /v1/takusen/consensus-certificates/{kind}/{key}/{digest}", p.consensusCertificateHandler())
 	mux.HandleFunc("GET /v1/takusen/native-authorization-intents/{kind}/{domain}", p.nativeAuthorizationIntentHandler())
 	handler := p.secureRPCHandler(mux)
@@ -115,6 +118,63 @@ func (p *Plugin) StartRPCServer(ctx context.Context) {
 	log.Printf("Takusen plugin RPC server (%s) listening on %s", PluginBuild, addr)
 	if err = server.Serve(listener); err != nil && err != http.ErrServerClosed {
 		log.Printf("Takusen plugin RPC server error: %v", err)
+	}
+}
+
+func (p *Plugin) consensusCertificateIdentityListHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		kind := r.PathValue("kind")
+		key, err := hex.DecodeString(strings.TrimPrefix(r.PathValue("key"), "0x"))
+		if kind == "" || len(kind) > 64 || err != nil || len(key) == 0 || len(key) > 128 {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid consensus certificate identity"})
+			return
+		}
+		p.listHandler(ConsensusCertificateIdentityPrefix(kind, key), func() proto.Message { return new(ConsensusCertificate) })(w, r)
+	}
+}
+
+func (p *Plugin) nativeTrustHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		height, ok := queryHeight(w, r)
+		if !ok {
+			return
+		}
+		state, err := p.QueryState(height, &PluginStateReadRequest{Keys: []*PluginKeyRead{{QueryId: 1, Key: KeyForEpochClock()}}})
+		if err != nil || state.Error != nil || len(state.Results) != 1 || len(state.Results[0].Entries) != 1 {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "Native epoch clock is unavailable"})
+			return
+		}
+		clock := new(EpochClock)
+		if decodeErr := Unmarshal(state.Results[0].Entries[0].Value, clock); decodeErr != nil || clock.CurrentEpoch == 0 || clock.ValidatorSetId == 0 {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Native epoch clock is invalid"})
+			return
+		}
+		entries, rangeErr := p.rpcRangePage(w, r, height, EpochValidatorPrefix(clock.CurrentEpoch))
+		if rangeErr != nil || len(entries) == 0 {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "Native validator roster is unavailable"})
+			return
+		}
+		validators := make([]*Validator, 0, len(entries))
+		for _, entry := range entries {
+			validator := new(Validator)
+			if decodeErr := Unmarshal(entry.Value, validator); decodeErr != nil {
+				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Native validator roster is invalid"})
+				return
+			}
+			validators = append(validators, validator)
+		}
+		sortValidatorsByConsensusOrder(validators)
+		publicRoster := make([]map[string]any, 0, len(validators))
+		for _, validator := range validators {
+			publicRoster = append(publicRoster, map[string]any{
+				"address": validator.Address, "publicKey": validator.PublicKey, "weight": validator.StakedAmount,
+			})
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"validator_set_id": clock.ValidatorSetId,
+			"roster_hash":      "0x" + hex.EncodeToString(validatorRosterHash(validators)),
+			"validators":       publicRoster,
+		})
 	}
 }
 

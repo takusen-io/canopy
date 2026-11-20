@@ -50,6 +50,20 @@ message Validator {
   bool compound = 10;
 }
 
+enum EnclaveLifecycle {
+  ENCLAVE_LIFECYCLE_UNSPECIFIED = 0;
+  ENCLAVE_LIFECYCLE_ACTIVE = 1;
+  ENCLAVE_LIFECYCLE_DRAINING = 2;
+  ENCLAVE_LIFECYCLE_REVOKED = 3;
+}
+
+enum PCRPolicyLifecycle {
+  PCR_POLICY_LIFECYCLE_UNSPECIFIED = 0;
+  PCR_POLICY_LIFECYCLE_ADMITTING = 1;
+  PCR_POLICY_LIFECYCLE_DRAINING = 2;
+  PCR_POLICY_LIFECYCLE_REVOKED = 3;
+}
+
 message EnclaveKey {
   bytes owner_address = 1;
   string tee_key_id = 2;
@@ -59,7 +73,20 @@ message EnclaveKey {
   bytes pcr1 = 6;
   bytes pcr2 = 7;
   uint64 registered_height = 8;
-  bool active = 9;
+  EnclaveLifecycle lifecycle = 9;
+  string policy_id = 10;
+  // The latest deadline of any assignment issued to this key. A normal
+  // rotation is receipt-only through this height and terminal afterwards.
+  uint64 drain_until_height = 11;
+  // Hash of the frozen Native validator roster that the enclave bound into
+  // its attestation. Finality release certificates must verify against it.
+  bytes native_roster_hash = 12;
+  uint64 native_validator_set_id = 13;
+}
+
+message CapacityReservation {
+  string execution_id = 1;
+  uint64 deadline_height = 2;
 }
 
 message Servicer {
@@ -68,10 +95,13 @@ message Servicer {
   string tee_key_id = 3;
   repeated string models = 4;
   uint64 bond = 5;
-  bool active = 6;
+  bool owner_enabled = 6;
   uint64 registered_height = 7;
-  uint64 failure_count = 8;
-  uint64 total_slashed = 9;
+  uint64 lifecycle_nonce = 8;
+  uint64 lease_expiry_height = 9;
+  uint32 lease_capacity = 10;
+  uint64 lease_nonce = 11;
+  repeated CapacityReservation capacity_reservations = 12;
 }
 
 message Assignment {
@@ -230,10 +260,11 @@ message ModelParams {
 }
 
 message PCRPolicy {
-  bytes pcr0 = 1;
-  bytes pcr1 = 2;
-  bytes pcr2 = 3;
-  bool active = 4;
+  string policy_id = 1;
+  bytes pcr0 = 2;
+  bytes pcr1 = 3;
+  bytes pcr2 = 4;
+  PCRPolicyLifecycle lifecycle = 5;
 }
 
 // ProtocolParams is replaced atomically by a validator-quorum governance
@@ -280,6 +311,12 @@ message ProtocolParams {
   // DER-encoded X.509 root that anchors Nitro attestation certificate chains.
   // Governance replaces this atomically with the rest of the protocol params.
   bytes nitro_trust_root = 34;
+  // A configured model roster is bounded even when lease expiry temporarily
+  // makes entries ineligible, keeping assignment consensus work finite.
+  uint32 max_servicers_per_model = 35;
+  // Availability leases are short-lived and capacity is consensus-bounded.
+  uint64 max_servicer_lease_blocks = 36;
+  uint32 max_servicer_capacity = 37;
 }
 
 message SlashEvidence {

@@ -45,12 +45,32 @@ message MessageManageServicer {
   string tee_key_id = 3;
   repeated string models = 4;
   uint64 bond = 5;
-  bool active = 6;
+  bool owner_enabled = 6;
   bytes public_key = 7;
   bytes nonce = 8;
   bytes user_data = 9;
   bytes proof_signature = 10;
   bytes attestation_document = 11;
+  // Optimistic concurrency prevents stale broad lifecycle updates from
+  // replacing slash-reduced bond or re-enabling a penalized servicer.
+  uint64 lifecycle_nonce = 12;
+  uint64 expected_bond = 13;
+  uint64 max_debit = 14;
+  bytes native_roster_hash = 15;
+  uint64 native_validator_set_id = 16;
+}
+
+// MessageRenewServicerLease is owner-paid but enclave-authorized. The enclave
+// signs the exact height/capacity/nonce tuple, so an offline parent cannot keep
+// receiving new assignments.
+message MessageRenewServicerLease {
+  bytes owner_address = 1;
+  string tee_key_id = 2;
+  uint64 expiry_height = 3;
+  uint32 capacity = 4;
+  uint64 lifecycle_nonce = 5;
+  uint64 lease_nonce = 6;
+  bytes enclave_signature = 7;
 }
 
 message MessageObserveDeposit {

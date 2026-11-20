@@ -112,8 +112,15 @@ func newMemoryContract(t *testing.T) (*Contract, *memoryStateStore, []byte, []by
 	store.put(t, KeyForValidator(second), secondValidator)
 	store.put(t, KeyForEpochValidator(1, first), firstValidator)
 	store.put(t, KeyForEpochValidator(1, second), secondValidator)
-	store.put(t, KeyForProtocolParams(), defaultProtocolParams())
+	testParams := defaultProtocolParams()
+	testParams.ApprovedPcrs = []*PCRPolicy{testPCRPolicy()}
+	store.put(t, KeyForProtocolParams(), testParams)
 	return contract, store, first, second
+}
+
+func seedTestEpochClock(t *testing.T, store *memoryStateStore) {
+	t.Helper()
+	store.put(t, KeyForEpochClock(), &EpochClock{CurrentEpoch: 1, StartHeight: 1, EndHeight: 3600, ValidatorSetId: 1})
 }
 
 func (s *memoryStateStore) put(t *testing.T, key []byte, value any) {
@@ -123,12 +130,14 @@ func (s *memoryStateStore) put(t *testing.T, key []byte, value any) {
 		t.Fatal(err)
 	}
 	s.values[string(key)] = encoded
-	if servicer, ok := value.(*Servicer); ok && servicer.Active {
+	if servicer, ok := value.(*Servicer); ok && servicer.OwnerEnabled {
 		marker, marshalErr := Marshal(&ReplayMarker{Id: append([]byte(nil), servicer.OwnerAddress...)})
 		if marshalErr != nil {
 			t.Fatal(marshalErr)
 		}
-		s.values[string(KeyForActiveServicer(servicer.OwnerAddress))] = marker
+		for _, model := range servicer.Models {
+			s.values[string(KeyForModelServicer(model, servicer.OwnerAddress))] = marker
+		}
 	}
 }
 
@@ -208,15 +217,16 @@ func TestManageServicerRestoresSlashedBondImmediately(t *testing.T) {
 	teeKeyID := "ed25519:current"
 	params := defaultProtocolParams()
 	params.MinimumServicerBond = 100_000
+	params.ApprovedPcrs = []*PCRPolicy{testPCRPolicy()}
 	store.put(t, KeyForProtocolParams(), params)
-	store.put(t, KeyForEnclave(teeKeyID), &EnclaveKey{OwnerAddress: owner, TeeKeyId: teeKeyID, Active: true})
+	store.put(t, KeyForEnclave(teeKeyID), &EnclaveKey{OwnerAddress: owner, TeeKeyId: teeKeyID, Lifecycle: EnclaveLifecycle_ENCLAVE_LIFECYCLE_ACTIVE, PolicyId: "test-policy"})
 	store.put(t, KeyForAccount(owner), &Account{Address: owner, Amount: 1_000})
 	payout := bytes.Repeat([]byte{8}, 20)
 	store.put(t, KeyForServicer(owner), &Servicer{OwnerAddress: owner, EvmPayoutAddress: payout, TeeKeyId: teeKeyID, Models: []string{"model"}, Bond: 99_000})
 
 	response := contract.deliverManageServicer(10, 1, &MessageManageServicer{
 		OwnerAddress: owner, EvmPayoutAddress: payout, TeeKeyId: teeKeyID,
-		Models: []string{"model"}, Bond: 100_000, Active: true,
+		Models: []string{"model"}, Bond: 100_000, OwnerEnabled: true, ExpectedBond: 99_000, MaxDebit: 1_000,
 	})
 	if response.Error != nil {
 		t.Fatal(response.Error)
@@ -229,13 +239,14 @@ func TestManageServicerRestoresSlashedBondImmediately(t *testing.T) {
 	if err := Unmarshal(store.values[string(KeyForAccount(owner))], account); err != nil {
 		t.Fatal(err)
 	}
-	if servicer.Bond != 100_000 || !servicer.Active || servicer.TeeKeyId != teeKeyID || account.Amount != 0 {
+	if servicer.Bond != 100_000 || !servicer.OwnerEnabled || servicer.TeeKeyId != teeKeyID || account.Amount != 0 {
 		t.Fatalf("unexpected top-up state: servicer=%+v account=%+v", servicer, account)
 	}
 }
 
 func TestActiveServicerIndexTracksRegistrationAndDeactivation(t *testing.T) {
 	contract, store, owner, _ := newMemoryContract(t)
+	seedTestEpochClock(t, store)
 	fixture := newNitroFixture(t, nitroFixtureTime, owner)
 	params := protocolParamsForNitroFixture(fixture)
 	store.put(t, KeyForProtocolParams(), params)
@@ -246,18 +257,58 @@ func TestActiveServicerIndexTracksRegistrationAndDeactivation(t *testing.T) {
 	if response := contract.deliverManageServicer(1, uint64(nitroFixtureTime.Add(time.Minute).UnixMicro()), register); response.Error != nil {
 		t.Fatal(response.Error)
 	}
-	if found, err := contract.read(KeyForActiveServicer(owner), new(ReplayMarker)); err != nil || !found {
+	if found, err := contract.read(KeyForModelServicer("model", owner), new(ReplayMarker)); err != nil || !found {
 		t.Fatalf("active servicer index missing: found=%v err=%v", found, err)
 	}
 	update := &MessageManageServicer{
 		OwnerAddress: owner, EvmPayoutAddress: append([]byte(nil), owner...), TeeKeyId: register.TeeKeyId,
-		Models: []string{"model"}, Bond: register.Bond, Active: false,
+		Models: []string{"model"}, Bond: register.Bond, OwnerEnabled: false, LifecycleNonce: 1, ExpectedBond: register.Bond,
 	}
 	if response := contract.deliverManageServicer(2, uint64(nitroFixtureTime.Add(2*time.Minute).UnixMicro()), update); response.Error != nil {
 		t.Fatal(response.Error)
 	}
-	if found, err := contract.read(KeyForActiveServicer(owner), new(ReplayMarker)); err != nil || found {
+	if found, err := contract.read(KeyForModelServicer("model", owner), new(ReplayMarker)); err != nil || found {
 		t.Fatalf("inactive servicer remains indexed: found=%v err=%v", found, err)
+	}
+}
+
+func TestEnclaveSignedLeaseControlsCapacityEligibility(t *testing.T) {
+	contract, store, owner, _ := newMemoryContract(t)
+	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest := sha256.Sum256(publicKey)
+	keyID := "ed25519:" + hex.EncodeToString(digest[:])
+	store.put(t, KeyForEnclave(keyID), &EnclaveKey{
+		OwnerAddress: owner, TeeKeyId: keyID, PublicKey: publicKey,
+		Lifecycle: EnclaveLifecycle_ENCLAVE_LIFECYCLE_ACTIVE, PolicyId: "test-policy",
+	})
+	store.put(t, KeyForServicer(owner), &Servicer{
+		OwnerAddress: owner, EvmPayoutAddress: bytes.Repeat([]byte{8}, 20), TeeKeyId: keyID,
+		Models: []string{"model"}, Bond: 100, OwnerEnabled: true, LifecycleNonce: 4,
+	})
+	if eligible, readErr := contract.eligibleServicers(10, "model", nil); readErr != nil || len(eligible) != 0 {
+		t.Fatalf("unleased servicer eligible=%d err=%v", len(eligible), readErr)
+	}
+	lease := &MessageRenewServicerLease{
+		OwnerAddress: owner, TeeKeyId: keyID, ExpiryHeight: 100, Capacity: 1, LifecycleNonce: 4, LeaseNonce: 1,
+	}
+	lease.EnclaveSignature = ed25519.Sign(privateKey, availabilityLeaseMessage(1, lease))
+	if response := contract.deliverRenewServicerLease(10, lease); response.Error != nil {
+		t.Fatal(response.Error)
+	}
+	eligible, readErr := contract.eligibleServicers(10, "model", nil)
+	if readErr != nil || len(eligible) != 1 {
+		t.Fatalf("leased servicer eligible=%d err=%v", len(eligible), readErr)
+	}
+	eligible[0].CapacityReservations = []*CapacityReservation{{ExecutionId: "occupied", DeadlineHeight: 20}}
+	store.put(t, KeyForServicer(owner), eligible[0])
+	if eligible, readErr = contract.eligibleServicers(10, "model", nil); readErr != nil || len(eligible) != 0 {
+		t.Fatalf("capacity-exhausted servicer eligible=%d err=%v", len(eligible), readErr)
+	}
+	if eligible, readErr = contract.eligibleServicers(21, "model", nil); readErr != nil || len(eligible) != 1 {
+		t.Fatalf("timed-out capacity did not release: eligible=%d err=%v", len(eligible), readErr)
 	}
 }
 
@@ -494,14 +545,18 @@ func TestPartialSettlementReorgOnlyReopensItsExecution(t *testing.T) {
 
 func TestAdversarialExecutionRejectsDuplicatesAndRevokedEnclave(t *testing.T) {
 	contract, store, first, _ := newMemoryContract(t)
+	params := defaultProtocolParams()
+	params.ApprovedPcrs = []*PCRPolicy{testPCRPolicy()}
+	params.InvalidReceiptSlashBps = 5_000
+	store.put(t, KeyForProtocolParams(), params)
 	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		t.Fatal(err)
 	}
 	keyDigest := sha256.Sum256(publicKey)
 	keyID := "ed25519:" + hex.EncodeToString(keyDigest[:])
-	store.put(t, KeyForEnclave(keyID), &EnclaveKey{OwnerAddress: first, PublicKey: publicKey, TeeKeyId: keyID, Active: true})
-	store.put(t, KeyForServicer(first), &Servicer{OwnerAddress: first, TeeKeyId: keyID, Models: []string{"model"}, Bond: 100, Active: true})
+	store.put(t, KeyForEnclave(keyID), &EnclaveKey{OwnerAddress: first, PublicKey: publicKey, TeeKeyId: keyID, Lifecycle: EnclaveLifecycle_ENCLAVE_LIFECYCLE_ACTIVE, PolicyId: "test-policy", DrainUntilHeight: 30})
+	store.put(t, KeyForServicer(first), &Servicer{OwnerAddress: first, TeeKeyId: keyID, Models: []string{"model"}, Bond: 100, OwnerEnabled: true})
 	inputHash := sha256.Sum256([]byte("input"))
 	putRequest := func(id string) {
 		executionID := assignmentExecutionID(testSettlementDomainID(), id, "model", first, inputHash[:])
@@ -518,9 +573,22 @@ func TestAdversarialExecutionRejectsDuplicatesAndRevokedEnclave(t *testing.T) {
 		t.Fatalf("invalid signed evidence was not committed for slashing: %v", response.Error)
 	}
 	servicer := new(Servicer)
-	if found, err := contract.read(KeyForServicer(first), servicer); err != nil || !found || servicer.FailureCount != 1 {
-		t.Fatalf("invalid receipt did not penalize servicer: found=%v failures=%d err=%v", found, servicer.FailureCount, err)
+	if found, err := contract.read(KeyForServicer(first), servicer); err != nil || !found || servicer.Bond >= 100 {
+		t.Fatalf("invalid receipt did not slash servicer: found=%v bond=%d err=%v", found, servicer.Bond, err)
 	}
+	// Mutable servicer state governs only new assignments. The old key and PCR
+	// policy may drain the immutable assignment even after rotation, pause,
+	// underbonding, and lease expiry.
+	drainingKey := new(EnclaveKey)
+	_, _ = contract.read(KeyForEnclave(keyID), drainingKey)
+	drainingKey.Lifecycle = EnclaveLifecycle_ENCLAVE_LIFECYCLE_DRAINING
+	drainingKey.DrainUntilHeight = 30
+	store.put(t, KeyForEnclave(keyID), drainingKey)
+	params.ApprovedPcrs[0].Lifecycle = PCRPolicyLifecycle_PCR_POLICY_LIFECYCLE_DRAINING
+	store.put(t, KeyForProtocolParams(), params)
+	servicer.OwnerEnabled, servicer.Bond, servicer.TeeKeyId = false, 0, "ed25519:replacement"
+	servicer.LeaseExpiryHeight, servicer.LeaseCapacity = 0, 0
+	store.put(t, KeyForServicer(first), servicer)
 	message := signedExecution(t, privateKey, publicKey, keyID, first, "request-1", assignmentExecutionID(testSettlementDomainID(), "request-1", "model", first, inputHash[:]), inputHash)
 	if response := contract.deliverSubmitExecution(20, message); response.Error != nil {
 		t.Fatal(response.Error)
@@ -540,7 +608,7 @@ func TestAdversarialExecutionRejectsDuplicatesAndRevokedEnclave(t *testing.T) {
 	}
 
 	putRequest("request-2")
-	store.put(t, KeyForEnclave(keyID), &EnclaveKey{OwnerAddress: first, PublicKey: publicKey, TeeKeyId: keyID, Active: false})
+	store.put(t, KeyForEnclave(keyID), &EnclaveKey{OwnerAddress: first, PublicKey: publicKey, TeeKeyId: keyID, Lifecycle: EnclaveLifecycle_ENCLAVE_LIFECYCLE_REVOKED, PolicyId: "test-policy"})
 	revoked := signedExecution(t, privateKey, publicKey, keyID, first, "request-2", "execution-2", inputHash)
 	if response := contract.deliverSubmitExecution(22, revoked); response.Error == nil {
 		t.Fatal("receipt signed by a revoked enclave key was accepted")
@@ -724,7 +792,7 @@ func TestCertifiedAssignmentExpirationIsTerminalAndNonSlashable(t *testing.T) {
 	requester := bytes.Repeat([]byte{4}, 20)
 	servicerAddress := bytes.Repeat([]byte{5}, 20)
 	executionID := "exec:" + hex.EncodeToString(bytes.Repeat([]byte{6}, 32))
-	store.put(t, KeyForServicer(servicerAddress), &Servicer{OwnerAddress: servicerAddress, Bond: 100, Active: true})
+	store.put(t, KeyForServicer(servicerAddress), &Servicer{OwnerAddress: servicerAddress, Bond: 100, OwnerEnabled: true})
 	store.put(t, KeyForRequest("expired"), &RequestRecord{SettlementDomainId: testSettlementDomainID(),
 		RequestId: "expired", InputHash: bytes.Repeat([]byte{7}, 32), Requester: requester,
 		Models: []string{"model"}, DeadlineHeight: 10,
@@ -752,7 +820,7 @@ func TestCertifiedAssignmentExpirationIsTerminalAndNonSlashable(t *testing.T) {
 		t.Fatalf("timeout result missing: found=%v execution=%#v err=%v", found, execution, err)
 	}
 	servicer := new(Servicer)
-	if found, err := contract.read(KeyForServicer(servicerAddress), servicer); err != nil || !found || servicer.Bond != 100 || servicer.FailureCount != 0 {
+	if found, err := contract.read(KeyForServicer(servicerAddress), servicer); err != nil || !found || servicer.Bond != 100 {
 		t.Fatalf("expiration changed servicer accounting: found=%v servicer=%#v err=%v", found, servicer, err)
 	}
 	if response := contract.deliverExpireAssignmentWithCertificate(12, message); response.Error == nil {
@@ -767,15 +835,15 @@ func TestManageServicerBondChangesAndSlashesAreBlockEffective(t *testing.T) {
 	params.MinimumServicerBond = 50
 	params.ServicerUnbondingBlocks = 20
 	params.InvalidReceiptSlashBps = 5_000
+	params.ApprovedPcrs = []*PCRPolicy{testPCRPolicy()}
 	store.put(t, KeyForProtocolParams(), params)
 	keyID := "ed25519:current"
 	payout := bytes.Repeat([]byte{8}, 20)
-	store.put(t, KeyForEnclave(keyID), &EnclaveKey{OwnerAddress: owner, TeeKeyId: keyID, Active: true})
-	store.put(t, KeyForServicer(owner), &Servicer{OwnerAddress: owner, EvmPayoutAddress: payout, TeeKeyId: keyID, Models: []string{"model"}, Bond: 100, Active: true})
-	store.put(t, KeyForActiveServicer(owner), &ReplayMarker{Id: owner})
+	store.put(t, KeyForEnclave(keyID), &EnclaveKey{OwnerAddress: owner, TeeKeyId: keyID, Lifecycle: EnclaveLifecycle_ENCLAVE_LIFECYCLE_ACTIVE, PolicyId: "test-policy"})
+	store.put(t, KeyForServicer(owner), &Servicer{OwnerAddress: owner, EvmPayoutAddress: payout, TeeKeyId: keyID, Models: []string{"model"}, Bond: 100, OwnerEnabled: true})
 	store.put(t, KeyForAccount(owner), &Account{Address: owner, Amount: 50})
 
-	manage := &MessageManageServicer{OwnerAddress: owner, EvmPayoutAddress: payout, TeeKeyId: keyID, Models: []string{"model"}, Bond: 150, Active: true}
+	manage := &MessageManageServicer{OwnerAddress: owner, EvmPayoutAddress: payout, TeeKeyId: keyID, Models: []string{"model"}, Bond: 150, OwnerEnabled: true, ExpectedBond: 100, MaxDebit: 50}
 	if response := contract.deliverManageServicer(1, 1, manage); response.Error != nil {
 		t.Fatal(response.Error)
 	}
@@ -788,11 +856,11 @@ func TestManageServicerBondChangesAndSlashesAreBlockEffective(t *testing.T) {
 		t.Fatalf("bond increase account: found=%v account=%+v err=%v", found, account, err)
 	}
 
-	manage.Bond, manage.Active = 40, false
+	manage.Bond, manage.OwnerEnabled, manage.ExpectedBond, manage.LifecycleNonce = 40, false, 150, 1
 	if response := contract.deliverManageServicer(2, 2, manage); response.Error != nil {
 		t.Fatal(response.Error)
 	}
-	if found, err := contract.read(KeyForServicer(owner), servicer); err != nil || !found || servicer.Bond != 40 || servicer.Active {
+	if found, err := contract.read(KeyForServicer(owner), servicer); err != nil || !found || servicer.Bond != 40 || servicer.OwnerEnabled {
 		t.Fatalf("immediate bond decrease: found=%v servicer=%+v err=%v", found, servicer, err)
 	}
 	if found, err := contract.read(KeyForAccount(owner), account); err != nil || !found ||
@@ -816,8 +884,7 @@ func TestManageServicerBondChangesAndSlashesAreBlockEffective(t *testing.T) {
 	}
 	apply(3, "first")
 	apply(4, "second")
-	if found, err := contract.read(KeyForServicer(owner), servicer); err != nil || !found ||
-		servicer.Bond != 0 || servicer.TotalSlashed != 112 || servicer.Active {
+	if found, err := contract.read(KeyForServicer(owner), servicer); err != nil || !found || servicer.Bond != 0 {
 		t.Fatalf("canonical immediate slashes: found=%v servicer=%+v err=%v", found, servicer, err)
 	}
 	if found, err := contract.read(KeyForAccount(owner), account); err != nil || !found ||
@@ -827,13 +894,48 @@ func TestManageServicerBondChangesAndSlashesAreBlockEffective(t *testing.T) {
 
 	account.Amount += 50
 	store.put(t, KeyForAccount(owner), account)
-	manage.Bond, manage.Active = 50, true
+	manage.Bond, manage.OwnerEnabled, manage.ExpectedBond, manage.LifecycleNonce, manage.MaxDebit = 50, true, 0, 2, 50
 	if response := contract.deliverManageServicer(5, 5, manage); response.Error != nil {
 		t.Fatal(response.Error)
 	}
 	if found, err := contract.read(KeyForAccount(owner), account); err != nil || !found ||
 		account.Amount != 38 || account.UnbondingAmount != 38 {
 		t.Fatalf("reactivation consumed locked collateral: found=%v account=%+v err=%v", found, account, err)
+	}
+}
+
+func TestSuccessiveBondReductionsShareAndExtendOneReleaseLock(t *testing.T) {
+	contract, store, owner, _ := newMemoryContract(t)
+	params := defaultProtocolParams()
+	params.Revision, params.ServicerUnbondingBlocks = 1, 20
+	params.ApprovedPcrs = []*PCRPolicy{testPCRPolicy()}
+	store.put(t, KeyForProtocolParams(), params)
+	keyID := "ed25519:reductions"
+	store.put(t, KeyForEnclave(keyID), &EnclaveKey{
+		OwnerAddress: owner, TeeKeyId: keyID, Lifecycle: EnclaveLifecycle_ENCLAVE_LIFECYCLE_ACTIVE, PolicyId: "test-policy",
+	})
+	store.put(t, KeyForServicer(owner), &Servicer{
+		OwnerAddress: owner, EvmPayoutAddress: bytes.Repeat([]byte{8}, 20), TeeKeyId: keyID,
+		Models: []string{"model"}, Bond: 100, OwnerEnabled: true,
+	})
+	message := &MessageManageServicer{
+		OwnerAddress: owner, EvmPayoutAddress: bytes.Repeat([]byte{8}, 20), TeeKeyId: keyID,
+		Models: []string{"model"}, Bond: 80, OwnerEnabled: true, ExpectedBond: 100,
+	}
+	if response := contract.deliverManageServicer(10, 10, message); response.Error != nil {
+		t.Fatal(response.Error)
+	}
+	message.Bond, message.ExpectedBond, message.LifecycleNonce = 60, 80, 1
+	if response := contract.deliverManageServicer(15, 15, message); response.Error != nil {
+		t.Fatal(response.Error)
+	}
+	account := new(Account)
+	if found, err := contract.read(KeyForAccount(owner), account); err != nil || !found ||
+		account.Amount != 40 || account.UnbondingAmount != 40 || account.UnbondingReleaseHeight != 35 {
+		t.Fatalf("successive reduction lock: found=%v account=%+v err=%v", found, account, err)
+	}
+	if accountSpendableAtHeight(account, 34) != 0 || accountSpendableAtHeight(account, 35) != 40 {
+		t.Fatalf("same-block maturity changed: before=%d at=%d", accountSpendableAtHeight(account, 34), accountSpendableAtHeight(account, 35))
 	}
 }
 
@@ -844,27 +946,25 @@ func TestOwnerRemovalAndForcedEnclaveRevocationAreDistinct(t *testing.T) {
 	store.put(t, KeyForProtocolParams(), params)
 	keyID := "ed25519:owned"
 	payout := bytes.Repeat([]byte{8}, 20)
-	store.put(t, KeyForEnclave(keyID), &EnclaveKey{OwnerAddress: first, TeeKeyId: keyID, Active: true})
-	store.put(t, KeyForServicer(first), &Servicer{OwnerAddress: first, EvmPayoutAddress: payout, TeeKeyId: keyID, Models: []string{"model"}, Bond: 100, Active: true})
-	store.put(t, KeyForActiveServicer(first), &ReplayMarker{Id: first})
-	remove := &MessageManageServicer{OwnerAddress: first, EvmPayoutAddress: payout, Models: []string{"model"}, Bond: 100, Active: false}
+	store.put(t, KeyForEnclave(keyID), &EnclaveKey{OwnerAddress: first, TeeKeyId: keyID, Lifecycle: EnclaveLifecycle_ENCLAVE_LIFECYCLE_ACTIVE, PolicyId: "test-policy"})
+	store.put(t, KeyForServicer(first), &Servicer{OwnerAddress: first, EvmPayoutAddress: payout, TeeKeyId: keyID, Models: []string{"model"}, Bond: 100, OwnerEnabled: true})
+	remove := &MessageManageServicer{OwnerAddress: first, EvmPayoutAddress: payout, Models: []string{"model"}, Bond: 100, OwnerEnabled: false, ExpectedBond: 100}
 	if response := contract.deliverManageServicer(1, 1, remove); response.Error != nil {
 		t.Fatal(response.Error)
 	}
 	servicer := new(Servicer)
 	enclave := new(EnclaveKey)
-	if found, err := contract.read(KeyForServicer(first), servicer); err != nil || !found || servicer.Active || servicer.TeeKeyId != "" {
+	if found, err := contract.read(KeyForServicer(first), servicer); err != nil || !found || servicer.OwnerEnabled || servicer.TeeKeyId != "" {
 		t.Fatalf("owner removal did not deactivate: found=%v servicer=%+v err=%v", found, servicer, err)
 	}
-	if found, err := contract.read(KeyForEnclave(keyID), enclave); err != nil || !found || enclave.Active {
-		t.Fatalf("owner removal did not revoke key: found=%v enclave=%+v err=%v", found, enclave, err)
+	if found, err := contract.read(KeyForEnclave(keyID), enclave); err != nil || !found || enclave.Lifecycle != EnclaveLifecycle_ENCLAVE_LIFECYCLE_DRAINING {
+		t.Fatalf("owner removal did not drain key: found=%v enclave=%+v err=%v", found, enclave, err)
 	}
 
 	forcedKey := "ed25519:forced"
-	store.put(t, KeyForEnclave(forcedKey), &EnclaveKey{OwnerAddress: first, TeeKeyId: forcedKey, Active: true})
+	store.put(t, KeyForEnclave(forcedKey), &EnclaveKey{OwnerAddress: first, TeeKeyId: forcedKey, Lifecycle: EnclaveLifecycle_ENCLAVE_LIFECYCLE_ACTIVE, PolicyId: "test-policy"})
 	for _, owner := range [][]byte{first, second} {
-		store.put(t, KeyForServicer(owner), &Servicer{OwnerAddress: owner, EvmPayoutAddress: payout, TeeKeyId: forcedKey, Models: []string{"model"}, Bond: 100, Active: true})
-		store.put(t, KeyForActiveServicer(owner), &ReplayMarker{Id: owner})
+		store.put(t, KeyForServicer(owner), &Servicer{OwnerAddress: owner, EvmPayoutAddress: payout, TeeKeyId: forcedKey, Models: []string{"model"}, Bond: 100, OwnerEnabled: true})
 	}
 	force := &MessageForceRevokeEnclave{ObserverAddress: first, TeeKeyId: forcedKey}
 	if response := contract.deliverForceRevokeEnclave(2, force); response.Error != nil {
@@ -875,9 +975,18 @@ func TestOwnerRemovalAndForcedEnclaveRevocationAreDistinct(t *testing.T) {
 		t.Fatal(response.Error)
 	}
 	for _, owner := range [][]byte{first, second} {
-		if found, err := contract.read(KeyForServicer(owner), servicer); err != nil || !found || servicer.Active {
+		if found, err := contract.read(KeyForServicer(owner), servicer); err != nil || !found || (bytes.Equal(owner, first) && servicer.OwnerEnabled) {
 			t.Fatalf("forced revocation left servicer active: owner=%x found=%v servicer=%+v err=%v", owner, found, servicer, err)
 		}
+	}
+	servicer = new(Servicer)
+	_, _ = contract.read(KeyForServicer(first), servicer)
+	reactivate := &MessageManageServicer{
+		OwnerAddress: first, EvmPayoutAddress: payout, TeeKeyId: forcedKey, Models: []string{"model"},
+		Bond: servicer.Bond, OwnerEnabled: true, LifecycleNonce: servicer.LifecycleNonce, ExpectedBond: servicer.Bond,
+	}
+	if response := contract.deliverManageServicer(4, 4, reactivate); response.Error == nil {
+		t.Fatal("validator-revoked enclave key was reactivated by its owner")
 	}
 }
 
@@ -1896,6 +2005,7 @@ func TestZeroCostEnclaveReceiptImmediatelySlashesAndLeavesAssignmentRetryable(t 
 	inputHash := sha256.Sum256([]byte("input"))
 	params := defaultProtocolParams()
 	params.Revision, params.InvalidReceiptSlashBps = 1, 5_000
+	params.ApprovedPcrs = []*PCRPolicy{testPCRPolicy()}
 	store.put(t, KeyForProtocolParams(), params)
 	store.put(t, KeyForRequest("request"), &RequestRecord{SettlementDomainId: testSettlementDomainID(),
 		RequestId: "request", Requester: owner, InputHash: inputHash[:], OutputType: "boolean",
@@ -1904,10 +2014,10 @@ func TestZeroCostEnclaveReceiptImmediatelySlashesAndLeavesAssignmentRetryable(t 
 	})
 	store.put(t, KeyForReservation(testSettlementDomainID(), "request"), &ReservationRecord{SettlementDomainId: testSettlementDomainID(), RequestId: "request", Requester: owner, Budget: 100, Status: "reserved"})
 	store.put(t, KeyForServicer(owner), &Servicer{
-		OwnerAddress: owner, TeeKeyId: keyID, Models: []string{"model"}, Bond: 100, Active: true,
+		OwnerAddress: owner, TeeKeyId: keyID, Models: []string{"model"}, Bond: 100, OwnerEnabled: true,
 	})
 	store.put(t, KeyForEnclave(keyID), &EnclaveKey{
-		OwnerAddress: owner, TeeKeyId: keyID, PublicKey: publicKey, Active: true,
+		OwnerAddress: owner, TeeKeyId: keyID, PublicKey: publicKey, Lifecycle: EnclaveLifecycle_ENCLAVE_LIFECYCLE_ACTIVE, PolicyId: "test-policy", DrainUntilHeight: 100,
 	})
 
 	executionID := assignmentExecutionID(testSettlementDomainID(), "request", "model", owner, inputHash[:])
@@ -1933,8 +2043,8 @@ func TestZeroCostEnclaveReceiptImmediatelySlashesAndLeavesAssignmentRetryable(t 
 		t.Fatalf("invalid receipt completed its assignment: found=%v err=%v request=%#v", found, readErr, request)
 	}
 	servicer := new(Servicer)
-	if found, readErr := contract.read(KeyForServicer(owner), servicer); readErr != nil || !found || servicer.FailureCount != 1 {
-		t.Fatalf("servicer failure was not recorded: found=%v err=%v servicer=%#v", found, readErr, servicer)
+	if found, readErr := contract.read(KeyForServicer(owner), servicer); readErr != nil || !found || servicer.Bond != 50 {
+		t.Fatalf("servicer slash was not recorded: found=%v err=%v servicer=%#v", found, readErr, servicer)
 	}
 	evidenceID := hashFields([]byte("takusen:invalid-receipt"), digest[:])
 	evidence := new(SlashEvidence)
@@ -1975,15 +2085,20 @@ func TestAssignmentProviderCostLimitIsConsensusAuthenticated(t *testing.T) {
 			keyID := "ed25519:" + hex.EncodeToString(keyDigest[:])
 			inputHash := sha256.Sum256([]byte("cost-limit-input"))
 			executionID := assignmentExecutionID(testSettlementDomainID(), "request", "model", owner, inputHash[:])
-			store.put(t, KeyForProtocolParams(), func() *ProtocolParams { p := defaultProtocolParams(); p.Revision = 1; return p }())
+			store.put(t, KeyForProtocolParams(), func() *ProtocolParams {
+				p := defaultProtocolParams()
+				p.Revision = 1
+				p.ApprovedPcrs = []*PCRPolicy{testPCRPolicy()}
+				return p
+			}())
 			store.put(t, KeyForRequest("request"), &RequestRecord{
 				SettlementDomainId: testSettlementDomainID(), RequestId: "request", Requester: owner, InputHash: inputHash[:],
 				OutputType: "boolean", Models: []string{"model"}, ExecutionQuorum: 1, Status: "authorized", DeadlineHeight: 100,
 				Assignments: []*Assignment{{Model: "model", Provider: "provider", ServicerAddress: owner, ExecutionId: executionID, TeeKeyId: keyID, MaxProviderCost: 100}},
 			})
 			store.put(t, KeyForReservation(testSettlementDomainID(), "request"), &ReservationRecord{SettlementDomainId: testSettlementDomainID(), RequestId: "request", Requester: owner, Budget: 100, Status: "reserved"})
-			store.put(t, KeyForServicer(owner), &Servicer{OwnerAddress: owner, TeeKeyId: keyID, Models: []string{"model"}, Bond: 100, Active: true})
-			store.put(t, KeyForEnclave(keyID), &EnclaveKey{OwnerAddress: owner, TeeKeyId: keyID, PublicKey: publicKey, Active: true})
+			store.put(t, KeyForServicer(owner), &Servicer{OwnerAddress: owner, TeeKeyId: keyID, Models: []string{"model"}, Bond: 100, OwnerEnabled: true})
+			store.put(t, KeyForEnclave(keyID), &EnclaveKey{OwnerAddress: owner, TeeKeyId: keyID, PublicKey: publicKey, Lifecycle: EnclaveLifecycle_ENCLAVE_LIFECYCLE_ACTIVE, PolicyId: "test-policy", DrainUntilHeight: 100})
 
 			message := signedExecution(t, privateKey, publicKey, keyID, owner, "request", executionID, inputHash)
 			parsed, parseErr := parseCanonicalReceipt(message.ReceiptJson)
@@ -2021,6 +2136,7 @@ func TestFinalReceiptMakesRequestReadyOnlyAfterAllAssignmentsResolve(t *testing.
 	outputHash := sha256.Sum256([]byte("true"))
 	params := defaultProtocolParams()
 	params.Revision = 1
+	params.ApprovedPcrs = []*PCRPolicy{testPCRPolicy()}
 	store.put(t, KeyForProtocolParams(), params)
 	store.put(t, KeyForRequest("late"), &RequestRecord{SettlementDomainId: testSettlementDomainID(),
 		RequestId: "late", Requester: requester, InputHash: inputHash[:],
@@ -2034,8 +2150,8 @@ func TestFinalReceiptMakesRequestReadyOnlyAfterAllAssignmentsResolve(t *testing.
 		ExecutionId: "prior-execution", RequestId: "late", Model: "prior", Status: "success", Output: "true", OutputHash: outputHash[:],
 	})
 	store.put(t, KeyForReservation(testSettlementDomainID(), "late"), &ReservationRecord{SettlementDomainId: testSettlementDomainID(), RequestId: "late", Requester: requester, Budget: 200, Spent: 10, Status: "reserved"})
-	store.put(t, KeyForServicer(owner), &Servicer{OwnerAddress: owner, TeeKeyId: keyID, Models: []string{"model"}, Bond: 100, Active: true})
-	store.put(t, KeyForEnclave(keyID), &EnclaveKey{OwnerAddress: owner, TeeKeyId: keyID, PublicKey: publicKey, Active: true})
+	store.put(t, KeyForServicer(owner), &Servicer{OwnerAddress: owner, TeeKeyId: keyID, Models: []string{"model"}, Bond: 100, OwnerEnabled: true})
+	store.put(t, KeyForEnclave(keyID), &EnclaveKey{OwnerAddress: owner, TeeKeyId: keyID, PublicKey: publicKey, Lifecycle: EnclaveLifecycle_ENCLAVE_LIFECYCLE_ACTIVE, PolicyId: "test-policy", DrainUntilHeight: 100})
 
 	executionID := assignmentExecutionID(testSettlementDomainID(), "late", "model", owner, inputHash[:])
 	if response := contract.deliverSubmitExecution(50, signedExecution(t, privateKey, publicKey, keyID, owner, "late", executionID, inputHash)); response.Error != nil {
@@ -2053,7 +2169,7 @@ func TestFinalReceiptMakesRequestReadyOnlyAfterAllAssignmentsResolve(t *testing.
 func TestTimeoutExhaustionBecomesReady(t *testing.T) {
 	contract, store, _, _ := newMemoryContract(t)
 	servicerAddress := bytes.Repeat([]byte{10}, 20)
-	store.put(t, KeyForServicer(servicerAddress), &Servicer{OwnerAddress: servicerAddress, Models: []string{"model"}, Bond: 100, Active: true})
+	store.put(t, KeyForServicer(servicerAddress), &Servicer{OwnerAddress: servicerAddress, Models: []string{"model"}, Bond: 100, OwnerEnabled: true})
 	store.put(t, KeyForRequest("resolved"), &RequestRecord{SettlementDomainId: testSettlementDomainID(),
 		RequestId: "resolved", InputHash: bytes.Repeat([]byte{11}, 32), Models: []string{"prior", "model"}, Status: "authorized", DeadlineHeight: 10,
 		Assignments: []*Assignment{

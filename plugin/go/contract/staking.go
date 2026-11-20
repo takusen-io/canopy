@@ -154,14 +154,6 @@ func (c *Contract) applyServicerSlash(
 		records[string(KeyForAccount(owner))] = account
 	}
 	applied := penalty - remaining
-	if ^uint64(0)-servicer.TotalSlashed < applied {
-		return ErrState("servicer slash accounting overflow")
-	}
-	servicer.TotalSlashed += applied
-	if servicer.Bond < params.MinimumServicerBond {
-		servicer.Active = false
-		*deletes = append(*deletes, KeyForActiveServicer(owner))
-	}
 	records[string(KeyForServicer(owner))] = servicer
 	records[string(KeyForSlashEvidence(evidenceID))] = &SlashEvidence{
 		EvidenceId: append([]byte(nil), evidenceID...), TargetAddress: append([]byte(nil), owner...),

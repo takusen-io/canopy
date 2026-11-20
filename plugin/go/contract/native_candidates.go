@@ -19,7 +19,7 @@ const (
 
 var nativeCandidateCategoryLimits = map[string]int{
 	"priority": 32, "settlement": 64, "reward": 3, "bridge": 3,
-	"abandonment": 1, "lifecycle": 2, "timeout": 3,
+	"abandonment": 1, "lifecycle": 2, "timeout": 3, "terminal": 4,
 }
 
 type certifiedEVMObservation struct {
@@ -28,6 +28,21 @@ type certifiedEVMObservation struct {
 	BlockNumber        uint64 `json:"blockNumber"`
 	BlockHash          []byte `json:"blockHash"`
 	Message            []byte `json:"message"`
+}
+
+type certifiedTerminalExecutions struct {
+	TEEKeyID       string   `json:"teeKeyId"`
+	ExecutionIDs   []string `json:"executionIds"`
+	ValidatorSetID uint64   `json:"validatorSetId"`
+}
+
+func terminalExecutionDigest(batch *certifiedTerminalExecutions) []byte {
+	fields := make([][]byte, 0, len(batch.ExecutionIDs)+3)
+	fields = append(fields, []byte("takusen:terminal-executions:v1"), []byte(batch.TEEKeyID), uint64Bytes(batch.ValidatorSetID))
+	for _, executionID := range batch.ExecutionIDs {
+		fields = append(fields, []byte(executionID))
+	}
+	return hashFields(fields...)
 }
 
 func evmObservationDigest(observation *certifiedEVMObservation, subject []byte) []byte {
@@ -65,12 +80,46 @@ func (c *Contract) nativeAuxiliaryCandidates(height uint64, params *ProtocolPara
 	if clockErr != nil {
 		return nil, clockErr
 	}
-	settlements, settlementErr := c.settlementAuxiliaryCandidates(clock, maxNativeAuxiliaryCandidates-len(result))
+	// Reserve four candidate slots for replay cleanup so a continuous
+	// settlement backlog cannot force routine enclave-key rotation.
+	settlements, settlementErr := c.settlementAuxiliaryCandidates(clock, maxNativeAuxiliaryCandidates-len(result)-nativeCandidateCategoryLimits["terminal"])
 	if settlementErr != nil {
 		return nil, settlementErr
 	}
 	for _, candidate := range settlements {
 		appendCandidate("settlement", candidate)
+	}
+	terminalEntries, terminalErr := c.rangeReadPage(PendingTerminalExecutionPrefix(), nil, 1024)
+	if terminalErr != nil {
+		return nil, terminalErr
+	}
+	terminalBatches := make(map[string]*certifiedTerminalExecutions)
+	terminalOrder := make([]string, 0, 4)
+	for _, entry := range terminalEntries {
+		record := new(ExecutionRecord)
+		if Unmarshal(entry.Value, record) != nil || record.TeeKeyId == "" || record.ExecutionId == "" {
+			continue
+		}
+		batch := terminalBatches[record.TeeKeyId]
+		if batch == nil {
+			if len(terminalOrder) == nativeCandidateCategoryLimits["terminal"] {
+				continue
+			}
+			batch = &certifiedTerminalExecutions{TEEKeyID: record.TeeKeyId, ValidatorSetID: clock.ValidatorSetId}
+			terminalBatches[record.TeeKeyId] = batch
+			terminalOrder = append(terminalOrder, record.TeeKeyId)
+		}
+		if len(batch.ExecutionIDs) < 256 {
+			batch.ExecutionIDs = append(batch.ExecutionIDs, record.ExecutionId)
+		}
+	}
+	for _, teeKeyID := range terminalOrder {
+		batch := terminalBatches[teeKeyID]
+		payload, marshalErr := json.Marshal(batch)
+		if marshalErr != nil {
+			return nil, ErrState("terminal execution batch encoding failed")
+		}
+		appendCandidate("terminal", &AuxiliaryCandidate{Kind: "execution-terminal", Key: []byte(teeKeyID), Digest: terminalExecutionDigest(batch), Payload: payload})
 	}
 
 	epochs, err := c.rangeReadPage(PendingEpochAuthorizationPrefix(), nil, maxNativeAuxiliaryCandidates)
@@ -352,6 +401,13 @@ func (c *Contract) applyNativeAuxiliaryCertificate(height uint64, candidate *Aux
 		batch := new(certifiedSettlementBatch)
 		if json.Unmarshal(candidate.Payload, batch) != nil || batch.ValidatorSetID != certificate.ValidatorSetId ||
 			len(batch.Requests) == 0 || len(batch.Requests) > maxSettlementRequestsPerCertificate || batch.Digest != "0x"+hex.EncodeToString(candidate.Digest) {
+			return false
+		}
+	case "execution-terminal":
+		batch := new(certifiedTerminalExecutions)
+		if json.Unmarshal(candidate.Payload, batch) != nil || batch.TEEKeyID == "" || len(batch.ExecutionIDs) == 0 || len(batch.ExecutionIDs) > 256 ||
+			batch.ValidatorSetID != certificate.ValidatorSetId || !bytes.Equal(candidate.Key, []byte(batch.TEEKeyID)) ||
+			!bytes.Equal(candidate.Digest, terminalExecutionDigest(batch)) {
 			return false
 		}
 	case "native-assignment-expiration":

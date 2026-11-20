@@ -171,7 +171,7 @@ func (c *Contract) deliverObserveAuthorizationCertified(height uint64, message *
 			if policy != nil {
 				provider = policy.Provider
 			}
-			servicers, selectErr := c.eligibleServicers(model)
+			servicers, selectErr := c.eligibleServicers(height, model, records)
 			if selectErr != nil {
 				return &PluginDeliverResponse{Error: selectErr}
 			}
@@ -183,11 +183,15 @@ func (c *Contract) deliverObserveAuthorizationCertified(height uint64, message *
 			if costErr != nil {
 				return &PluginDeliverResponse{Error: costErr}
 			}
-			assignments = append(assignments, &Assignment{
+			assignment := &Assignment{
 				Model: model, ServicerAddress: selected.OwnerAddress,
 				ExecutionId: assignmentExecutionID(message.SettlementDomainId, message.RequestId, model, selected.OwnerAddress, message.InputHash),
 				TeeKeyId:    selected.TeeKeyId, Provider: provider, MaxProviderCost: maximumProviderCost,
-			})
+			}
+			if reserveErr := c.reserveServicerCapacity(height, message.DeadlineHeight, assignment, selected, records); reserveErr != nil {
+				return &PluginDeliverResponse{Error: reserveErr}
+			}
+			assignments = append(assignments, assignment)
 		}
 		request := &RequestRecord{
 			RequestId: message.RequestId, InputHash: message.InputHash, Requester: message.Requester,
@@ -273,16 +277,15 @@ func (c *Contract) deliverDirectAuthorizations(height uint64, message *MessageOb
 	if loadErr != nil {
 		return &PluginDeliverResponse{Error: loadErr}
 	}
-	eligible := make(map[string][]*Servicer)
 	for _, authorization := range message.Authorizations {
-		if response := c.stageDirectAuthorization(height, authorization, params, anchor, eligible, records, loaded); response != nil {
+		if response := c.stageDirectAuthorization(height, authorization, params, anchor, records, loaded); response != nil {
 			return response
 		}
 	}
 	return &PluginDeliverResponse{Error: c.write(records)}
 }
 
-func (c *Contract) stageDirectAuthorization(height uint64, message *MessageObserveAuthorization, params *ProtocolParams, anchor *BlockAnchor, eligible map[string][]*Servicer, records, loaded map[string]proto.Message) *PluginDeliverResponse {
+func (c *Contract) stageDirectAuthorization(height uint64, message *MessageObserveAuthorization, params *ProtocolParams, anchor *BlockAnchor, records, loaded map[string]proto.Message) *PluginDeliverResponse {
 	if !outputSchemaEnabled(params, message.OutputType) {
 		return &PluginDeliverResponse{Error: ErrUnauthorized("request output schema is not governed")}
 	}
@@ -339,14 +342,9 @@ func (c *Contract) stageDirectAuthorization(height uint64, message *MessageObser
 		if policy != nil {
 			provider = policy.Provider
 		}
-		servicers, loaded := eligible[model]
-		if !loaded {
-			var selectErr *PluginError
-			servicers, selectErr = c.eligibleServicers(model)
-			if selectErr != nil {
-				return &PluginDeliverResponse{Error: selectErr}
-			}
-			eligible[model] = servicers
+		servicers, selectErr := c.eligibleServicers(height, model, records)
+		if selectErr != nil {
+			return &PluginDeliverResponse{Error: selectErr}
 		}
 		if len(servicers) == 0 {
 			return &PluginDeliverResponse{Error: ErrState("no bonded servicer supports model " + model)}
@@ -356,11 +354,15 @@ func (c *Contract) stageDirectAuthorization(height uint64, message *MessageObser
 		if costErr != nil {
 			return &PluginDeliverResponse{Error: costErr}
 		}
-		assignments = append(assignments, &Assignment{
+		assignment := &Assignment{
 			Model: model, ServicerAddress: selected.OwnerAddress,
 			ExecutionId: assignmentExecutionID(message.SettlementDomainId, message.RequestId, model, selected.OwnerAddress, message.InputHash),
 			TeeKeyId:    selected.TeeKeyId, Provider: provider, MaxProviderCost: maximumProviderCost,
-		})
+		}
+		if reserveErr := c.reserveServicerCapacity(height, message.DeadlineHeight, assignment, selected, records); reserveErr != nil {
+			return &PluginDeliverResponse{Error: reserveErr}
+		}
+		assignments = append(assignments, assignment)
 	}
 	request := &RequestRecord{
 		RequestId: message.RequestId, InputHash: message.InputHash, Requester: message.Requester,
@@ -442,6 +444,11 @@ func (c *Contract) expireAssignment(height uint64, request *RequestRecord, assig
 		Provider: assignment.Provider, ServicerAddress: append([]byte(nil), assignment.ServicerAddress...),
 		Status: "timeout", OutputHash: timeoutHash[:], TeeKeyId: assignment.TeeKeyId, CommittedHeight: height,
 		SettlementDomainId: append([]byte(nil), request.SettlementDomainId...),
+	}
+	if assignment.TeeKeyId != "" {
+		records[string(KeyForPendingTerminalExecution(assignment.TeeKeyId, assignment.ExecutionId))] = &ExecutionRecord{
+			ExecutionId: assignment.ExecutionId, TeeKeyId: assignment.TeeKeyId,
+		}
 	}
 	records[string(KeyForSettlementIndex(request.RequestId))] = &RequestRecord{RequestId: request.RequestId}
 	records[string(KeyForUncertifiedSettlementIndex(request.RequestId))] = &RequestRecord{RequestId: request.RequestId}
@@ -764,8 +771,8 @@ func (c *Contract) stageFinalizeRequestCertified(height uint64, message *Message
 	return &PluginDeliverResponse{}
 }
 
-func (c *Contract) eligibleServicers(model string) ([]*Servicer, *PluginError) {
-	entries, err := c.rangeRead(ActiveServicerPrefix())
+func (c *Contract) eligibleServicers(height uint64, model string, staged map[string]proto.Message) ([]*Servicer, *PluginError) {
+	entries, err := c.rangeRead(ModelServicerPrefix(model))
 	if err != nil {
 		return nil, err
 	}
@@ -780,27 +787,70 @@ func (c *Contract) eligibleServicers(model string) ([]*Servicer, *PluginError) {
 			return nil, err
 		}
 		if !validAddress(marker.Id) {
-			return nil, ErrState("active servicer index is invalid")
+			return nil, ErrState("model servicer index is invalid")
 		}
 		servicer := new(Servicer)
-		if found, readErr := c.read(KeyForServicer(marker.Id), servicer); readErr != nil {
+		if found, readErr := c.readStaged(staged, KeyForServicer(marker.Id), servicer); readErr != nil {
 			return nil, readErr
-		} else if !found || !servicer.Active || !bytes.Equal(servicer.OwnerAddress, marker.Id) {
-			return nil, ErrState("active servicer index references invalid state")
+		} else if !found || !bytes.Equal(servicer.OwnerAddress, marker.Id) {
+			return nil, ErrState("model servicer index references invalid state")
 		}
-		if servicer.Bond < params.MinimumServicerBond || !containsString(servicer.Models, model) {
+		if !servicer.OwnerEnabled || servicer.Bond < params.MinimumServicerBond ||
+			!containsString(servicer.Models, model) || servicer.LeaseExpiryHeight <= height ||
+			servicer.LeaseCapacity == 0 {
+			continue
+		}
+		activeReservations := uint32(0)
+		for _, reservation := range servicer.CapacityReservations {
+			if reservation != nil && reservation.DeadlineHeight >= height {
+				activeReservations++
+			}
+		}
+		if activeReservations >= servicer.LeaseCapacity {
 			continue
 		}
 		enclave := new(EnclaveKey)
 		if found, readErr := c.read(KeyForEnclave(servicer.TeeKeyId), enclave); readErr != nil {
 			return nil, readErr
-		} else if !found || !enclave.Active || !bytes.Equal(enclave.OwnerAddress, servicer.OwnerAddress) {
+		} else if !found || enclave.Lifecycle != EnclaveLifecycle_ENCLAVE_LIFECYCLE_ACTIVE ||
+			!bytes.Equal(enclave.OwnerAddress, servicer.OwnerAddress) {
+			continue
+		}
+		policy := pcrPolicyByID(params, enclave.PolicyId)
+		if policy == nil || policy.Lifecycle != PCRPolicyLifecycle_PCR_POLICY_LIFECYCLE_ADMITTING {
 			continue
 		}
 		servicers = append(servicers, servicer)
 	}
 	sort.Slice(servicers, func(i, j int) bool { return bytes.Compare(servicers[i].OwnerAddress, servicers[j].OwnerAddress) < 0 })
 	return servicers, nil
+}
+
+func (c *Contract) reserveServicerCapacity(height, deadline uint64, assignment *Assignment, servicer *Servicer, records map[string]proto.Message) *PluginError {
+	reservations := servicer.CapacityReservations[:0]
+	for _, reservation := range servicer.CapacityReservations {
+		if reservation != nil && reservation.DeadlineHeight >= height {
+			reservations = append(reservations, reservation)
+		}
+	}
+	if uint32(len(reservations)) >= servicer.LeaseCapacity {
+		return ErrConflict("servicer availability capacity was exhausted during assignment")
+	}
+	servicer.CapacityReservations = append(reservations, &CapacityReservation{
+		ExecutionId: assignment.ExecutionId, DeadlineHeight: deadline,
+	})
+	records[string(KeyForServicer(servicer.OwnerAddress))] = servicer
+	enclave := new(EnclaveKey)
+	if found, err := c.readStaged(records, KeyForEnclave(assignment.TeeKeyId), enclave); err != nil {
+		return err
+	} else if !found {
+		return ErrState("assignment enclave disappeared during capacity reservation")
+	}
+	if deadline > enclave.DrainUntilHeight {
+		enclave.DrainUntilHeight = deadline
+		records[string(KeyForEnclave(assignment.TeeKeyId))] = enclave
+	}
+	return nil
 }
 
 func selectServicer(inputHash, previousBlockHash []byte, model string, servicers []*Servicer) *Servicer {

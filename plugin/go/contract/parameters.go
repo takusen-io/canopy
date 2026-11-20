@@ -31,6 +31,9 @@ func defaultProtocolParams() *ProtocolParams {
 		SupportedOutputSchemas: []string{"boolean", "score", "choice", "private_hash"},
 		SettlementDomains:      []*SettlementDomain{defaultSettlementDomain()},
 		NitroTrustRoot:         nitroRoot,
+		MaxServicersPerModel:   1024,
+		MaxServicerLeaseBlocks: 1200,
+		MaxServicerCapacity:    512,
 	}
 }
 
@@ -69,7 +72,9 @@ func validateProtocolParams(params *ProtocolParams) *PluginError {
 		params.TreasuryBps > 10_000 || params.EpochBlocks == 0 || params.ServicerUnbondingBlocks == 0 ||
 		params.ServicerUnbondingBlocks <= params.AuthorizationDeadlineBlocks ||
 		params.ValidatorHandoffNoticeSeconds < 1200 || params.ValidatorHandoffNoticeSeconds > 7*24*60*60 ||
-		params.MinimumServicerBond == 0 || params.MinimumValidatorBond == 0 {
+		params.MinimumServicerBond == 0 || params.MinimumValidatorBond == 0 ||
+		params.MaxServicersPerModel == 0 || params.MaxServicersPerModel > 10_000 ||
+		params.MaxServicerLeaseBlocks == 0 || params.MaxServicerCapacity == 0 || params.MaxServicerCapacity > 4096 {
 		return ErrInvalidTransaction("invalid governed protocol parameters")
 	}
 	if params.CanonicalChainId != 0 || len(params.CanonicalTokenAddress) != 0 || len(params.CanonicalBridgeAddress) != 0 || params.EmissionPerEpoch != 0 {
@@ -134,23 +139,33 @@ func validateProtocolParams(params *ProtocolParams) *PluginError {
 	if len(params.Models) > 0 && len(params.DefaultModels) == 0 {
 		return ErrInvalidTransaction("at least one governed default model is required")
 	}
-	activePCRs := 0
+	admittingPCRs := 0
 	seenPCRs := make(map[string]struct{}, len(params.ApprovedPcrs))
+	seenPCRIDs := make(map[string]struct{}, len(params.ApprovedPcrs))
 	for _, policy := range params.ApprovedPcrs {
-		if policy == nil || !validPCRMeasurements(policy.Pcr0, policy.Pcr1, policy.Pcr2) {
+		if policy == nil || policy.PolicyId == "" || len(policy.PolicyId) > 128 ||
+			!validPCRMeasurements(policy.Pcr0, policy.Pcr1, policy.Pcr2) {
 			return ErrInvalidTransaction("invalid governed PCR policy")
 		}
+		if _, duplicate := seenPCRIDs[policy.PolicyId]; duplicate {
+			return ErrInvalidTransaction("duplicate governed PCR policy identifier")
+		}
+		seenPCRIDs[policy.PolicyId] = struct{}{}
 		identity := string(policy.Pcr0) + string(policy.Pcr1) + string(policy.Pcr2)
 		if _, duplicate := seenPCRs[identity]; duplicate {
 			return ErrInvalidTransaction("duplicate governed PCR policy")
 		}
 		seenPCRs[identity] = struct{}{}
-		if policy.Active {
-			activePCRs++
+		switch policy.Lifecycle {
+		case PCRPolicyLifecycle_PCR_POLICY_LIFECYCLE_ADMITTING:
+			admittingPCRs++
+		case PCRPolicyLifecycle_PCR_POLICY_LIFECYCLE_DRAINING, PCRPolicyLifecycle_PCR_POLICY_LIFECYCLE_REVOKED:
+		default:
+			return ErrInvalidTransaction("invalid governed PCR policy lifecycle")
 		}
 	}
-	if activePCRs == 0 {
-		return ErrInvalidTransaction("at least one active governed PCR policy is required")
+	if admittingPCRs == 0 {
+		return ErrInvalidTransaction("at least one admitting governed PCR policy is required")
 	}
 	if len(params.NitroTrustRoot) == 0 || len(params.NitroTrustRoot) > maxNitroCertificateSize {
 		return ErrInvalidTransaction("a bounded governed Nitro trust root is required")
@@ -248,6 +263,27 @@ func (c *Contract) deliverGovernedParameter(space, key string, value []byte) *Pl
 	}
 	if params.ValidatorSetId != current.ValidatorSetId {
 		return &PluginDeliverResponse{Error: ErrInvalidTransaction("validator set identifiers advance only at epoch handoff")}
+	}
+	currentPCRs := make(map[string]*PCRPolicy, len(current.ApprovedPcrs))
+	for _, policy := range current.ApprovedPcrs {
+		currentPCRs[policy.PolicyId] = policy
+	}
+	for _, policy := range params.ApprovedPcrs {
+		prior, exists := currentPCRs[policy.PolicyId]
+		if !exists {
+			continue
+		}
+		delete(currentPCRs, policy.PolicyId)
+		if !bytes.Equal(prior.Pcr0, policy.Pcr0) || !bytes.Equal(prior.Pcr1, policy.Pcr1) || !bytes.Equal(prior.Pcr2, policy.Pcr2) {
+			return &PluginDeliverResponse{Error: ErrInvalidTransaction("governed PCR policy measurements are immutable")}
+		}
+		if prior.Lifecycle == PCRPolicyLifecycle_PCR_POLICY_LIFECYCLE_REVOKED && policy.Lifecycle != prior.Lifecycle ||
+			prior.Lifecycle == PCRPolicyLifecycle_PCR_POLICY_LIFECYCLE_DRAINING && policy.Lifecycle == PCRPolicyLifecycle_PCR_POLICY_LIFECYCLE_ADMITTING {
+			return &PluginDeliverResponse{Error: ErrUnauthorized("governed PCR policy lifecycle cannot be reactivated")}
+		}
+	}
+	if len(currentPCRs) != 0 {
+		return &PluginDeliverResponse{Error: ErrInvalidTransaction("governed PCR policies must be retained as terminal tombstones")}
 	}
 	currentDomains := make(map[string]*SettlementDomain, len(current.SettlementDomains))
 	for _, domain := range current.SettlementDomains {
@@ -457,16 +493,28 @@ func outputSchemaEnabled(params *ProtocolParams, schema string) bool {
 	return false
 }
 
-func pcrApproved(params *ProtocolParams, pcr0, pcr1, pcr2 []byte) bool {
+func pcrPolicyForMeasurements(params *ProtocolParams, pcr0, pcr1, pcr2 []byte) *PCRPolicy {
 	if params == nil || !validPCRMeasurements(pcr0, pcr1, pcr2) {
-		return false
+		return nil
 	}
 	for _, policy := range params.ApprovedPcrs {
-		if policy != nil && policy.Active && validPCRMeasurements(policy.Pcr0, policy.Pcr1, policy.Pcr2) && bytes.Equal(policy.Pcr0, pcr0) && bytes.Equal(policy.Pcr1, pcr1) && bytes.Equal(policy.Pcr2, pcr2) {
-			return true
+		if policy != nil && validPCRMeasurements(policy.Pcr0, policy.Pcr1, policy.Pcr2) && bytes.Equal(policy.Pcr0, pcr0) && bytes.Equal(policy.Pcr1, pcr1) && bytes.Equal(policy.Pcr2, pcr2) {
+			return policy
 		}
 	}
-	return false
+	return nil
+}
+
+func pcrPolicyByID(params *ProtocolParams, policyID string) *PCRPolicy {
+	if params == nil || policyID == "" {
+		return nil
+	}
+	for _, policy := range params.ApprovedPcrs {
+		if policy != nil && policy.PolicyId == policyID {
+			return policy
+		}
+	}
+	return nil
 }
 
 func validPCRMeasurements(pcr0, pcr1, pcr2 []byte) bool {

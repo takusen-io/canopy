@@ -111,21 +111,25 @@ func (c *Contract) stageAuthenticatedExecution(height uint64, message *MessageSu
 	servicer := new(Servicer)
 	if found, readErr := c.readExecutionStaged(records, loaded, KeyForServicer(message.ServicerAddress), servicer); readErr != nil {
 		return &PluginDeliverResponse{Error: readErr}
-	} else if !found || !servicer.Active || servicer.TeeKeyId != expectedTEEKeyID {
-		return &PluginDeliverResponse{Error: ErrUnauthorized("servicer or receipt TEE key is not active")}
+	} else if !found {
+		return &PluginDeliverResponse{Error: ErrUnauthorized("assigned servicer does not exist")}
 	}
 	enclave := new(EnclaveKey)
 	if found, readErr := c.readExecutionStaged(records, loaded, KeyForEnclave(expectedTEEKeyID), enclave); readErr != nil {
 		return &PluginDeliverResponse{Error: readErr}
-	} else if !found || !enclave.Active || !bytes.Equal(enclave.PublicKey, message.PublicKey) || !bytes.Equal(enclave.OwnerAddress, message.ServicerAddress) {
+	} else if !found || !bytes.Equal(enclave.PublicKey, message.PublicKey) || !bytes.Equal(enclave.OwnerAddress, message.ServicerAddress) {
 		return &PluginDeliverResponse{Error: ErrUnauthorized("receipt key is not the registered enclave key")}
 	}
+	params, paramsErr := c.currentProtocolParams()
+	if paramsErr != nil {
+		return &PluginDeliverResponse{Error: paramsErr}
+	}
+	policy := pcrPolicyByID(params, enclave.PolicyId)
+	if enclave.Lifecycle == EnclaveLifecycle_ENCLAVE_LIFECYCLE_REVOKED || policy == nil ||
+		policy.Lifecycle == PCRPolicyLifecycle_PCR_POLICY_LIFECYCLE_REVOKED {
+		return &PluginDeliverResponse{Error: ErrUnauthorized("receipt enclave or PCR policy is revoked")}
+	}
 	invalid := func(reason *PluginError) *PluginDeliverResponse {
-		if servicer.FailureCount == ^uint64(0) {
-			return &PluginDeliverResponse{Error: ErrState("servicer failure counter overflow")}
-		}
-		servicer.FailureCount++
-		records[string(KeyForServicer(message.ServicerAddress))] = servicer
 		if slashErr := c.applyInvalidReceiptSlash(height, digest, servicer, records, deletes); slashErr != nil {
 			return &PluginDeliverResponse{Error: slashErr}
 		}
@@ -178,6 +182,14 @@ func (c *Contract) stageAuthenticatedExecution(height uint64, message *MessageSu
 	previousAssignments := activeAssignmentOwners(request)
 	if assignment.TeeKeyId != "" && assignment.TeeKeyId != parsed.TEEKeyID {
 		return invalid(ErrUnauthorized("receipt key is not the enclave key committed to the assignment"))
+	}
+	if enclave.Lifecycle == EnclaveLifecycle_ENCLAVE_LIFECYCLE_DRAINING &&
+		(request.DeadlineHeight > enclave.DrainUntilHeight || enclave.DrainUntilHeight == 0) {
+		return &PluginDeliverResponse{Error: ErrUnauthorized("draining enclave was not bound to this assignment deadline")}
+	}
+	if enclave.Lifecycle != EnclaveLifecycle_ENCLAVE_LIFECYCLE_ACTIVE &&
+		enclave.Lifecycle != EnclaveLifecycle_ENCLAVE_LIFECYCLE_DRAINING {
+		return &PluginDeliverResponse{Error: ErrUnauthorized("assignment enclave cannot submit receipts")}
 	}
 	if assignment.Provider == "" || parsed.Provider != assignment.Provider {
 		return invalid(ErrUnauthorized("receipt provider is not the governed assignment provider"))
@@ -251,8 +263,20 @@ func (c *Contract) stageAuthenticatedExecution(height uint64, message *MessageSu
 	assignment.TerminalStatus = parsed.Status
 	reservation.Spent += chargedCost
 	records[string(KeyForExecution(parsed.ExecutionID))] = execution
+	records[string(KeyForPendingTerminalExecution(parsed.TEEKeyID, parsed.ExecutionID))] = &ExecutionRecord{
+		ExecutionId: parsed.ExecutionID, TeeKeyId: parsed.TEEKeyID,
+	}
 	records[string(KeyForRequest(request.RequestId))] = request
 	records[string(KeyForReservation(request.SettlementDomainId, request.RequestId))] = reservation
+	remainingReservations := servicer.CapacityReservations[:0]
+	for _, capacity := range servicer.CapacityReservations {
+		if capacity == nil || capacity.ExecutionId == parsed.ExecutionID {
+			continue
+		}
+		remainingReservations = append(remainingReservations, capacity)
+	}
+	servicer.CapacityReservations = remainingReservations
+	records[string(KeyForServicer(message.ServicerAddress))] = servicer
 	if allAssignmentsResolved(request) {
 		request.Status = "ready"
 		executions, collectErr := c.collectExecutionsStaged(records, request, execution)
