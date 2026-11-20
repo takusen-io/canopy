@@ -92,8 +92,8 @@ func (f *FeeMempool) AddTransactions(txs ...[]byte) (recheck bool, err ErrorI) {
 		// Certificate results remain bounded by MaxTotalBytes. An atomic Takusen
 		// servicer registration has a separate narrow ceiling because its COSE
 		// evidence intentionally exceeds the generic 4 KiB transaction limit.
-		oversizedRegistration := transaction.MessageType == "takusenRegisterServicer" && txBytes > maxEnclaveRegistrationTxBytes
-		if (uint32(txBytes) > f.config.IndividualMaxTxSize && transaction.MessageType != "certificateResults" && transaction.MessageType != "takusenRegisterServicer") || oversizedRegistration {
+		oversizedRegistration := transaction.MessageType == "takusenManageServicer" && txBytes > maxEnclaveRegistrationTxBytes
+		if (uint32(txBytes) > f.config.IndividualMaxTxSize && transaction.MessageType != "certificateResults" && transaction.MessageType != "takusenManageServicer") || oversizedRegistration {
 			return false, ErrMaxTxSize()
 		}
 		// extract the fee from the transaction result

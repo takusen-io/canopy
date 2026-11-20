@@ -11,9 +11,8 @@ import (
 )
 
 const (
-	MessageRevokeEnclaveName         = "takusenRevokeEnclave"
-	MessageRegisterServicerName      = "takusenRegisterServicer"
-	MessageUpdateServicerName        = "takusenUpdateServicer"
+	MessageForceRevokeEnclaveName    = "takusenForceRevokeEnclave"
+	MessageManageServicerName        = "takusenManageServicer"
 	MessageObserveDepositName        = "takusenObserveDeposit"
 	MessageResolveDepositName        = "takusenResolveDeposit"
 	MessageResolveSettlementName     = "takusenResolveSettlement"
@@ -29,10 +28,7 @@ const (
 	MessageObserveBridgeReleaseName  = "takusenObserveBridgeRelease"
 	MessageObserveEpochMintName      = "takusenObserveEpochMint"
 	MessageBurnBridgeName            = "takusenBurnBridge"
-	MessageQueueServicerStakeName    = "takusenQueueServicerStake"
-	MessageWithdrawUnbondedName      = "takusenWithdrawUnbonded"
 	MessageSetProducerPayoutName     = "takusenSetProducerPayout"
-	MessageObserveSlashEvidenceName  = "takusenObserveSlashEvidence"
 )
 
 var ContractConfig = &PluginConfig{
@@ -42,9 +38,8 @@ var ContractConfig = &PluginConfig{
 	ValidatorSetEpochs:        true,
 	GovernanceParameterSpaces: []string{"takusen"},
 	SupportedTransactions: []string{
-		MessageRevokeEnclaveName,
-		MessageRegisterServicerName,
-		MessageUpdateServicerName,
+		MessageForceRevokeEnclaveName,
+		MessageManageServicerName,
 		MessageObserveDepositName,
 		MessageResolveDepositName,
 		MessageResolveSettlementName,
@@ -60,15 +55,11 @@ var ContractConfig = &PluginConfig{
 		MessageObserveBridgeReleaseName,
 		MessageObserveEpochMintName,
 		MessageBurnBridgeName,
-		MessageQueueServicerStakeName,
-		MessageWithdrawUnbondedName,
 		MessageSetProducerPayoutName,
-		MessageObserveSlashEvidenceName,
 	},
 	TransactionTypeUrls: []string{
-		"type.googleapis.com/types.MessageRevokeEnclave",
-		"type.googleapis.com/types.MessageRegisterServicer",
-		"type.googleapis.com/types.MessageUpdateServicer",
+		"type.googleapis.com/types.MessageForceRevokeEnclave",
+		"type.googleapis.com/types.MessageManageServicer",
 		"type.googleapis.com/types.MessageObserveDeposit",
 		"type.googleapis.com/types.MessageResolveDeposit",
 		"type.googleapis.com/types.MessageResolveSettlement",
@@ -84,22 +75,19 @@ var ContractConfig = &PluginConfig{
 		"type.googleapis.com/types.MessageObserveBridgeRelease",
 		"type.googleapis.com/types.MessageObserveEpochMint",
 		"type.googleapis.com/types.MessageBurnBridge",
-		"type.googleapis.com/types.MessageQueueServicerStake",
-		"type.googleapis.com/types.MessageWithdrawUnbonded",
 		"type.googleapis.com/types.MessageSetProducerPayout",
-		"type.googleapis.com/types.MessageObserveSlashEvidence",
 	},
 	CustomStatePrefixes: [][]byte{
 		enclavePrefix, servicerPrefix, requestPrefix, executionPrefix,
 		observationPrefix, blockAnchorPrefix,
 		quorumProofPrefix, quorumSharePrefix,
 		depositPrefix, creditPrefix, reservationPrefix,
-		observationClaimPrefix, protocolParamsPrefix, stakeChangePrefix,
-		unbondingPrefix, slashEvidencePrefix, producerPayoutPrefix,
+		observationClaimPrefix, protocolParamsPrefix,
+		slashEvidencePrefix, producerPayoutPrefix,
 		producerPrefix, epochAuthorizationPrefix, bridgeStatePrefix,
 		bridgeMintPrefix, bridgeNoncePrefix, bridgeBurnPrefix, epochClockPrefix,
 		assignmentIndexPrefix, epochValidatorPrefix, settlementIndexPrefix, producerIdentityPrefix,
-		rotationProofIndexPrefix, pendingSlashPrefix, latestEpochPrefix, provisionalReservationIndexPrefix,
+		rotationProofIndexPrefix, latestEpochPrefix, provisionalReservationIndexPrefix,
 		activeServicerIndexPrefix, pendingEpochAuthorizationPrefix, pendingBridgeBurnPrefix,
 		handoffManifestPrefix, domainRotationStatePrefix, handoffCancellationManifestPrefix,
 		consensusCertificatePrefix, nativeAuthorizationIntentPrefix, pendingAuthorizationPrefix,
@@ -246,12 +234,10 @@ func (c *Contract) CheckTx(request *PluginCheckRequest) *PluginCheckResponse {
 	}
 	var signer []byte
 	switch message := message.(type) {
-	case *MessageRevokeEnclave:
-		signer, err = checkRevokeEnclave(message)
-	case *MessageRegisterServicer:
-		signer, err = checkRegisterServicer(message)
-	case *MessageUpdateServicer:
-		signer, err = checkUpdateServicer(message)
+	case *MessageForceRevokeEnclave:
+		signer, err = checkForceRevokeEnclave(message)
+	case *MessageManageServicer:
+		signer, err = checkManageServicer(message)
 	case *MessageObserveDeposit:
 		signer, err = checkObserveDeposit(message)
 	case *MessageResolveDeposit:
@@ -282,14 +268,8 @@ func (c *Contract) CheckTx(request *PluginCheckRequest) *PluginCheckResponse {
 		signer, err = checkObserveEpochMint(message)
 	case *MessageBurnBridge:
 		signer, err = checkBurnBridge(message)
-	case *MessageQueueServicerStake:
-		signer, err = checkQueueServicerStake(message)
-	case *MessageWithdrawUnbonded:
-		signer, err = checkWithdrawUnbonded(message)
 	case *MessageSetProducerPayout:
 		signer, err = checkSetProducerPayout(message)
-	case *MessageObserveSlashEvidence:
-		signer, err = checkObserveSlashEvidence(message)
 	default:
 		return &PluginCheckResponse{Error: ErrInvalidMessageCast()}
 	}
@@ -311,12 +291,10 @@ func (c *Contract) DeliverTx(request *PluginDeliverRequest) *PluginDeliverRespon
 		return &PluginDeliverResponse{Error: err}
 	}
 	switch message := message.(type) {
-	case *MessageRevokeEnclave:
-		return c.deliverRevokeEnclave(request.Height, message)
-	case *MessageRegisterServicer:
-		return c.deliverRegisterServicer(request.Height, request.TimeMicros, message)
-	case *MessageUpdateServicer:
-		return c.deliverUpdateServicer(message)
+	case *MessageForceRevokeEnclave:
+		return c.deliverForceRevokeEnclave(request.Height, message)
+	case *MessageManageServicer:
+		return c.deliverManageServicer(request.Height, request.TimeMicros, message)
 	case *MessageObserveDeposit:
 		return c.deliverObserveDeposit(request.Height, message)
 	case *MessageResolveDeposit:
@@ -347,14 +325,8 @@ func (c *Contract) DeliverTx(request *PluginDeliverRequest) *PluginDeliverRespon
 		return c.deliverObserveEpochMint(request.Height, message)
 	case *MessageBurnBridge:
 		return c.deliverBurnBridge(request.Height, message)
-	case *MessageQueueServicerStake:
-		return c.deliverQueueServicerStake(request.Height, message)
-	case *MessageWithdrawUnbonded:
-		return c.deliverWithdrawUnbonded(request.Height, message)
 	case *MessageSetProducerPayout:
 		return c.deliverSetProducerPayout(message)
-	case *MessageObserveSlashEvidence:
-		return c.deliverObserveSlashEvidence(request.Height, message)
 	default:
 		return &PluginDeliverResponse{Error: ErrInvalidMessageCast()}
 	}

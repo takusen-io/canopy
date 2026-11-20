@@ -99,8 +99,8 @@ func TestAtomicServicerRegistrationHasNarrowLargerTransactionBound(t *testing.T)
 	encode := func(payloadBytes int) []byte {
 		t.Helper()
 		tx, err := Marshal(&Transaction{
-			MessageType: "takusenRegisterServicer",
-			Msg:         &anypb.Any{TypeUrl: "type.googleapis.com/types.MessageRegisterServicer", Value: bytes.Repeat([]byte{1}, payloadBytes)},
+			MessageType: "takusenManageServicer",
+			Msg:         &anypb.Any{TypeUrl: "type.googleapis.com/types.MessageManageServicer", Value: bytes.Repeat([]byte{1}, payloadBytes)},
 			Signature:   sig, CreatedHeight: 1, Time: uint64(time.Now().UnixMicro()), Fee: 1, NetworkId: 1, ChainId: 1,
 		})
 		require.NoError(t, err)

@@ -38,6 +38,11 @@ message Account {
   uint64 vesting_end_height = 6; // @gotags: json:"vestingEndHeight,omitempty"
   // nonce: the minimum accepted sequence number for nonce-protected transactions
   uint64 nonce = 7;
+  // unbonding_amount: the account's single cliff-locked servicer collateral
+  // bucket. It becomes spendable by height without a second transaction.
+  uint64 unbonding_amount = 8; // @gotags: json:"unbondingAmount,omitempty"
+  // unbonding_release_height: the first height at which that bucket is spendable.
+  uint64 unbonding_release_height = 9; // @gotags: json:"unbondingReleaseHeight,omitempty"
 }
 
 // A pool is like an account without an owner, holding funds that are managed directly by the blockchain protocol

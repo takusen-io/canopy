@@ -10,9 +10,18 @@ message Account {
   bytes address = 1;
   // amount: the balance of funds the account has
   uint64 amount = 2;
+  // Keep the complete shared Canopy account wire shape. Core owns vesting;
+  // plugin balance writes must preserve it.
+  uint64 vesting_amount = 3;
+  uint64 vesting_start_height = 4;
+  uint64 vesting_cliff_height = 5;
+  uint64 vesting_end_height = 6;
   // nonce: the minimum accepted sequence number for nonce-protected transactions
   uint64 nonce = 7;
-  // NOTE: CAN EXTEND FUNCTIONALITY BY ADDING ADDITIONAL FIELDS
+  // The single height-locked collateral bucket created by servicer bond
+  // reductions. It remains slashable until it becomes spendable.
+  uint64 unbonding_amount = 8;
+  uint64 unbonding_release_height = 9;
 }
 
 // A pool is like an account without an owner, holding funds that are managed directly by the blockchain protocol
@@ -62,9 +71,7 @@ message Servicer {
   bool active = 6;
   uint64 registered_height = 7;
   uint64 failure_count = 8;
-  bool auto_compound = 9;
-  uint64 accrued_rewards = 10;
-  uint64 total_slashed = 11;
+  uint64 total_slashed = 9;
 }
 
 message Assignment {
@@ -247,7 +254,7 @@ message ProtocolParams {
   reserved 13;
   uint32 invalid_receipt_slash_bps = 14;
   uint64 epoch_blocks = 15;
-  uint64 unbonding_epochs = 16;
+  uint64 servicer_unbonding_blocks = 16;
   uint64 emission_per_epoch = 17;
   bytes treasury_address = 18;
   uint32 treasury_bps = 19;
@@ -275,31 +282,12 @@ message ProtocolParams {
   bytes nitro_trust_root = 34;
 }
 
-message StakeChange {
-  bytes owner_address = 1;
-  uint64 bond_increase = 2;
-  bool exit = 3;
-  bool auto_compound = 4;
-  uint64 effective_epoch = 5;
-  uint64 locked_increase = 6;
-}
-
-message UnbondingRecord {
-  bytes owner_address = 1;
-  uint64 sequence = 2;
-  uint64 amount = 3;
-  uint64 release_epoch = 4;
-  bool withdrawn = 5;
-}
-
 message SlashEvidence {
   bytes evidence_id = 1;
   bytes target_address = 2;
   string reason = 3;
   uint64 penalty = 4;
   uint64 observed_height = 5;
-  uint64 effective_epoch = 6;
-  string status = 7;
 }
 
 message ProducerPayout {
@@ -324,7 +312,6 @@ message RewardAllocation {
   bytes canonical_chain_recipient = 2;
   uint64 blocks = 3;
   uint64 amount = 4;
-  bool compounded = 5;
 }
 
 message EpochAuthorization {
@@ -339,7 +326,6 @@ message EpochAuthorization {
   uint64 total_amount = 9;
   bytes canonical_chain_digest = 10;
   string status = 11;
-  uint64 compounded_amount = 12;
   bytes canonical_chain_mint_tx_hash = 13;
 }
 

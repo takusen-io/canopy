@@ -93,7 +93,7 @@ func (c *Contract) nativeAuxiliaryCandidates(height uint64, params *ProtocolPara
 			var recipients [][]byte
 			var amounts []uint64
 			for _, allocation := range certificateAuthorization.Allocations {
-				if !allocation.Compounded && allocation.Amount != 0 {
+				if allocation.Amount != 0 {
 					recipients = append(recipients, append([]byte(nil), allocation.CanonicalChainRecipient...))
 					amounts = append(amounts, allocation.Amount)
 				}

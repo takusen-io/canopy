@@ -56,13 +56,20 @@ func validOutputType(outputType string) bool {
 	}
 }
 
-func checkRegisterServicer(message *MessageRegisterServicer) ([]byte, *PluginError) {
-	if message == nil || !validAddress(message.OwnerAddress) || len(message.PublicKey) != ed25519.PublicKeySize ||
-		len(message.Nonce) < 16 || len(message.Nonce) > 64 || len(message.ProofSignature) != ed25519.SignatureSize ||
-		len(message.AttestationDocument) == 0 || len(message.AttestationDocument) > maxNitroAttestationSize ||
-		!bytes.Equal(message.UserData, registrationUserData(message.OwnerAddress)) || !validPayoutAddress(message.EvmPayoutAddress) ||
-		message.TeeKeyId == "" || message.Bond == 0 || !validModels(message.Models) {
-		return nil, ErrInvalidTransaction("invalid atomic servicer registration")
+func checkManageServicer(message *MessageManageServicer) ([]byte, *PluginError) {
+	if message == nil || !validAddress(message.OwnerAddress) || !validPayoutAddress(message.EvmPayoutAddress) ||
+		!validModels(message.Models) || len(message.TeeKeyId) > 128 || (message.TeeKeyId == "" && message.Active) {
+		return nil, ErrInvalidTransaction("invalid servicer management")
+	}
+	hasAttestation := len(message.PublicKey) != 0 || len(message.Nonce) != 0 || len(message.UserData) != 0 ||
+		len(message.ProofSignature) != 0 || len(message.AttestationDocument) != 0
+	if !hasAttestation {
+		return message.OwnerAddress, nil
+	}
+	if message.TeeKeyId == "" || len(message.PublicKey) != ed25519.PublicKeySize || len(message.Nonce) < 16 || len(message.Nonce) > 64 ||
+		len(message.ProofSignature) != ed25519.SignatureSize || len(message.AttestationDocument) == 0 ||
+		len(message.AttestationDocument) > maxNitroAttestationSize || !bytes.Equal(message.UserData, registrationUserData(message.OwnerAddress)) {
+		return nil, ErrInvalidTransaction("invalid attested servicer management")
 	}
 	keyDigest := sha256.Sum256(message.PublicKey)
 	if message.TeeKeyId != "ed25519:"+hex.EncodeToString(keyDigest[:]) {
@@ -83,19 +90,11 @@ func registrationUserData(owner []byte) []byte {
 	return []byte("takusen:servicer-registration:v1:" + hex.EncodeToString(owner))
 }
 
-func checkRevokeEnclave(message *MessageRevokeEnclave) ([]byte, *PluginError) {
+func checkForceRevokeEnclave(message *MessageForceRevokeEnclave) ([]byte, *PluginError) {
 	if !validAddress(message.ObserverAddress) || message.TeeKeyId == "" || len(message.TeeKeyId) > 128 {
 		return nil, ErrInvalidTransaction("invalid enclave revocation")
 	}
 	return message.ObserverAddress, nil
-}
-
-func checkUpdateServicer(message *MessageUpdateServicer) ([]byte, *PluginError) {
-	if !validAddress(message.OwnerAddress) || !validPayoutAddress(message.EvmPayoutAddress) || message.TeeKeyId == "" ||
-		!validModels(message.Models) {
-		return nil, ErrInvalidTransaction("invalid servicer update")
-	}
-	return message.OwnerAddress, nil
 }
 
 func checkObserveDeposit(message *MessageObserveDeposit) ([]byte, *PluginError) {
@@ -412,31 +411,9 @@ func checkBurnBridge(message *MessageBurnBridge) ([]byte, *PluginError) {
 	return message.OwnerAddress, nil
 }
 
-func checkQueueServicerStake(message *MessageQueueServicerStake) ([]byte, *PluginError) {
-	if !validAddress(message.OwnerAddress) || message.Exit == (message.AdditionalBond != 0) {
-		return nil, ErrInvalidTransaction("invalid queued servicer stake change")
-	}
-	return message.OwnerAddress, nil
-}
-
-func checkWithdrawUnbonded(message *MessageWithdrawUnbonded) ([]byte, *PluginError) {
-	if !validAddress(message.OwnerAddress) || message.Sequence == 0 {
-		return nil, ErrInvalidTransaction("invalid unbonding withdrawal")
-	}
-	return message.OwnerAddress, nil
-}
-
 func checkSetProducerPayout(message *MessageSetProducerPayout) ([]byte, *PluginError) {
 	if !validAddress(message.OwnerAddress) || !validAddress(message.CanonicalChainAddress) {
 		return nil, ErrInvalidTransaction("invalid producer payout address")
 	}
 	return message.OwnerAddress, nil
-}
-
-func checkObserveSlashEvidence(message *MessageObserveSlashEvidence) ([]byte, *PluginError) {
-	if !validAddress(message.ObserverAddress) || !validHash(message.EvidenceId) ||
-		!validAddress(message.TargetAddress) || message.Reason != "invalid_receipt" {
-		return nil, ErrInvalidTransaction("invalid servicer slash evidence")
-	}
-	return message.ObserverAddress, nil
 }

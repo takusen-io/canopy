@@ -126,7 +126,7 @@ func (c *Contract) stageAuthenticatedExecution(height uint64, message *MessageSu
 		}
 		servicer.FailureCount++
 		records[string(KeyForServicer(message.ServicerAddress))] = servicer
-		if slashErr := c.queueInvalidReceiptSlash(height, digest, servicer, records); slashErr != nil {
+		if slashErr := c.applyInvalidReceiptSlash(height, digest, servicer, records, deletes); slashErr != nil {
 			return &PluginDeliverResponse{Error: slashErr}
 		}
 		_ = reason
@@ -384,39 +384,13 @@ func (c *Contract) prefetchExecutionState(messages []*MessageSubmitExecution, au
 	return loaded, nil
 }
 
-func (c *Contract) queueInvalidReceiptSlash(height uint64, receiptDigest []byte, servicer *Servicer, records map[string]proto.Message) *PluginError {
+func (c *Contract) applyInvalidReceiptSlash(height uint64, receiptDigest []byte, servicer *Servicer, records map[string]proto.Message, deletes *[][]byte) *PluginError {
 	evidenceID := hashFields([]byte("takusen:invalid-receipt"), receiptDigest)
-	if found, err := c.readStaged(records, KeyForSlashEvidence(evidenceID), new(SlashEvidence)); err != nil {
-		return err
-	} else if found {
-		return ErrConflict("invalid receipt slash evidence is already committed")
-	}
 	params, err := c.currentProtocolParams()
 	if err != nil {
 		return err
 	}
-	clock, err := c.currentEpochClock(params)
-	if err != nil {
-		return err
-	}
-	slashable, slashableErr := c.slashableServicerBond(servicer.OwnerAddress, servicer, records, clock.CurrentEpoch)
-	if slashableErr != nil {
-		return slashableErr
-	}
-	penalty, valid := mulDiv64(slashable, uint64(params.InvalidReceiptSlashBps), 10_000)
-	if !valid {
-		return ErrState("invalid receipt slash calculation overflow")
-	}
-	if params.InvalidReceiptSlashBps != 0 && penalty == 0 {
-		penalty = 1
-	}
-	records[string(KeyForSlashEvidence(evidenceID))] = &SlashEvidence{
-		EvidenceId: evidenceID, TargetAddress: append([]byte(nil), servicer.OwnerAddress...),
-		Reason: "invalid_receipt", Penalty: penalty, ObservedHeight: height,
-		EffectiveEpoch: clock.CurrentEpoch, Status: "queued",
-	}
-	records[string(KeyForPendingSlash(clock.CurrentEpoch, evidenceID))] = &ReplayMarker{Id: append([]byte(nil), evidenceID...)}
-	return nil
+	return c.applyServicerSlash(height, evidenceID, servicer.OwnerAddress, "invalid_receipt", params, records, deletes)
 }
 
 func authenticateReceipt(message *MessageSubmitExecution) (*receipt, []byte, *PluginError) {

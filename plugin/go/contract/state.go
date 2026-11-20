@@ -28,8 +28,6 @@ var (
 	reservationPrefix                 = []byte{111}
 	observationClaimPrefix            = []byte{112}
 	protocolParamsPrefix              = []byte{113}
-	stakeChangePrefix                 = []byte{114}
-	unbondingPrefix                   = []byte{115}
 	slashEvidencePrefix               = []byte{116}
 	producerPayoutPrefix              = []byte{117}
 	producerPrefix                    = []byte{118}
@@ -44,7 +42,6 @@ var (
 	settlementIndexPrefix             = []byte{127}
 	producerIdentityPrefix            = []byte{128}
 	rotationProofIndexPrefix          = []byte{129}
-	pendingSlashPrefix                = []byte{130}
 	latestEpochPrefix                 = []byte{131}
 	provisionalReservationIndexPrefix = []byte{132}
 	activeServicerIndexPrefix         = []byte{133}
@@ -118,13 +115,10 @@ func ReservationPrefix() []byte { return JoinLenPrefix(reservationPrefix) }
 func ProvisionalReservationPrefix(domainID, requester []byte) []byte {
 	return JoinLenPrefix(provisionalReservationIndexPrefix, domainID, requester)
 }
-func StakeChangePrefix() []byte               { return JoinLenPrefix(stakeChangePrefix) }
-func UnbondingPrefix() []byte                 { return JoinLenPrefix(unbondingPrefix) }
 func SlashEvidencePrefix() []byte             { return JoinLenPrefix(slashEvidencePrefix) }
 func ProducerPayoutPrefix() []byte            { return JoinLenPrefix(producerPayoutPrefix) }
 func ProducerPrefix(epoch uint64) []byte      { return JoinLenPrefix(producerPrefix, uint64Bytes(epoch)) }
 func ProducerIdentityPrefix() []byte          { return JoinLenPrefix(producerIdentityPrefix) }
-func PendingSlashPrefix() []byte              { return JoinLenPrefix(pendingSlashPrefix) }
 func EpochAuthorizationPrefix() []byte        { return JoinLenPrefix(epochAuthorizationPrefix) }
 func PendingEpochAuthorizationPrefix() []byte { return JoinLenPrefix(pendingEpochAuthorizationPrefix) }
 func BridgeMintPrefix() []byte                { return JoinLenPrefix(bridgeMintPrefix) }
@@ -240,17 +234,9 @@ func KeyForReservation(domainID []byte, requestID string) []byte {
 func KeyForProvisionalReservation(domainID, requester []byte, requestID string) []byte {
 	return JoinLenPrefix(provisionalReservationIndexPrefix, domainID, requester, []byte(requestID))
 }
-func KeyForProtocolParams() []byte          { return JoinLenPrefix(protocolParamsPrefix) }
-func KeyForStakeChange(owner []byte) []byte { return JoinLenPrefix(stakeChangePrefix, owner) }
-func KeyForUnbonding(owner []byte, sequence uint64) []byte {
-	return JoinLenPrefix(unbondingPrefix, owner, uint64Bytes(sequence))
-}
-func UnbondingOwnerPrefix(owner []byte) []byte { return JoinLenPrefix(unbondingPrefix, owner) }
+func KeyForProtocolParams() []byte { return JoinLenPrefix(protocolParamsPrefix) }
 func KeyForSlashEvidence(evidenceID []byte) []byte {
 	return JoinLenPrefix(slashEvidencePrefix, evidenceID)
-}
-func KeyForPendingSlash(effectiveEpoch uint64, evidenceID []byte) []byte {
-	return JoinLenPrefix(pendingSlashPrefix, uint64Bytes(effectiveEpoch), evidenceID)
 }
 func KeyForProducerPayout(owner []byte) []byte { return JoinLenPrefix(producerPayoutPrefix, owner) }
 func KeyForProducer(epoch uint64, owner []byte) []byte {

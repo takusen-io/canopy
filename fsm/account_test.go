@@ -215,6 +215,23 @@ func TestAccountVestingAccounting(t *testing.T) {
 	}
 }
 
+func TestAccountUnbondingBucketUnlocksByHeight(t *testing.T) {
+	sm := newTestStateMachine(t)
+	account := &Account{
+		Address: newTestAddressBytes(t), Amount: 150,
+		UnbondingAmount: 100, UnbondingReleaseHeight: 10,
+	}
+	sm.height = 9
+	require.Equal(t, uint64(100), sm.AccountLockedAmount(account))
+	require.Equal(t, uint64(50), sm.AccountSpendableAmount(account))
+	sm.height = 10
+	require.Zero(t, sm.AccountLockedAmount(account))
+	require.Equal(t, uint64(150), sm.AccountSpendableAmount(account))
+	require.NoError(t, sm.SetAccount(account))
+	require.Zero(t, account.UnbondingAmount)
+	require.Zero(t, account.UnbondingReleaseHeight)
+}
+
 func TestAccountVestedAmountMaxValuesIsMonotonic(t *testing.T) {
 	sm := newTestStateMachine(t)
 	account := &Account{

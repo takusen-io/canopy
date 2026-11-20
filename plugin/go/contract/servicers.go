@@ -1,12 +1,13 @@
 package contract
 
 import (
+	"bytes"
 	"crypto/sha256"
 
 	"google.golang.org/protobuf/proto"
 )
 
-func (c *Contract) deliverRevokeEnclave(height uint64, message *MessageRevokeEnclave) *PluginDeliverResponse {
+func (c *Contract) deliverForceRevokeEnclave(height uint64, message *MessageForceRevokeEnclave) *PluginDeliverResponse {
 	enclave := new(EnclaveKey)
 	if found, err := c.read(KeyForEnclave(message.TeeKeyId), enclave); err != nil {
 		return &PluginDeliverResponse{Error: err}
@@ -20,142 +21,182 @@ func (c *Contract) deliverRevokeEnclave(height uint64, message *MessageRevokeEnc
 		return &PluginDeliverResponse{Error: err}
 	}
 	records := observationRecords(observationRevocation, subject, claim, message.ObserverAddress, observation)
-	deletes := make([][]byte, 0, 1)
+	var deletes [][]byte
 	if reached {
 		enclave.Active = false
 		records[string(KeyForEnclave(message.TeeKeyId))] = enclave
-		servicer := new(Servicer)
-		if found, readErr := c.read(KeyForServicer(enclave.OwnerAddress), servicer); readErr != nil {
+		entries, readErr := c.rangeRead(ServicerPrefix())
+		if readErr != nil {
 			return &PluginDeliverResponse{Error: readErr}
-		} else if found && servicer.TeeKeyId == message.TeeKeyId && servicer.Active {
+		}
+		for _, entry := range entries {
+			servicer := new(Servicer)
+			if decodeErr := Unmarshal(entry.Value, servicer); decodeErr != nil {
+				return &PluginDeliverResponse{Error: ErrState("invalid servicer record")}
+			}
+			if servicer.TeeKeyId != message.TeeKeyId {
+				continue
+			}
 			servicer.Active = false
-			records[string(KeyForServicer(enclave.OwnerAddress))] = servicer
-			deletes = append(deletes, KeyForActiveServicer(enclave.OwnerAddress))
+			records[string(entry.Key)] = servicer
+			deletes = append(deletes, KeyForActiveServicer(servicer.OwnerAddress))
 		}
 	}
 	return &PluginDeliverResponse{Error: c.writeChanges(records, deletes)}
 }
 
-func (c *Contract) deliverRegisterServicer(height, timeMicros uint64, message *MessageRegisterServicer) *PluginDeliverResponse {
+func validateServicerModels(params *ProtocolParams, models []string) *PluginError {
+	if len(params.Models) == 0 {
+		return nil
+	}
+	for _, model := range models {
+		if modelPolicy(params, model) == nil {
+			return ErrUnauthorized("servicer model is not governed")
+		}
+	}
+	return nil
+}
+
+func attestationProvided(message *MessageManageServicer) bool {
+	return len(message.PublicKey) != 0 || len(message.Nonce) != 0 || len(message.UserData) != 0 ||
+		len(message.ProofSignature) != 0 || len(message.AttestationDocument) != 0
+}
+
+// deliverManageServicer is the owner-authorized, block-effective lifecycle
+// transition. It atomically manages registration, configuration, target bond,
+// activation, and enclave rotation or removal.
+func (c *Contract) deliverManageServicer(height, timeMicros uint64, message *MessageManageServicer) *PluginDeliverResponse {
 	params, paramsErr := c.currentProtocolParams()
 	if paramsErr != nil {
 		return &PluginDeliverResponse{Error: paramsErr}
 	}
-	if message.Bond < params.MinimumServicerBond {
-		return &PluginDeliverResponse{Error: ErrInvalidTransaction("servicer bond is below the governed minimum")}
+	if modelErr := validateServicerModels(params, message.Models); modelErr != nil {
+		return &PluginDeliverResponse{Error: modelErr}
 	}
-	if len(params.Models) != 0 {
-		for _, model := range message.Models {
-			if modelPolicy(params, model) == nil {
-				return &PluginDeliverResponse{Error: ErrUnauthorized("servicer model is not governed")}
-			}
-		}
-	}
-	document, verifyErr := verifyNitroRegistration(message, params.NitroTrustRoot, timeMicros)
-	if verifyErr != nil {
-		return &PluginDeliverResponse{Error: verifyErr}
-	}
-	if !pcrApproved(params, document.PCRs[0], document.PCRs[1], document.PCRs[2]) {
-		return &PluginDeliverResponse{Error: ErrUnauthorized("enclave PCR measurements are not governed at this height")}
-	}
-	existingEnclave := new(EnclaveKey)
-	if found, err := c.read(KeyForEnclave(message.TeeKeyId), existingEnclave); err != nil {
-		return &PluginDeliverResponse{Error: err}
-	} else if found && string(existingEnclave.OwnerAddress) != string(message.OwnerAddress) {
-		return &PluginDeliverResponse{Error: ErrConflict("enclave key is registered to another owner")}
-	}
+
 	servicer := new(Servicer)
 	foundServicer, err := c.read(KeyForServicer(message.OwnerAddress), servicer)
 	if err != nil {
 		return &PluginDeliverResponse{Error: err}
 	}
-	additionalBond := message.Bond
-	if foundServicer {
-		additionalBond = 0
-		if servicer.Bond < message.Bond {
-			additionalBond = message.Bond - servicer.Bond
+	if !foundServicer {
+		if !message.Active || message.Bond < params.MinimumServicerBond || message.TeeKeyId == "" || !attestationProvided(message) {
+			return &PluginDeliverResponse{Error: ErrInvalidTransaction("new servicer registration requires an active attested enclave and the minimum bond")}
 		}
-	} else {
 		servicer.OwnerAddress = append([]byte(nil), message.OwnerAddress...)
 		servicer.RegisteredHeight = height
 	}
+	wasActive := servicer.Active
+	oldKeyID := servicer.TeeKeyId
 	records := map[string]proto.Message{}
-	if additionalBond != 0 {
+	var deletes [][]byte
+
+	if message.Bond > servicer.Bond {
+		increase := message.Bond - servicer.Bond
 		account := new(Account)
 		if found, readErr := c.read(KeyForAccount(message.OwnerAddress), account); readErr != nil {
 			return &PluginDeliverResponse{Error: readErr}
-		} else if !found || account.Amount < additionalBond {
+		} else if !found || accountSpendableAtHeight(account, height) < increase {
 			return &PluginDeliverResponse{Error: ErrInsufficientFunds()}
 		}
-		account.Amount -= additionalBond
+		account.Amount -= increase
 		records[string(KeyForAccount(message.OwnerAddress))] = account
-		servicer.Bond += additionalBond
-	}
-	servicer.EvmPayoutAddress = append([]byte(nil), message.EvmPayoutAddress...)
-	servicer.TeeKeyId = message.TeeKeyId
-	servicer.Models = append([]string(nil), message.Models...)
-	servicer.Active = true
-	attestationHash := sha256.Sum256(message.AttestationDocument)
-	records[string(KeyForEnclave(message.TeeKeyId))] = &EnclaveKey{
-		OwnerAddress: append([]byte(nil), message.OwnerAddress...), TeeKeyId: message.TeeKeyId,
-		PublicKey: append([]byte(nil), message.PublicKey...), AttestationHash: attestationHash[:],
-		Pcr0: append([]byte(nil), document.PCRs[0]...), Pcr1: append([]byte(nil), document.PCRs[1]...),
-		Pcr2: append([]byte(nil), document.PCRs[2]...), RegisteredHeight: height, Active: true,
-	}
-	records[string(KeyForServicer(message.OwnerAddress))] = servicer
-	records[string(KeyForActiveServicer(message.OwnerAddress))] = &ReplayMarker{Id: append([]byte(nil), message.OwnerAddress...)}
-	return &PluginDeliverResponse{Error: c.write(records)}
-}
-
-func (c *Contract) deliverUpdateServicer(message *MessageUpdateServicer) *PluginDeliverResponse {
-	params, paramsErr := c.currentProtocolParams()
-	if paramsErr != nil {
-		return &PluginDeliverResponse{Error: paramsErr}
-	}
-	if len(params.Models) != 0 {
-		for _, model := range message.Models {
-			if modelPolicy(params, model) == nil {
-				return &PluginDeliverResponse{Error: ErrUnauthorized("servicer model is not governed")}
+	} else if message.Bond < servicer.Bond {
+		decrease := servicer.Bond - message.Bond
+		account := new(Account)
+		if found, readErr := c.read(KeyForAccount(message.OwnerAddress), account); readErr != nil {
+			return &PluginDeliverResponse{Error: readErr}
+		} else if !found {
+			account.Address = append([]byte(nil), message.OwnerAddress...)
+		}
+		if ^uint64(0)-account.Amount < decrease || ^uint64(0)-height < params.ServicerUnbondingBlocks {
+			return &PluginDeliverResponse{Error: ErrState("servicer bond reduction overflows its unbonding balance")}
+		}
+		account.Amount += decrease
+		releaseHeight := height + params.ServicerUnbondingBlocks
+		if account.UnbondingAmount == 0 || height >= account.UnbondingReleaseHeight {
+			account.UnbondingAmount = decrease
+			account.UnbondingReleaseHeight = releaseHeight
+		} else {
+			if ^uint64(0)-account.UnbondingAmount < decrease {
+				return &PluginDeliverResponse{Error: ErrState("servicer unbonding balance overflow")}
+			}
+			account.UnbondingAmount += decrease
+			if releaseHeight > account.UnbondingReleaseHeight {
+				account.UnbondingReleaseHeight = releaseHeight
 			}
 		}
-	}
-	servicer := new(Servicer)
-	if found, err := c.read(KeyForServicer(message.OwnerAddress), servicer); err != nil {
-		return &PluginDeliverResponse{Error: err}
-	} else if !found {
-		return &PluginDeliverResponse{Error: ErrNotFound("servicer is not registered")}
-	}
-	wasActive := servicer.Active
-	enclave := new(EnclaveKey)
-	if found, err := c.read(KeyForEnclave(message.TeeKeyId), enclave); err != nil {
-		return &PluginDeliverResponse{Error: err}
-	} else if !found || !enclave.Active || string(enclave.OwnerAddress) != string(message.OwnerAddress) {
-		return &PluginDeliverResponse{Error: ErrUnauthorized("servicer does not own an active enclave key")}
-	}
-	records := map[string]proto.Message{}
-	if message.AdditionalBond != 0 {
-		if ^uint64(0)-servicer.Bond < message.AdditionalBond {
-			return &PluginDeliverResponse{Error: ErrState("servicer bond overflow")}
-		}
-		account := new(Account)
-		if found, err := c.read(KeyForAccount(message.OwnerAddress), account); err != nil {
-			return &PluginDeliverResponse{Error: err}
-		} else if !found || account.Amount < message.AdditionalBond {
-			return &PluginDeliverResponse{Error: ErrInsufficientFunds()}
-		}
-		account.Amount -= message.AdditionalBond
-		servicer.Bond += message.AdditionalBond
 		records[string(KeyForAccount(message.OwnerAddress))] = account
 	}
+
+	if message.TeeKeyId == "" {
+		if oldKeyID != "" {
+			oldKey := new(EnclaveKey)
+			if found, readErr := c.read(KeyForEnclave(oldKeyID), oldKey); readErr != nil {
+				return &PluginDeliverResponse{Error: readErr}
+			} else if found && bytes.Equal(oldKey.OwnerAddress, message.OwnerAddress) {
+				oldKey.Active = false
+				records[string(KeyForEnclave(oldKeyID))] = oldKey
+			}
+		}
+		servicer.TeeKeyId = ""
+	} else if !foundServicer || message.TeeKeyId != oldKeyID || attestationProvided(message) {
+		if !attestationProvided(message) {
+			return &PluginDeliverResponse{Error: ErrInvalidTransaction("enclave replacement requires fresh attestation")}
+		}
+		document, verifyErr := verifyNitroRegistration(message, params.NitroTrustRoot, timeMicros)
+		if verifyErr != nil {
+			return &PluginDeliverResponse{Error: verifyErr}
+		}
+		if !pcrApproved(params, document.PCRs[0], document.PCRs[1], document.PCRs[2]) {
+			return &PluginDeliverResponse{Error: ErrUnauthorized("enclave PCR measurements are not governed at this height")}
+		}
+		existing := new(EnclaveKey)
+		if found, readErr := c.read(KeyForEnclave(message.TeeKeyId), existing); readErr != nil {
+			return &PluginDeliverResponse{Error: readErr}
+		} else if found && !bytes.Equal(existing.OwnerAddress, message.OwnerAddress) {
+			return &PluginDeliverResponse{Error: ErrConflict("replacement enclave key is registered to another owner")}
+		}
+		attestationHash := sha256.Sum256(message.AttestationDocument)
+		records[string(KeyForEnclave(message.TeeKeyId))] = &EnclaveKey{
+			OwnerAddress: append([]byte(nil), message.OwnerAddress...), TeeKeyId: message.TeeKeyId,
+			PublicKey: append([]byte(nil), message.PublicKey...), AttestationHash: attestationHash[:],
+			Pcr0: append([]byte(nil), document.PCRs[0]...), Pcr1: append([]byte(nil), document.PCRs[1]...),
+			Pcr2: append([]byte(nil), document.PCRs[2]...), RegisteredHeight: height, Active: true,
+		}
+		if oldKeyID != "" && oldKeyID != message.TeeKeyId {
+			oldKey := new(EnclaveKey)
+			if found, readErr := c.read(KeyForEnclave(oldKeyID), oldKey); readErr != nil {
+				return &PluginDeliverResponse{Error: readErr}
+			} else if found && bytes.Equal(oldKey.OwnerAddress, message.OwnerAddress) {
+				oldKey.Active = false
+				records[string(KeyForEnclave(oldKeyID))] = oldKey
+			}
+		}
+		servicer.TeeKeyId = message.TeeKeyId
+	}
+
+	servicer.Bond = message.Bond
 	servicer.EvmPayoutAddress = append([]byte(nil), message.EvmPayoutAddress...)
-	servicer.TeeKeyId = message.TeeKeyId
 	servicer.Models = append([]string(nil), message.Models...)
 	servicer.Active = message.Active
-	if servicer.Bond < params.MinimumServicerBond {
-		servicer.Active = false
+	if servicer.Active {
+		if servicer.Bond < params.MinimumServicerBond {
+			return &PluginDeliverResponse{Error: ErrInvalidTransaction("active servicer bond is below the governed minimum")}
+		}
+		enclave := new(EnclaveKey)
+		if staged, ok := records[string(KeyForEnclave(servicer.TeeKeyId))]; ok {
+			enclave = proto.Clone(staged).(*EnclaveKey)
+		} else if found, readErr := c.read(KeyForEnclave(servicer.TeeKeyId), enclave); readErr != nil {
+			return &PluginDeliverResponse{Error: readErr}
+		} else if !found {
+			return &PluginDeliverResponse{Error: ErrUnauthorized("active servicer requires an active owned enclave key")}
+		}
+		if !enclave.Active || !bytes.Equal(enclave.OwnerAddress, message.OwnerAddress) {
+			return &PluginDeliverResponse{Error: ErrUnauthorized("active servicer requires an active owned enclave key")}
+		}
 	}
 	records[string(KeyForServicer(message.OwnerAddress))] = servicer
-	deletes := make([][]byte, 0, 1)
 	if servicer.Active {
 		records[string(KeyForActiveServicer(message.OwnerAddress))] = &ReplayMarker{Id: append([]byte(nil), message.OwnerAddress...)}
 	} else if wasActive {

@@ -174,16 +174,18 @@ type economicParameterResponse struct {
 // Query Response Types
 // =====================================================
 type AccountView struct {
-	Address            lib.HexBytes `json:"address"`
-	Amount             uint64       `json:"amount"`
-	Nonce              uint64       `json:"nonce"`
-	TotalAmount        uint64       `json:"totalAmount,omitempty"`
-	VestedAmount       uint64       `json:"vestedAmount,omitempty"`
-	LockedAmount       uint64       `json:"lockedAmount,omitempty"`
-	VestingAmount      uint64       `json:"vestingAmount,omitempty"`
-	VestingStartHeight uint64       `json:"vestingStartHeight,omitempty"`
-	VestingCliffHeight uint64       `json:"vestingCliffHeight,omitempty"`
-	VestingEndHeight   uint64       `json:"vestingEndHeight,omitempty"`
+	Address                lib.HexBytes `json:"address"`
+	Amount                 uint64       `json:"amount"`
+	Nonce                  uint64       `json:"nonce"`
+	TotalAmount            uint64       `json:"totalAmount,omitempty"`
+	VestedAmount           uint64       `json:"vestedAmount,omitempty"`
+	LockedAmount           uint64       `json:"lockedAmount,omitempty"`
+	VestingAmount          uint64       `json:"vestingAmount,omitempty"`
+	VestingStartHeight     uint64       `json:"vestingStartHeight,omitempty"`
+	VestingCliffHeight     uint64       `json:"vestingCliffHeight,omitempty"`
+	VestingEndHeight       uint64       `json:"vestingEndHeight,omitempty"`
+	UnbondingAmount        uint64       `json:"unbondingAmount,omitempty"`
+	UnbondingReleaseHeight uint64       `json:"unbondingReleaseHeight,omitempty"`
 }
 
 type AccountViewPage []*AccountView

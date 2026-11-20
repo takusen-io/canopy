@@ -18,14 +18,14 @@ const (
 	observationDeposit           byte = 6
 	observationValidatorRotation byte = 7
 	observationBridgeLock        byte = 8
-	observationSlashEvidence     byte = 9
-	observationBridgeRelease     byte = 10
-	observationDepositResolve    byte = 11
-	observationSettlementReorg   byte = 12
-	observationEpochMint         byte = 13
+	// Observation kind 9 was the removed free-form slash transaction.
+	observationBridgeRelease   byte = 10
+	observationDepositResolve  byte = 11
+	observationSettlementReorg byte = 12
+	observationEpochMint       byte = 13
 )
 
-func revocationSubject(message *MessageRevokeEnclave) []byte {
+func revocationSubject(message *MessageForceRevokeEnclave) []byte {
 	return hashFields([]byte("takusen:enclave-revocation"), []byte(message.TeeKeyId))
 }
 

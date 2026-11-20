@@ -124,7 +124,7 @@
       "invalidReceiptSlashBps": 10000,
       "epochBlocks": "4800",
       "validatorHandoffNoticeSeconds": "2400",
-      "unbondingEpochs": "24",
+      "servicerUnbondingBlocks": "86400",
       "emissionPerEpoch": "1000000000",
       "treasuryAddress": "85/W5RqtiPb0zmq4gnJ5z/+5ImY=",
       "treasuryBps": 1000,

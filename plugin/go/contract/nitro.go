@@ -34,7 +34,14 @@ type nitroDocument struct {
 	Nonce       []byte          `cbor:"nonce"`
 }
 
-func verifyNitroRegistration(message *MessageRegisterServicer, rootDER []byte, timeMicros uint64) (nitroDocument, *PluginError) {
+type nitroRegistrationMessage interface {
+	GetPublicKey() []byte
+	GetNonce() []byte
+	GetUserData() []byte
+	GetAttestationDocument() []byte
+}
+
+func verifyNitroRegistration(message nitroRegistrationMessage, rootDER []byte, timeMicros uint64) (nitroDocument, *PluginError) {
 	if message == nil || timeMicros == 0 || timeMicros > math.MaxInt64 || len(rootDER) == 0 || len(rootDER) > maxNitroCertificateSize {
 		return nitroDocument{}, ErrUnauthorized("governed Nitro verification context is invalid")
 	}
@@ -49,7 +56,7 @@ func verifyNitroRegistration(message *MessageRegisterServicer, rootDER []byte, t
 	if err != nil {
 		return nitroDocument{}, ErrState("initialize bounded Nitro CBOR decoder")
 	}
-	sign1, err := decodeNitroCOSESign1(mode, message.AttestationDocument)
+	sign1, err := decodeNitroCOSESign1(mode, message.GetAttestationDocument())
 	if err != nil {
 		return nitroDocument{}, ErrCrypto(err.Error())
 	}
@@ -78,8 +85,8 @@ func verifyNitroRegistration(message *MessageRegisterServicer, rootDER []byte, t
 	if err = validateNitroDocumentBounds(document); err != nil {
 		return nitroDocument{}, ErrInvalidTransaction(err.Error())
 	}
-	if !bytes.Equal(document.Nonce, message.Nonce) || !bytes.Equal(document.PublicKey, message.PublicKey) ||
-		!bytes.Equal(document.UserData, message.UserData) {
+	if !bytes.Equal(document.Nonce, message.GetNonce()) || !bytes.Equal(document.PublicKey, message.GetPublicKey()) ||
+		!bytes.Equal(document.UserData, message.GetUserData()) {
 		return nitroDocument{}, ErrUnauthorized("Nitro attestation binding mismatch")
 	}
 	blockMillis := timeMicros / 1_000

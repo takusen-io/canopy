@@ -30,31 +30,27 @@ message Transaction {
   // NO CONFLICT STARTING AT FIELD = 25
 }
 
-message MessageRevokeEnclave {
+message MessageForceRevokeEnclave {
   bytes observer_address = 1;
   string tee_key_id = 2;
 }
 
-message MessageRegisterServicer {
+// MessageManageServicer is the single owner-authorized lifecycle operation,
+// including initial registration. bond is an immediate target, not a delta.
+// An empty tee_key_id revokes the current key and deactivates the servicer; a
+// new key requires the complete replacement attestation.
+message MessageManageServicer {
   bytes owner_address = 1;
   bytes evm_payout_address = 2;
   string tee_key_id = 3;
   repeated string models = 4;
   uint64 bond = 5;
-  bytes public_key = 6;
-  bytes nonce = 7;
-  bytes user_data = 8;
-  bytes proof_signature = 9;
-  bytes attestation_document = 10;
-}
-
-message MessageUpdateServicer {
-  bytes owner_address = 1;
-  bytes evm_payout_address = 2;
-  string tee_key_id = 3;
-  repeated string models = 4;
-  uint64 additional_bond = 5;
   bool active = 6;
+  bytes public_key = 7;
+  bytes nonce = 8;
+  bytes user_data = 9;
+  bytes proof_signature = 10;
+  bytes attestation_document = 11;
 }
 
 message MessageObserveDeposit {
@@ -268,28 +264,9 @@ message MessageObserveEpochMint {
   uint64 validator_set_id = 4;
 }
 
-message MessageQueueServicerStake {
-  bytes owner_address = 1;
-  uint64 additional_bond = 2;
-  bool exit = 3;
-  bool auto_compound = 4;
-}
-
-message MessageWithdrawUnbonded {
-  bytes owner_address = 1;
-  uint64 sequence = 2;
-}
-
 message MessageSetProducerPayout {
   bytes owner_address = 1;
   bytes canonical_chain_address = 2;
-}
-
-message MessageObserveSlashEvidence {
-  bytes observer_address = 1;
-  bytes evidence_id = 2;
-  bytes target_address = 3;
-  string reason = 4;
 }
 
 // FeeParams is the parameter space that defines various amounts for transaction fees
