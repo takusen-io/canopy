@@ -6,10 +6,10 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
+	"sort"
 	"strings"
 
 	"golang.org/x/crypto/sha3"
-	"google.golang.org/protobuf/proto"
 )
 
 const addressSize = 20
@@ -44,7 +44,7 @@ func validModels(models []string) bool {
 		}
 		seen[model] = struct{}{}
 	}
-	return true
+	return sort.StringsAreSorted(models)
 }
 
 func validOutputType(outputType string) bool {
@@ -57,45 +57,82 @@ func validOutputType(outputType string) bool {
 }
 
 func checkRegisterServicer(message *MessageRegisterServicer) ([]byte, *PluginError) {
-	if message == nil || !validAddress(message.OwnerAddress) || len(message.PublicKey) != ed25519.PublicKeySize ||
-		len(message.Nonce) < 16 || len(message.Nonce) > 64 || len(message.ProofSignature) != ed25519.SignatureSize ||
-		len(message.AttestationDocument) == 0 || len(message.AttestationDocument) > maxNitroAttestationSize ||
-		!bytes.Equal(message.UserData, registrationUserData(message.OwnerAddress)) || !validPayoutAddress(message.EvmPayoutAddress) ||
-		message.TeeKeyId == "" || message.Bond == 0 || !validModels(message.Models) {
+	if message == nil || !validAddress(message.OwnerAddress) || !validPayoutAddress(message.EvmPayoutAddress) ||
+		!validModels(message.Models) || message.Bond == 0 || message.TeeKeyId == "" ||
+		len(message.PublicKey) != ed25519.PublicKeySize || len(message.Nonce) < 16 || len(message.Nonce) > 64 ||
+		len(message.ProofSignature) != ed25519.SignatureSize || len(message.AttestationDocument) == 0 ||
+		len(message.AttestationDocument) > maxNitroAttestationSize || !bytes.Equal(message.UserData, registrationUserData(message.OwnerAddress)) {
 		return nil, ErrInvalidTransaction("invalid atomic servicer registration")
 	}
-	keyDigest := sha256.Sum256(message.PublicKey)
-	if message.TeeKeyId != "ed25519:"+hex.EncodeToString(keyDigest[:]) {
-		return nil, ErrInvalidTransaction("TEE key identifier does not match its public key")
+	if err := checkAttestedEnclave(message.TeeKeyId, message.PublicKey, message.Nonce, message.UserData, message.ProofSignature); err != nil {
+		return nil, err
+	}
+	return message.OwnerAddress, nil
+}
+
+func checkManageServicer(message *MessageManageServicer) ([]byte, *PluginError) {
+	if message == nil || !validAddress(message.OwnerAddress) || message.ExpectedRevision == 0 ||
+		message.Configuration == nil && message.Bond == nil && message.Rotation == nil {
+		return nil, ErrInvalidTransaction("invalid servicer management")
+	}
+	if update := message.Configuration; update != nil &&
+		(!validPayoutAddress(update.EvmPayoutAddress) || !validModels(update.Models)) {
+		return nil, ErrInvalidTransaction("invalid servicer configuration update")
+	}
+	if rotation := message.Rotation; rotation != nil &&
+		(rotation.TeeKeyId == "" || len(rotation.TeeKeyId) > 128 || len(rotation.PublicKey) != ed25519.PublicKeySize ||
+			len(rotation.Nonce) < 16 || len(rotation.Nonce) > 64 || len(rotation.ProofSignature) != ed25519.SignatureSize ||
+			len(rotation.AttestationDocument) == 0 || len(rotation.AttestationDocument) > maxNitroAttestationSize ||
+			!bytes.Equal(rotation.UserData, registrationUserData(message.OwnerAddress))) {
+		return nil, ErrInvalidTransaction("invalid attested servicer management")
+	}
+	if rotation := message.Rotation; rotation != nil {
+		if err := checkAttestedEnclave(rotation.TeeKeyId, rotation.PublicKey, rotation.Nonce, rotation.UserData, rotation.ProofSignature); err != nil {
+			return nil, err
+		}
+	}
+	return message.OwnerAddress, nil
+}
+
+func checkEnclaveRevocation(message *EnclaveRevocation) *PluginError {
+	if message == nil || message.TeeKeyId == "" || len(message.TeeKeyId) > 128 || len(message.IncidentId) != sha256.Size {
+		return ErrInvalidTransaction("invalid enclave revocation candidate")
+	}
+	return nil
+}
+
+func enclaveRevocationDigest(message *EnclaveRevocation) []byte {
+	if err := checkEnclaveRevocation(message); err != nil {
+		return nil
+	}
+	return hashFields([]byte("takusen:enclave-revocation:v1"), []byte(message.TeeKeyId), message.IncidentId)
+}
+
+func enclaveRevocationKey(message *EnclaveRevocation) []byte {
+	if err := checkEnclaveRevocation(message); err != nil {
+		return nil
+	}
+	return hashFields([]byte(message.TeeKeyId), message.IncidentId)
+}
+
+func checkAttestedEnclave(teeKeyID string, publicKey, nonce, userData, proofSignature []byte) *PluginError {
+	keyDigest := sha256.Sum256(publicKey)
+	if teeKeyID != "ed25519:"+hex.EncodeToString(keyDigest[:]) {
+		return ErrInvalidTransaction("TEE key identifier does not match its public key")
 	}
 	registrationDigest := sha256.New()
 	_, _ = registrationDigest.Write([]byte("takusen:nitro-registration\x00"))
-	_, _ = registrationDigest.Write(message.Nonce)
+	_, _ = registrationDigest.Write(nonce)
 	_, _ = registrationDigest.Write([]byte{0})
-	_, _ = registrationDigest.Write(message.UserData)
-	if !ed25519.Verify(message.PublicKey, registrationDigest.Sum(nil), message.ProofSignature) {
-		return nil, ErrCrypto("invalid enclave proof of possession")
+	_, _ = registrationDigest.Write(userData)
+	if !ed25519.Verify(publicKey, registrationDigest.Sum(nil), proofSignature) {
+		return ErrCrypto("invalid enclave proof of possession")
 	}
-	return message.OwnerAddress, nil
+	return nil
 }
 
 func registrationUserData(owner []byte) []byte {
 	return []byte("takusen:servicer-registration:v1:" + hex.EncodeToString(owner))
-}
-
-func checkRevokeEnclave(message *MessageRevokeEnclave) ([]byte, *PluginError) {
-	if !validAddress(message.ObserverAddress) || message.TeeKeyId == "" || len(message.TeeKeyId) > 128 {
-		return nil, ErrInvalidTransaction("invalid enclave revocation")
-	}
-	return message.ObserverAddress, nil
-}
-
-func checkUpdateServicer(message *MessageUpdateServicer) ([]byte, *PluginError) {
-	if !validAddress(message.OwnerAddress) || !validPayoutAddress(message.EvmPayoutAddress) || message.TeeKeyId == "" ||
-		!validModels(message.Models) {
-		return nil, ErrInvalidTransaction("invalid servicer update")
-	}
-	return message.OwnerAddress, nil
 }
 
 func checkObserveDeposit(message *MessageObserveDeposit) ([]byte, *PluginError) {
@@ -132,8 +169,8 @@ func checkResolveSettlement(message *MessageResolveSettlement) ([]byte, *PluginE
 	return message.ObserverAddress, nil
 }
 
-func checkObserveAuthorization(message *MessageObserveAuthorization) ([]byte, *PluginError) {
-	if !validAddress(message.ObserverAddress) || !validHash(message.SettlementDomainId) || message.RequestId == "" || len(message.RequestId) > 128 ||
+func checkAuthorizationItem(message *Authorization) ([]byte, *PluginError) {
+	if !validHash(message.SettlementDomainId) || message.RequestId == "" || len(message.RequestId) > 128 ||
 		!validHash(message.InputHash) || !validAddress(message.Requester) || message.ReservedBudget == 0 ||
 		!validOutputType(message.OutputType) || !validModels(message.Models) || message.ExecutionQuorum == 0 ||
 		!validRequestOutputSchema(message) ||
@@ -144,10 +181,10 @@ func checkObserveAuthorization(message *MessageObserveAuthorization) ([]byte, *P
 		!validArchiveID(message.RequestArchiveId) || message.RequestArchiveId != "sha256:"+hex.EncodeToString(message.InputHash) {
 		return nil, ErrInvalidTransaction("invalid signed request authorization observation")
 	}
-	return message.ObserverAddress, nil
+	return nil, nil
 }
 
-func validRequestOutputSchema(message *MessageObserveAuthorization) bool {
+func validRequestOutputSchema(message *Authorization) bool {
 	if !validHash(message.SchemaHash) {
 		return false
 	}
@@ -180,7 +217,7 @@ func validRequestOutputSchema(message *MessageObserveAuthorization) bool {
 	return valid && bytes.Equal(message.SchemaHash, requestOutputSchemaHash(message))
 }
 
-func requestOutputSchemaHash(message *MessageObserveAuthorization) []byte {
+func requestOutputSchemaHash(message *Authorization) []byte {
 	var outputType uint64
 	switch message.OutputType {
 	case "boolean":
@@ -194,14 +231,14 @@ func requestOutputSchemaHash(message *MessageObserveAuthorization) []byte {
 	}
 	choicesHash := make([]byte, 32)
 	if len(message.OutputChoices) != 0 {
-		choicesHash = legacyKeccak256(abiEncodeStrings(message.OutputChoices))
+		choicesHash = ethereumKeccak256(abiEncodeStrings(message.OutputChoices))
 	}
 	encoded := make([]byte, 0, 128)
 	encoded = append(encoded, abiUintWord(outputType)...)
 	encoded = append(encoded, abiUintWord(uint64(message.OutputMinimum))...)
 	encoded = append(encoded, abiUintWord(uint64(message.OutputMaximum))...)
 	encoded = append(encoded, choicesHash...)
-	return legacyKeccak256(encoded)
+	return ethereumKeccak256(encoded)
 }
 
 func abiEncodeStrings(values []string) []byte {
@@ -227,22 +264,22 @@ func abiUintWord(value uint64) []byte {
 	return word
 }
 
-func legacyKeccak256(value []byte) []byte {
+func ethereumKeccak256(value []byte) []byte {
 	hasher := sha3.NewLegacyKeccak256()
 	_, _ = hasher.Write(value)
 	return hasher.Sum(nil)
 }
 
 func checkObserveAuthorizations(message *MessageObserveAuthorizations) ([]byte, *PluginError) {
-	if !validAddress(message.ObserverAddress) || len(message.Authorizations) == 0 || len(message.Authorizations) > 1024 {
+	if !validAddress(message.ObserverAddress) || len(message.Authorizations) == 0 || len(message.Authorizations) > 256 {
 		return nil, ErrInvalidTransaction("invalid signed request authorization batch")
 	}
 	seen := make(map[string]struct{}, len(message.Authorizations))
 	for _, authorization := range message.Authorizations {
-		if authorization == nil || !bytes.Equal(authorization.ObserverAddress, message.ObserverAddress) {
-			return nil, ErrInvalidTransaction("authorization batch observer does not match its item")
+		if authorization == nil || !authorization.DirectEoa || authorization.AuthorizationChainBlockNumber != 0 || len(authorization.AuthorizationChainBlockHash) != 0 {
+			return nil, ErrInvalidTransaction("authorization batch must contain directly verifiable EOA authorizations")
 		}
-		if _, err := checkObserveAuthorization(authorization); err != nil {
+		if _, err := checkAuthorizationItem(authorization); err != nil {
 			return nil, err
 		}
 		if _, duplicate := seen[authorization.RequestId]; duplicate {
@@ -258,32 +295,23 @@ func checkQueueAuthorization(message *MessageQueueAuthorization) ([]byte, *Plugi
 		return nil, ErrInvalidTransaction("invalid queued request authorization")
 	}
 	authorization := message.Authorization
-	if authorization.DirectEoa || len(authorization.ObserverAddress) != 0 || authorization.AuthorizationChainBlockNumber == 0 ||
+	if authorization.DirectEoa || authorization.AuthorizationChainBlockNumber == 0 ||
 		len(authorization.AuthorizationChainBlockHash) != 32 {
-		return nil, ErrInvalidTransaction("queued authorization must contain pinned ERC-1271 evidence without an observer")
+		return nil, ErrInvalidTransaction("queued authorization must contain pinned ERC-1271 evidence")
 	}
-	copy := proto.Clone(authorization).(*MessageObserveAuthorization)
-	copy.ObserverAddress = message.RelayerAddress
-	if _, err := checkObserveAuthorization(copy); err != nil {
+	if _, err := checkAuthorizationItem(authorization); err != nil {
 		return nil, err
 	}
 	return message.RelayerAddress, nil
 }
 
-func checkSubmitExecution(message *MessageSubmitExecution) ([]byte, *PluginError) {
-	if !validAddress(message.ServicerAddress) || len(message.PublicKey) != ed25519.PublicKeySize || !validExecutionItem(message) {
-		return nil, ErrInvalidTransaction("invalid execution submission")
-	}
-	return message.ServicerAddress, nil
-}
-
-func validExecutionItem(message *MessageSubmitExecution) bool {
+func validExecutionItem(message *ExecutionSubmission) bool {
 	return message != nil && len(message.ReceiptJson) != 0 && len(message.ReceiptJson) <= 64*1024 &&
 		len(message.Signature) == ed25519.SignatureSize
 }
 
 func checkSubmitExecutions(message *MessageSubmitExecutions) ([]byte, *PluginError) {
-	if !validAddress(message.ServicerAddress) || len(message.PublicKey) != ed25519.PublicKeySize {
+	if !validAddress(message.ServicerAddress) {
 		return nil, ErrInvalidTransaction("invalid execution submission batch")
 	}
 	if len(message.CompressedExecutions) != 0 {
@@ -302,13 +330,13 @@ func checkSubmitExecutions(message *MessageSubmitExecutions) ([]byte, *PluginErr
 }
 
 func validateExecutionBatchItems(message *MessageSubmitExecutions) *PluginError {
-	if len(message.Executions) == 0 || len(message.Executions) > 256 {
+	if len(message.Executions) == 0 || len(message.Executions) > 128 {
 		return ErrInvalidTransaction("invalid execution submission batch")
 	}
 	seen := make(map[string]struct{}, len(message.Executions))
 	receiptBytes := 0
 	for _, execution := range message.Executions {
-		if !validExecutionItem(execution) || len(execution.ServicerAddress) != 0 || len(execution.PublicKey) != 0 || execution.ArchiveId != "" {
+		if !validExecutionItem(execution) {
 			return ErrInvalidTransaction("execution batch servicer does not match its receipt")
 		}
 		receiptBytes += len(execution.ReceiptJson) + len(execution.Signature)
@@ -324,27 +352,6 @@ func validateExecutionBatchItems(message *MessageSubmitExecutions) *PluginError 
 	return nil
 }
 
-func checkFinalizeRequest(message *MessageFinalizeRequest) ([]byte, *PluginError) {
-	if !validAddress(message.ObserverAddress) || !validHash(message.SettlementDomainId) || message.RequestId == "" || len(message.ExecutionIds) == 0 || message.RequestSpent > message.ReservedBudget ||
-		!validHash(message.SettlementTxHash) {
-		return nil, ErrInvalidTransaction("invalid settlement finalization")
-	}
-	certificateFields := 0
-	if message.ValidatorSetId != 0 {
-		certificateFields++
-	}
-	if len(message.SignerBitmap) != 0 {
-		certificateFields++
-	}
-	if len(message.AggregateSignature) != 0 {
-		certificateFields++
-	}
-	if certificateFields != 0 && certificateFields != 3 {
-		return nil, ErrInvalidTransaction("incomplete settlement finalization certificate")
-	}
-	return message.ObserverAddress, nil
-}
-
 func checkFinalizeRequests(message *MessageFinalizeRequests) ([]byte, *PluginError) {
 	if !validAddress(message.ObserverAddress) || len(message.Requests) == 0 || len(message.Requests) > 512 ||
 		message.ValidatorSetId == 0 || len(message.SignerBitmap) == 0 || len(message.AggregateSignature) == 0 {
@@ -353,8 +360,7 @@ func checkFinalizeRequests(message *MessageFinalizeRequests) ([]byte, *PluginErr
 	seen := make(map[string]struct{}, len(message.Requests))
 	for _, request := range message.Requests {
 		if request == nil || !validHash(request.SettlementDomainId) || request.RequestId == "" || request.ReservedBudget == 0 || len(request.ExecutionIds) == 0 || request.RequestSpent > request.ReservedBudget ||
-			!validHash(request.SettlementTxHash) || len(request.ObserverAddress) != 0 || request.ValidatorSetId != 0 ||
-			len(request.SignerBitmap) != 0 || len(request.AggregateSignature) != 0 {
+			!validHash(request.SettlementTxHash) {
 			return nil, ErrInvalidTransaction("invalid settlement finalization batch member")
 		}
 		if _, duplicate := seen[request.RequestId]; duplicate {
@@ -365,20 +371,16 @@ func checkFinalizeRequests(message *MessageFinalizeRequests) ([]byte, *PluginErr
 	return message.ObserverAddress, nil
 }
 
-func checkSubmitQuorumSignature(message *MessageSubmitQuorumSignature) ([]byte, *PluginError) {
-	if !validAddress(message.ObserverAddress) || message.ProofKind == "" || len(message.ProofKind) > 64 ||
-		!validHash(message.ProofId) || !validHash(message.Digest) || !validHash(message.Message) ||
-		message.ValidatorSetId == 0 || len(message.Signature) != 96 {
-		return nil, ErrInvalidTransaction("invalid quorum signature share")
+func checkGovernanceVote(message *MessageGovernanceVote) ([]byte, *PluginError) {
+	if message == nil || !validAddress(message.ValidatorAddress) || !validHash(message.ProposalId) ||
+		!validHash(message.Digest) || message.ValidatorSetId == 0 || len(message.Signature) != 96 {
+		return nil, ErrInvalidTransaction("invalid governance vote")
 	}
-	if !strings.EqualFold(hex.EncodeToString(message.Message), hex.EncodeToString(message.Digest)) {
-		return nil, ErrInvalidTransaction("quorum message digest mismatch")
+	expectedID := quorumProofID("governance-action", message.ValidatorSetId, message.Digest)
+	if !bytes.Equal(expectedID, message.ProposalId) {
+		return nil, ErrInvalidTransaction("governance proposal identifier mismatch")
 	}
-	expectedID := quorumProofID(message.ProofKind, message.ValidatorSetId, message.Digest)
-	if !strings.EqualFold(hex.EncodeToString(expectedID), hex.EncodeToString(message.ProofId)) {
-		return nil, ErrInvalidTransaction("quorum proof identifier mismatch")
-	}
-	return message.ObserverAddress, nil
+	return message.ValidatorAddress, nil
 }
 
 func checkObserveBridgeLock(message *MessageObserveBridgeLock) ([]byte, *PluginError) {
@@ -412,31 +414,9 @@ func checkBurnBridge(message *MessageBurnBridge) ([]byte, *PluginError) {
 	return message.OwnerAddress, nil
 }
 
-func checkQueueServicerStake(message *MessageQueueServicerStake) ([]byte, *PluginError) {
-	if !validAddress(message.OwnerAddress) || message.Exit == (message.AdditionalBond != 0) {
-		return nil, ErrInvalidTransaction("invalid queued servicer stake change")
-	}
-	return message.OwnerAddress, nil
-}
-
-func checkWithdrawUnbonded(message *MessageWithdrawUnbonded) ([]byte, *PluginError) {
-	if !validAddress(message.OwnerAddress) || message.Sequence == 0 {
-		return nil, ErrInvalidTransaction("invalid unbonding withdrawal")
-	}
-	return message.OwnerAddress, nil
-}
-
 func checkSetProducerPayout(message *MessageSetProducerPayout) ([]byte, *PluginError) {
 	if !validAddress(message.OwnerAddress) || !validAddress(message.CanonicalChainAddress) {
 		return nil, ErrInvalidTransaction("invalid producer payout address")
 	}
 	return message.OwnerAddress, nil
-}
-
-func checkObserveSlashEvidence(message *MessageObserveSlashEvidence) ([]byte, *PluginError) {
-	if !validAddress(message.ObserverAddress) || !validHash(message.EvidenceId) ||
-		!validAddress(message.TargetAddress) || message.Reason != "invalid_receipt" {
-		return nil, ErrInvalidTransaction("invalid servicer slash evidence")
-	}
-	return message.ObserverAddress, nil
 }

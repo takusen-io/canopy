@@ -11,55 +11,51 @@ import (
 )
 
 var (
-	accountPrefix   = []byte{1}
-	poolPrefix      = []byte{2}
-	validatorPrefix = []byte{3}
-	enclavePrefix   = []byte{100}
-	servicerPrefix  = []byte{101}
-	requestPrefix   = []byte{102}
-	executionPrefix = []byte{103}
-	// Prefix 104 was used by the removed duplicate settlement record.
-	observationPrefix                 = []byte{105}
-	blockAnchorPrefix                 = []byte{106}
-	quorumProofPrefix                 = []byte{107}
-	quorumSharePrefix                 = []byte{108}
-	depositPrefix                     = []byte{109}
-	creditPrefix                      = []byte{110}
-	reservationPrefix                 = []byte{111}
-	observationClaimPrefix            = []byte{112}
-	protocolParamsPrefix              = []byte{113}
-	stakeChangePrefix                 = []byte{114}
-	unbondingPrefix                   = []byte{115}
-	slashEvidencePrefix               = []byte{116}
-	producerPayoutPrefix              = []byte{117}
-	producerPrefix                    = []byte{118}
-	epochAuthorizationPrefix          = []byte{119}
-	bridgeStatePrefix                 = []byte{120}
-	bridgeMintPrefix                  = []byte{121}
-	bridgeNoncePrefix                 = []byte{122}
-	bridgeBurnPrefix                  = []byte{123}
-	epochClockPrefix                  = []byte{124}
-	assignmentIndexPrefix             = []byte{125}
-	epochValidatorPrefix              = []byte{126}
-	settlementIndexPrefix             = []byte{127}
-	producerIdentityPrefix            = []byte{128}
-	rotationProofIndexPrefix          = []byte{129}
-	pendingSlashPrefix                = []byte{130}
-	latestEpochPrefix                 = []byte{131}
-	provisionalReservationIndexPrefix = []byte{132}
-	activeServicerIndexPrefix         = []byte{133}
-	pendingEpochAuthorizationPrefix   = []byte{135}
-	pendingBridgeBurnPrefix           = []byte{136}
-	handoffManifestPrefix             = []byte{137}
-	domainRotationStatePrefix         = []byte{138}
-	handoffCancellationManifestPrefix = []byte{139}
-	consensusCertificatePrefix        = []byte{140}
-	nativeAuthorizationIntentPrefix   = []byte{141}
-	pendingAuthorizationPrefix        = []byte{142}
-	timeoutCandidateCursorPrefix      = []byte{143}
-	uncertifiedSettlementIndexPrefix  = []byte{144}
-	certifiedSettlementIndexPrefix    = []byte{145}
-	settlementCandidateCursorPrefix   = []byte{146}
+	accountPrefix                     = []byte{1}
+	poolPrefix                        = []byte{2}
+	validatorPrefix                   = []byte{3}
+	enclavePrefix                     = []byte{100}
+	servicerPrefix                    = []byte{101}
+	requestPrefix                     = []byte{102}
+	executionPrefix                   = []byte{103}
+	observationPrefix                 = []byte{104}
+	blockAnchorPrefix                 = []byte{105}
+	quorumProofPrefix                 = []byte{106}
+	quorumSharePrefix                 = []byte{107}
+	depositPrefix                     = []byte{108}
+	creditPrefix                      = []byte{109}
+	reservationPrefix                 = []byte{110}
+	observationClaimPrefix            = []byte{111}
+	protocolParamsPrefix              = []byte{112}
+	slashEvidencePrefix               = []byte{113}
+	producerPayoutPrefix              = []byte{114}
+	producerPrefix                    = []byte{115}
+	epochAuthorizationPrefix          = []byte{116}
+	bridgeStatePrefix                 = []byte{117}
+	bridgeMintPrefix                  = []byte{118}
+	bridgeNoncePrefix                 = []byte{119}
+	bridgeBurnPrefix                  = []byte{120}
+	epochClockPrefix                  = []byte{121}
+	assignmentIndexPrefix             = []byte{122}
+	epochValidatorPrefix              = []byte{123}
+	settlementIndexPrefix             = []byte{124}
+	producerIdentityPrefix            = []byte{125}
+	rotationProofIndexPrefix          = []byte{126}
+	latestEpochPrefix                 = []byte{127}
+	provisionalReservationIndexPrefix = []byte{128}
+	activeServicerIndexPrefix         = []byte{129}
+	pendingEpochAuthorizationPrefix   = []byte{130}
+	pendingBridgeBurnPrefix           = []byte{131}
+	handoffManifestPrefix             = []byte{132}
+	domainRotationStatePrefix         = []byte{133}
+	handoffCancellationManifestPrefix = []byte{134}
+	consensusCertificatePrefix        = []byte{135}
+	nativeAuthorizationIntentPrefix   = []byte{136}
+	pendingAuthorizationPrefix        = []byte{137}
+	timeoutCandidateCursorPrefix      = []byte{138}
+	uncertifiedSettlementIndexPrefix  = []byte{139}
+	certifiedSettlementIndexPrefix    = []byte{140}
+	settlementCandidateCursorPrefix   = []byte{141}
 )
 
 func EnclavePrefix() []byte        { return JoinLenPrefix(enclavePrefix) }
@@ -85,20 +81,11 @@ func PendingAuthorizationPrefix() []byte { return JoinLenPrefix(pendingAuthoriza
 func KeyForTimeoutCandidateCursorCurrent() []byte {
 	return JoinLenPrefix(timeoutCandidateCursorPrefix, []byte("current"))
 }
-func KeyForTimeoutCandidateCursorNext() []byte {
-	return JoinLenPrefix(timeoutCandidateCursorPrefix, []byte("next"))
-}
 func KeyForSettlementCandidateCursorCurrent() []byte {
 	return JoinLenPrefix(settlementCandidateCursorPrefix, []byte("current"))
 }
 func KeyForSettlementCandidateCursorNext() []byte {
 	return JoinLenPrefix(settlementCandidateCursorPrefix, []byte("next"))
-}
-func KeyForSettlementRepairCursorCurrent() []byte {
-	return JoinLenPrefix(settlementCandidateCursorPrefix, []byte("repair-current"))
-}
-func KeyForSettlementRepairCursorNext() []byte {
-	return JoinLenPrefix(settlementCandidateCursorPrefix, []byte("repair-next"))
 }
 func KeyForPendingAuthorization(requestID string) []byte {
 	return JoinLenPrefix(pendingAuthorizationPrefix, []byte(requestID))
@@ -118,13 +105,10 @@ func ReservationPrefix() []byte { return JoinLenPrefix(reservationPrefix) }
 func ProvisionalReservationPrefix(domainID, requester []byte) []byte {
 	return JoinLenPrefix(provisionalReservationIndexPrefix, domainID, requester)
 }
-func StakeChangePrefix() []byte               { return JoinLenPrefix(stakeChangePrefix) }
-func UnbondingPrefix() []byte                 { return JoinLenPrefix(unbondingPrefix) }
 func SlashEvidencePrefix() []byte             { return JoinLenPrefix(slashEvidencePrefix) }
 func ProducerPayoutPrefix() []byte            { return JoinLenPrefix(producerPayoutPrefix) }
 func ProducerPrefix(epoch uint64) []byte      { return JoinLenPrefix(producerPrefix, uint64Bytes(epoch)) }
 func ProducerIdentityPrefix() []byte          { return JoinLenPrefix(producerIdentityPrefix) }
-func PendingSlashPrefix() []byte              { return JoinLenPrefix(pendingSlashPrefix) }
 func EpochAuthorizationPrefix() []byte        { return JoinLenPrefix(epochAuthorizationPrefix) }
 func PendingEpochAuthorizationPrefix() []byte { return JoinLenPrefix(pendingEpochAuthorizationPrefix) }
 func BridgeMintPrefix() []byte                { return JoinLenPrefix(bridgeMintPrefix) }
@@ -240,17 +224,9 @@ func KeyForReservation(domainID []byte, requestID string) []byte {
 func KeyForProvisionalReservation(domainID, requester []byte, requestID string) []byte {
 	return JoinLenPrefix(provisionalReservationIndexPrefix, domainID, requester, []byte(requestID))
 }
-func KeyForProtocolParams() []byte          { return JoinLenPrefix(protocolParamsPrefix) }
-func KeyForStakeChange(owner []byte) []byte { return JoinLenPrefix(stakeChangePrefix, owner) }
-func KeyForUnbonding(owner []byte, sequence uint64) []byte {
-	return JoinLenPrefix(unbondingPrefix, owner, uint64Bytes(sequence))
-}
-func UnbondingOwnerPrefix(owner []byte) []byte { return JoinLenPrefix(unbondingPrefix, owner) }
+func KeyForProtocolParams() []byte { return JoinLenPrefix(protocolParamsPrefix) }
 func KeyForSlashEvidence(evidenceID []byte) []byte {
 	return JoinLenPrefix(slashEvidencePrefix, evidenceID)
-}
-func KeyForPendingSlash(effectiveEpoch uint64, evidenceID []byte) []byte {
-	return JoinLenPrefix(pendingSlashPrefix, uint64Bytes(effectiveEpoch), evidenceID)
 }
 func KeyForProducerPayout(owner []byte) []byte { return JoinLenPrefix(producerPayoutPrefix, owner) }
 func KeyForProducer(epoch uint64, owner []byte) []byte {

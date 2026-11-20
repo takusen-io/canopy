@@ -11,7 +11,6 @@ import (
 )
 
 const epochRewardsType = "EpochRewards(uint256 chainId,address token,uint64 validatorSetId,uint64 epoch,bytes32 recipientsHash,bytes32 amountsHash)"
-const maxEpochSlashApplications uint64 = 256
 const validatorHandoffAbortLeadSeconds uint64 = 1_200
 
 func (c *Contract) endBlock(request *PluginEndRequest) *PluginEndResponse {
@@ -204,26 +203,7 @@ func (c *Contract) endBlock(request *PluginEndRequest) *PluginEndResponse {
 			return c.withNativeAuxiliaryCandidates(request.Height, params, &PluginEndResponse{Error: c.write(records)}, priority)
 		}
 	}
-	stakeDeletes, applyErr := c.applyEpochStakeChanges(epoch, params, records)
-	if applyErr != nil {
-		return &PluginEndResponse{Error: applyErr}
-	}
-	deletes = append(deletes, stakeDeletes...)
-	slashDeletes, slashesComplete, applyErr := c.applyEpochSlashes(epoch, params, records, maxEpochSlashApplications)
-	if applyErr != nil {
-		return &PluginEndResponse{Error: applyErr}
-	}
-	deletes = append(deletes, slashDeletes...)
-	if !slashesComplete {
-		if clock.EndHeight == math.MaxUint64 {
-			return &PluginEndResponse{Error: ErrState("epoch slash queue overflow")}
-		}
-		// Bound end-block consensus work. Persist this chunk and extend the same
-		// epoch by one block; the next boundary continues the pending index.
-		clock.EndHeight++
-		return c.withNativeAuxiliaryCandidates(request.Height, params, &PluginEndResponse{Error: c.writeChanges(records, deletes)})
-	}
-	if applyErr = c.finalizeEpoch(clock, request.ProposerAddress, producer, params, records); applyErr != nil {
+	if applyErr := c.finalizeEpoch(clock, request.ProposerAddress, producer, params, records); applyErr != nil {
 		return &PluginEndResponse{Error: applyErr}
 	}
 	if clock.CurrentEpoch == math.MaxUint64 || clock.ValidatorSetId == math.MaxUint64 ||
@@ -535,7 +515,7 @@ func validatePreparedValidatorHandoff(clock *EpochClock, chainID uint64) *Plugin
 		clock.ValidatorHandoffNativeChainId != chainID || len(clock.ValidatorHandoffRosterHash) != 32 ||
 		len(clock.ValidatorHandoffDomainSetHash) != 32 || len(clock.ValidatorHandoffDomains) == 0 ||
 		!bytes.Equal(clock.ValidatorHandoffDomainSetHash, validatorHandoffDomainSetHash(clock.ValidatorHandoffDomains)) {
-		return ErrState("validator handoff state is invalid or requires a boundary migration")
+		return ErrState("validator handoff state is invalid")
 	}
 	return nil
 }
@@ -798,22 +778,7 @@ func (c *Contract) finalizeEpoch(clock *EpochClock, currentAddress []byte, curre
 			ProducerAddress: append([]byte(nil), record.ProducerAddress...), CanonicalChainRecipient: payout,
 			Blocks: record.Blocks, Amount: amount,
 		}
-		servicer := new(Servicer)
-		if found, readErr := c.readStaged(records, KeyForServicer(record.ProducerAddress), servicer); readErr != nil {
-			return readErr
-		} else if found {
-			if ^uint64(0)-servicer.AccruedRewards < amount {
-				return ErrState("servicer reward accounting overflow")
-			}
-			servicer.AccruedRewards += amount
-			// Every reward is minted on Base. It may increase a Canopy bond only
-			// after the resulting tokens are explicitly bridged and staked.
-			servicer.AutoCompound = false
-			if amount != 0 {
-				recipients, amounts = append(recipients, payout), append(amounts, amount)
-			}
-			records[string(KeyForServicer(record.ProducerAddress))] = servicer
-		} else if amount != 0 {
+		if amount != 0 {
 			recipients, amounts = append(recipients, payout), append(amounts, amount)
 		}
 		authorization.Allocations = append(authorization.Allocations, allocation)

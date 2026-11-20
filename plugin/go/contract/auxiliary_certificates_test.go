@@ -42,7 +42,7 @@ func TestCertifiedEVMDepositAppliesWithoutObservationTransactions(t *testing.T) 
 		Digest: evmObservationDigest(observation, depositSubject(message)), Payload: payload,
 	}
 	certificate := &ConsensusCertificate{ValidatorSetId: 7, SignedWeight: 200, TotalWeight: 200}
-	if !contract.applyNativeAuxiliaryCertificate(12, candidate, certificate, map[string]proto.Message{}) {
+	if !contract.applyNativeAuxiliaryCertificate(12, candidate, certificate, map[string]proto.Message{}, new([][]byte)) {
 		t.Fatal("certified deposit was rejected")
 	}
 	account := new(CreditAccount)
@@ -52,12 +52,12 @@ func TestCertifiedEVMDepositAppliesWithoutObservationTransactions(t *testing.T) 
 
 	conflict := proto.Clone(candidate).(*AuxiliaryCandidate)
 	conflict.Digest = bytes.Repeat([]byte{0x99}, 32)
-	if contract.applyNativeAuxiliaryCertificate(13, conflict, certificate, map[string]proto.Message{}) {
+	if contract.applyNativeAuxiliaryCertificate(13, conflict, certificate, map[string]proto.Message{}, new([][]byte)) {
 		t.Fatal("conflicting finalized block digest was accepted")
 	}
 }
 
-func TestCertifiedAssignmentExpirationPublishesTerminalTimeout(t *testing.T) {
+func TestDeterministicAssignmentExpirationPublishesTerminalTimeout(t *testing.T) {
 	contract, store, _, _ := newMemoryContract(t)
 	domain := testSettlementDomainID()
 	servicer := bytes.Repeat([]byte{0x22}, 20)
@@ -71,25 +71,15 @@ func TestCertifiedAssignmentExpirationPublishesTerminalTimeout(t *testing.T) {
 	store.put(t, KeyForReservation(domain, request.RequestId), &ReservationRecord{
 		SettlementDomainId: domain, RequestId: request.RequestId, Requester: request.Requester, Budget: 100, Status: "reserved",
 	})
-	message := &MessageExpireAssignment{
-		RequestId: request.RequestId, Model: "model", ExecutionId: executionID,
-		SettlementDomainId: domain, DeadlineHeight: request.DeadlineHeight,
-	}
-	payload, err := Marshal(message)
-	if err != nil {
+	if err := applyTimeoutsForTest(contract, 10); err != nil {
 		t.Fatal(err)
 	}
-	candidate := &AuxiliaryCandidate{
-		Kind:   "native-assignment-expiration",
-		Key:    hashFields(domain, []byte(request.RequestId), []byte(message.Model), []byte(executionID)),
-		Digest: assignmentExpirationSubject(message), Payload: payload,
+	before := new(RequestRecord)
+	if found, readErr := contract.read(KeyForRequest(request.RequestId), before); readErr != nil || !found || before.Assignments[0].Completed {
+		t.Fatalf("assignment expired at its deadline: found=%v request=%+v err=%v", found, before, readErr)
 	}
-	certificate := &ConsensusCertificate{ValidatorSetId: 7, SignedWeight: 200, TotalWeight: 200}
-	if contract.applyNativeAuxiliaryCertificate(10, candidate, certificate, map[string]proto.Message{}) {
-		t.Fatal("certificate expired an assignment before its deadline elapsed")
-	}
-	if !contract.applyNativeAuxiliaryCertificate(11, candidate, certificate, map[string]proto.Message{}) {
-		t.Fatal("valid assignment-expiration certificate was rejected")
+	if err := applyTimeoutsForTest(contract, 11); err != nil {
+		t.Fatal(err)
 	}
 	stored := new(RequestRecord)
 	if found, readErr := contract.read(KeyForRequest(request.RequestId), stored); readErr != nil || !found ||
@@ -101,8 +91,44 @@ func TestCertifiedAssignmentExpirationPublishesTerminalTimeout(t *testing.T) {
 		timeout.Status != "timeout" || timeout.Cost != 0 || !bytes.Equal(timeout.SettlementDomainId, domain) {
 		t.Fatalf("timeout=%+v found=%v err=%v", timeout, found, readErr)
 	}
-	if contract.applyNativeAuxiliaryCertificate(12, candidate, certificate, map[string]proto.Message{}) {
-		t.Fatal("assignment-expiration replay was accepted")
+	if err := applyTimeoutsForTest(contract, 12); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCertifiedEnclaveRevocationRequiresNoObservationTransactions(t *testing.T) {
+	contract, store, owner, _ := newMemoryContract(t)
+	keyID := "ed25519:emergency"
+	store.put(t, KeyForEnclave(keyID), &EnclaveKey{OwnerAddress: owner, TeeKeyId: keyID, Status: "active"})
+	store.put(t, KeyForServicer(owner), &Servicer{
+		OwnerAddress: owner, TeeKeyId: keyID, Models: []string{"model"}, Bond: 100, Active: true, Revision: 1,
+	})
+	store.put(t, KeyForActiveServicer(owner), &ReplayMarker{Id: owner})
+	message := &EnclaveRevocation{TeeKeyId: keyID, IncidentId: bytes.Repeat([]byte{0x71}, 32)}
+	payload, err := Marshal(message)
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidate := &AuxiliaryCandidate{
+		Kind: "enclave-revocation", Key: enclaveRevocationKey(message), Digest: enclaveRevocationDigest(message), Payload: payload,
+	}
+	records := map[string]proto.Message{}
+	var deletes [][]byte
+	if !contract.applyNativeAuxiliaryCertificate(12, candidate, &ConsensusCertificate{ValidatorSetId: 7}, records, &deletes) {
+		t.Fatal("certified enclave revocation was rejected")
+	}
+	if err = contract.writeChanges(records, deletes); err != nil {
+		t.Fatal(err)
+	}
+	enclave, servicer := new(EnclaveKey), new(Servicer)
+	if found, readErr := contract.read(KeyForEnclave(keyID), enclave); readErr != nil || !found || enclave.Status != "revoked" {
+		t.Fatalf("enclave=%+v found=%v err=%v", enclave, found, readErr)
+	}
+	if found, readErr := contract.read(KeyForServicer(owner), servicer); readErr != nil || !found || servicer.Active || servicer.Revision != 2 {
+		t.Fatalf("servicer=%+v found=%v err=%v", servicer, found, readErr)
+	}
+	if found, readErr := contract.read(KeyForActiveServicer(owner), new(ReplayMarker)); readErr != nil || found {
+		t.Fatalf("revoked servicer remains indexed: found=%v err=%v", found, readErr)
 	}
 }
 

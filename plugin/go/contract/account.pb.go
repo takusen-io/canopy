@@ -30,10 +30,20 @@ type Account struct {
 	Address []byte `protobuf:"bytes,1,opt,name=address,proto3" json:"address,omitempty"`
 	// amount: the balance of funds the account has
 	Amount uint64 `protobuf:"varint,2,opt,name=amount,proto3" json:"amount,omitempty"`
+	// Keep the complete shared Canopy account wire shape. Core owns vesting;
+	// plugin balance writes must preserve it.
+	VestingAmount      uint64 `protobuf:"varint,3,opt,name=vesting_amount,json=vestingAmount,proto3" json:"vesting_amount,omitempty"`
+	VestingStartHeight uint64 `protobuf:"varint,4,opt,name=vesting_start_height,json=vestingStartHeight,proto3" json:"vesting_start_height,omitempty"`
+	VestingCliffHeight uint64 `protobuf:"varint,5,opt,name=vesting_cliff_height,json=vestingCliffHeight,proto3" json:"vesting_cliff_height,omitempty"`
+	VestingEndHeight   uint64 `protobuf:"varint,6,opt,name=vesting_end_height,json=vestingEndHeight,proto3" json:"vesting_end_height,omitempty"`
 	// nonce: the minimum accepted sequence number for nonce-protected transactions
-	Nonce         uint64 `protobuf:"varint,7,opt,name=nonce,proto3" json:"nonce,omitempty"` // NOTE: CAN EXTEND FUNCTIONALITY BY ADDING ADDITIONAL FIELDS
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Nonce uint64 `protobuf:"varint,7,opt,name=nonce,proto3" json:"nonce,omitempty"`
+	// The single height-locked collateral bucket created by servicer bond
+	// reductions. It remains slashable until it becomes spendable.
+	UnbondingAmount        uint64 `protobuf:"varint,8,opt,name=unbonding_amount,json=unbondingAmount,proto3" json:"unbonding_amount,omitempty"`
+	UnbondingReleaseHeight uint64 `protobuf:"varint,9,opt,name=unbonding_release_height,json=unbondingReleaseHeight,proto3" json:"unbonding_release_height,omitempty"`
+	unknownFields          protoimpl.UnknownFields
+	sizeCache              protoimpl.SizeCache
 }
 
 func (x *Account) Reset() {
@@ -80,9 +90,51 @@ func (x *Account) GetAmount() uint64 {
 	return 0
 }
 
+func (x *Account) GetVestingAmount() uint64 {
+	if x != nil {
+		return x.VestingAmount
+	}
+	return 0
+}
+
+func (x *Account) GetVestingStartHeight() uint64 {
+	if x != nil {
+		return x.VestingStartHeight
+	}
+	return 0
+}
+
+func (x *Account) GetVestingCliffHeight() uint64 {
+	if x != nil {
+		return x.VestingCliffHeight
+	}
+	return 0
+}
+
+func (x *Account) GetVestingEndHeight() uint64 {
+	if x != nil {
+		return x.VestingEndHeight
+	}
+	return 0
+}
+
 func (x *Account) GetNonce() uint64 {
 	if x != nil {
 		return x.Nonce
+	}
+	return 0
+}
+
+func (x *Account) GetUnbondingAmount() uint64 {
+	if x != nil {
+		return x.UnbondingAmount
+	}
+	return 0
+}
+
+func (x *Account) GetUnbondingReleaseHeight() uint64 {
+	if x != nil {
+		return x.UnbondingReleaseHeight
 	}
 	return 0
 }
@@ -273,9 +325,11 @@ type EnclaveKey struct {
 	Pcr1             []byte                 `protobuf:"bytes,6,opt,name=pcr1,proto3" json:"pcr1,omitempty"`
 	Pcr2             []byte                 `protobuf:"bytes,7,opt,name=pcr2,proto3" json:"pcr2,omitempty"`
 	RegisteredHeight uint64                 `protobuf:"varint,8,opt,name=registered_height,json=registeredHeight,proto3" json:"registered_height,omitempty"`
-	Active           bool                   `protobuf:"varint,9,opt,name=active,proto3" json:"active,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	// active receives new assignments; draining may finish assignments already
+	// bound to it; revoked is terminal and cannot submit receipts.
+	Status        string `protobuf:"bytes,9,opt,name=status,proto3" json:"status,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *EnclaveKey) Reset() {
@@ -364,11 +418,11 @@ func (x *EnclaveKey) GetRegisteredHeight() uint64 {
 	return 0
 }
 
-func (x *EnclaveKey) GetActive() bool {
+func (x *EnclaveKey) GetStatus() string {
 	if x != nil {
-		return x.Active
+		return x.Status
 	}
-	return false
+	return ""
 }
 
 type Servicer struct {
@@ -381,9 +435,8 @@ type Servicer struct {
 	Active           bool                   `protobuf:"varint,6,opt,name=active,proto3" json:"active,omitempty"`
 	RegisteredHeight uint64                 `protobuf:"varint,7,opt,name=registered_height,json=registeredHeight,proto3" json:"registered_height,omitempty"`
 	FailureCount     uint64                 `protobuf:"varint,8,opt,name=failure_count,json=failureCount,proto3" json:"failure_count,omitempty"`
-	AutoCompound     bool                   `protobuf:"varint,9,opt,name=auto_compound,json=autoCompound,proto3" json:"auto_compound,omitempty"`
-	AccruedRewards   uint64                 `protobuf:"varint,10,opt,name=accrued_rewards,json=accruedRewards,proto3" json:"accrued_rewards,omitempty"`
-	TotalSlashed     uint64                 `protobuf:"varint,11,opt,name=total_slashed,json=totalSlashed,proto3" json:"total_slashed,omitempty"`
+	TotalSlashed     uint64                 `protobuf:"varint,9,opt,name=total_slashed,json=totalSlashed,proto3" json:"total_slashed,omitempty"`
+	Revision         uint64                 `protobuf:"varint,10,opt,name=revision,proto3" json:"revision,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
@@ -474,23 +527,16 @@ func (x *Servicer) GetFailureCount() uint64 {
 	return 0
 }
 
-func (x *Servicer) GetAutoCompound() bool {
+func (x *Servicer) GetTotalSlashed() uint64 {
 	if x != nil {
-		return x.AutoCompound
-	}
-	return false
-}
-
-func (x *Servicer) GetAccruedRewards() uint64 {
-	if x != nil {
-		return x.AccruedRewards
+		return x.TotalSlashed
 	}
 	return 0
 }
 
-func (x *Servicer) GetTotalSlashed() uint64 {
+func (x *Servicer) GetRevision() uint64 {
 	if x != nil {
-		return x.TotalSlashed
+		return x.Revision
 	}
 	return 0
 }
@@ -499,12 +545,12 @@ type Assignment struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
 	Model           string                 `protobuf:"bytes,1,opt,name=model,proto3" json:"model,omitempty"`
 	ServicerAddress []byte                 `protobuf:"bytes,2,opt,name=servicer_address,json=servicerAddress,proto3" json:"servicer_address,omitempty"`
-	Completed       bool                   `protobuf:"varint,4,opt,name=completed,proto3" json:"completed,omitempty"`
-	ExecutionId     string                 `protobuf:"bytes,5,opt,name=execution_id,json=executionId,proto3" json:"execution_id,omitempty"`
-	TeeKeyId        string                 `protobuf:"bytes,7,opt,name=tee_key_id,json=teeKeyId,proto3" json:"tee_key_id,omitempty"`
-	Provider        string                 `protobuf:"bytes,8,opt,name=provider,proto3" json:"provider,omitempty"`
-	TerminalStatus  string                 `protobuf:"bytes,9,opt,name=terminal_status,json=terminalStatus,proto3" json:"terminal_status,omitempty"`
-	MaxProviderCost uint64                 `protobuf:"varint,10,opt,name=max_provider_cost,json=maxProviderCost,proto3" json:"max_provider_cost,omitempty"`
+	Completed       bool                   `protobuf:"varint,3,opt,name=completed,proto3" json:"completed,omitempty"`
+	ExecutionId     string                 `protobuf:"bytes,4,opt,name=execution_id,json=executionId,proto3" json:"execution_id,omitempty"`
+	TeeKeyId        string                 `protobuf:"bytes,5,opt,name=tee_key_id,json=teeKeyId,proto3" json:"tee_key_id,omitempty"`
+	Provider        string                 `protobuf:"bytes,6,opt,name=provider,proto3" json:"provider,omitempty"`
+	TerminalStatus  string                 `protobuf:"bytes,7,opt,name=terminal_status,json=terminalStatus,proto3" json:"terminal_status,omitempty"`
+	MaxProviderCost uint64                 `protobuf:"varint,8,opt,name=max_provider_cost,json=maxProviderCost,proto3" json:"max_provider_cost,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -600,31 +646,31 @@ type RequestRecord struct {
 	RequestId  string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
 	InputHash  []byte                 `protobuf:"bytes,2,opt,name=input_hash,json=inputHash,proto3" json:"input_hash,omitempty"`
 	Requester  []byte                 `protobuf:"bytes,3,opt,name=requester,proto3" json:"requester,omitempty"`
-	OutputType string                 `protobuf:"bytes,5,opt,name=output_type,json=outputType,proto3" json:"output_type,omitempty"`
-	Models     []string               `protobuf:"bytes,6,rep,name=models,proto3" json:"models,omitempty"`
+	OutputType string                 `protobuf:"bytes,4,opt,name=output_type,json=outputType,proto3" json:"output_type,omitempty"`
+	Models     []string               `protobuf:"bytes,5,rep,name=models,proto3" json:"models,omitempty"`
 	// Display-only agreement observation threshold.
-	ExecutionQuorum            uint32        `protobuf:"varint,7,opt,name=execution_quorum,json=executionQuorum,proto3" json:"execution_quorum,omitempty"`
-	DeadlineHeight             uint64        `protobuf:"varint,9,opt,name=deadline_height,json=deadlineHeight,proto3" json:"deadline_height,omitempty"`
-	AuthorizedHeight           uint64        `protobuf:"varint,10,opt,name=authorized_height,json=authorizedHeight,proto3" json:"authorized_height,omitempty"`
-	AssignmentSeed             []byte        `protobuf:"bytes,11,opt,name=assignment_seed,json=assignmentSeed,proto3" json:"assignment_seed,omitempty"`
-	Assignments                []*Assignment `protobuf:"bytes,12,rep,name=assignments,proto3" json:"assignments,omitempty"`
-	Status                     string        `protobuf:"bytes,13,opt,name=status,proto3" json:"status,omitempty"`
-	ConsensusOutputHash        []byte        `protobuf:"bytes,15,opt,name=consensus_output_hash,json=consensusOutputHash,proto3" json:"consensus_output_hash,omitempty"`
-	AgreementCount             uint32        `protobuf:"varint,16,opt,name=agreement_count,json=agreementCount,proto3" json:"agreement_count,omitempty"`
-	SettlementTxHash           []byte        `protobuf:"bytes,17,opt,name=settlement_tx_hash,json=settlementTxHash,proto3" json:"settlement_tx_hash,omitempty"`
-	ParameterRevision          uint64        `protobuf:"varint,19,opt,name=parameter_revision,json=parameterRevision,proto3" json:"parameter_revision,omitempty"`
-	FoundationFeeBps           uint32        `protobuf:"varint,20,opt,name=foundation_fee_bps,json=foundationFeeBps,proto3" json:"foundation_fee_bps,omitempty"`
-	ServicerMarginBps          uint32        `protobuf:"varint,21,opt,name=servicer_margin_bps,json=servicerMarginBps,proto3" json:"servicer_margin_bps,omitempty"`
-	AuthorizationSignatureHash []byte        `protobuf:"bytes,24,opt,name=authorization_signature_hash,json=authorizationSignatureHash,proto3" json:"authorization_signature_hash,omitempty"`
-	RequestArchiveId           string        `protobuf:"bytes,26,opt,name=request_archive_id,json=requestArchiveId,proto3" json:"request_archive_id,omitempty"`
-	SettlementDomainId         []byte        `protobuf:"bytes,27,opt,name=settlement_domain_id,json=settlementDomainId,proto3" json:"settlement_domain_id,omitempty"`
-	OutputMinimum              int64         `protobuf:"varint,28,opt,name=output_minimum,json=outputMinimum,proto3" json:"output_minimum,omitempty"`
-	OutputMaximum              int64         `protobuf:"varint,29,opt,name=output_maximum,json=outputMaximum,proto3" json:"output_maximum,omitempty"`
-	OutputChoices              []string      `protobuf:"bytes,30,rep,name=output_choices,json=outputChoices,proto3" json:"output_choices,omitempty"`
-	SchemaHash                 []byte        `protobuf:"bytes,31,opt,name=schema_hash,json=schemaHash,proto3" json:"schema_hash,omitempty"`
+	ExecutionQuorum            uint32        `protobuf:"varint,6,opt,name=execution_quorum,json=executionQuorum,proto3" json:"execution_quorum,omitempty"`
+	DeadlineHeight             uint64        `protobuf:"varint,7,opt,name=deadline_height,json=deadlineHeight,proto3" json:"deadline_height,omitempty"`
+	AuthorizedHeight           uint64        `protobuf:"varint,8,opt,name=authorized_height,json=authorizedHeight,proto3" json:"authorized_height,omitempty"`
+	AssignmentSeed             []byte        `protobuf:"bytes,9,opt,name=assignment_seed,json=assignmentSeed,proto3" json:"assignment_seed,omitempty"`
+	Assignments                []*Assignment `protobuf:"bytes,10,rep,name=assignments,proto3" json:"assignments,omitempty"`
+	Status                     string        `protobuf:"bytes,11,opt,name=status,proto3" json:"status,omitempty"`
+	ConsensusOutputHash        []byte        `protobuf:"bytes,12,opt,name=consensus_output_hash,json=consensusOutputHash,proto3" json:"consensus_output_hash,omitempty"`
+	AgreementCount             uint32        `protobuf:"varint,13,opt,name=agreement_count,json=agreementCount,proto3" json:"agreement_count,omitempty"`
+	SettlementTxHash           []byte        `protobuf:"bytes,14,opt,name=settlement_tx_hash,json=settlementTxHash,proto3" json:"settlement_tx_hash,omitempty"`
+	ParameterRevision          uint64        `protobuf:"varint,15,opt,name=parameter_revision,json=parameterRevision,proto3" json:"parameter_revision,omitempty"`
+	FoundationFeeBps           uint32        `protobuf:"varint,16,opt,name=foundation_fee_bps,json=foundationFeeBps,proto3" json:"foundation_fee_bps,omitempty"`
+	ServicerMarginBps          uint32        `protobuf:"varint,17,opt,name=servicer_margin_bps,json=servicerMarginBps,proto3" json:"servicer_margin_bps,omitempty"`
+	AuthorizationSignatureHash []byte        `protobuf:"bytes,18,opt,name=authorization_signature_hash,json=authorizationSignatureHash,proto3" json:"authorization_signature_hash,omitempty"`
+	RequestArchiveId           string        `protobuf:"bytes,19,opt,name=request_archive_id,json=requestArchiveId,proto3" json:"request_archive_id,omitempty"`
+	SettlementDomainId         []byte        `protobuf:"bytes,20,opt,name=settlement_domain_id,json=settlementDomainId,proto3" json:"settlement_domain_id,omitempty"`
+	OutputMinimum              int64         `protobuf:"varint,21,opt,name=output_minimum,json=outputMinimum,proto3" json:"output_minimum,omitempty"`
+	OutputMaximum              int64         `protobuf:"varint,22,opt,name=output_maximum,json=outputMaximum,proto3" json:"output_maximum,omitempty"`
+	OutputChoices              []string      `protobuf:"bytes,23,rep,name=output_choices,json=outputChoices,proto3" json:"output_choices,omitempty"`
+	SchemaHash                 []byte        `protobuf:"bytes,24,opt,name=schema_hash,json=schemaHash,proto3" json:"schema_hash,omitempty"`
 	// Immutable request budget copied into the active-assignment index so
 	// servicer discovery does not fan out into request and reservation reads.
-	ReservedBudget uint64 `protobuf:"varint,32,opt,name=reserved_budget,json=reservedBudget,proto3" json:"reserved_budget,omitempty"`
+	ReservedBudget uint64 `protobuf:"varint,25,opt,name=reserved_budget,json=reservedBudget,proto3" json:"reserved_budget,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -1400,11 +1446,11 @@ type ReservationRecord struct {
 	Spent                 uint64                 `protobuf:"varint,4,opt,name=spent,proto3" json:"spent,omitempty"`
 	Released              uint64                 `protobuf:"varint,5,opt,name=released,proto3" json:"released,omitempty"`
 	Status                string                 `protobuf:"bytes,6,opt,name=status,proto3" json:"status,omitempty"`
-	ReservedHeight        uint64                 `protobuf:"varint,10,opt,name=reserved_height,json=reservedHeight,proto3" json:"reserved_height,omitempty"`
-	ReleasedHeight        uint64                 `protobuf:"varint,11,opt,name=released_height,json=releasedHeight,proto3" json:"released_height,omitempty"`
-	AuthorizationDeadline uint64                 `protobuf:"varint,12,opt,name=authorization_deadline,json=authorizationDeadline,proto3" json:"authorization_deadline,omitempty"`
-	ProvisionalBudget     uint64                 `protobuf:"varint,13,opt,name=provisional_budget,json=provisionalBudget,proto3" json:"provisional_budget,omitempty"`
-	SettlementDomainId    []byte                 `protobuf:"bytes,14,opt,name=settlement_domain_id,json=settlementDomainId,proto3" json:"settlement_domain_id,omitempty"`
+	ReservedHeight        uint64                 `protobuf:"varint,7,opt,name=reserved_height,json=reservedHeight,proto3" json:"reserved_height,omitempty"`
+	ReleasedHeight        uint64                 `protobuf:"varint,8,opt,name=released_height,json=releasedHeight,proto3" json:"released_height,omitempty"`
+	AuthorizationDeadline uint64                 `protobuf:"varint,9,opt,name=authorization_deadline,json=authorizationDeadline,proto3" json:"authorization_deadline,omitempty"`
+	ProvisionalBudget     uint64                 `protobuf:"varint,10,opt,name=provisional_budget,json=provisionalBudget,proto3" json:"provisional_budget,omitempty"`
+	SettlementDomainId    []byte                 `protobuf:"bytes,11,opt,name=settlement_domain_id,json=settlementDomainId,proto3" json:"settlement_domain_id,omitempty"`
 	unknownFields         protoimpl.UnknownFields
 	sizeCache             protoimpl.SizeCache
 }
@@ -1736,8 +1782,8 @@ type ModelParams struct {
 	state                  protoimpl.MessageState `protogen:"open.v1"`
 	Model                  string                 `protobuf:"bytes,1,opt,name=model,proto3" json:"model,omitempty"`
 	Provider               string                 `protobuf:"bytes,2,opt,name=provider,proto3" json:"provider,omitempty"`
-	MaximumExecutionBudget uint64                 `protobuf:"varint,5,opt,name=maximum_execution_budget,json=maximumExecutionBudget,proto3" json:"maximum_execution_budget,omitempty"`
-	Active                 bool                   `protobuf:"varint,6,opt,name=active,proto3" json:"active,omitempty"`
+	MaximumExecutionBudget uint64                 `protobuf:"varint,3,opt,name=maximum_execution_budget,json=maximumExecutionBudget,proto3" json:"maximum_execution_budget,omitempty"`
+	Active                 bool                   `protobuf:"varint,4,opt,name=active,proto3" json:"active,omitempty"`
 	unknownFields          protoimpl.UnknownFields
 	sizeCache              protoimpl.SizeCache
 }
@@ -1881,30 +1927,30 @@ type ProtocolParams struct {
 	QuorumNumerator             uint32                 `protobuf:"varint,6,opt,name=quorum_numerator,json=quorumNumerator,proto3" json:"quorum_numerator,omitempty"`
 	QuorumDenominator           uint32                 `protobuf:"varint,7,opt,name=quorum_denominator,json=quorumDenominator,proto3" json:"quorum_denominator,omitempty"`
 	AuthorizationDeadlineBlocks uint64                 `protobuf:"varint,8,opt,name=authorization_deadline_blocks,json=authorizationDeadlineBlocks,proto3" json:"authorization_deadline_blocks,omitempty"`
-	MinimumServicerBond         uint64                 `protobuf:"varint,11,opt,name=minimum_servicer_bond,json=minimumServicerBond,proto3" json:"minimum_servicer_bond,omitempty"`
-	MinimumValidatorBond        uint64                 `protobuf:"varint,12,opt,name=minimum_validator_bond,json=minimumValidatorBond,proto3" json:"minimum_validator_bond,omitempty"`
-	InvalidReceiptSlashBps      uint32                 `protobuf:"varint,14,opt,name=invalid_receipt_slash_bps,json=invalidReceiptSlashBps,proto3" json:"invalid_receipt_slash_bps,omitempty"`
-	EpochBlocks                 uint64                 `protobuf:"varint,15,opt,name=epoch_blocks,json=epochBlocks,proto3" json:"epoch_blocks,omitempty"`
-	UnbondingEpochs             uint64                 `protobuf:"varint,16,opt,name=unbonding_epochs,json=unbondingEpochs,proto3" json:"unbonding_epochs,omitempty"`
-	EmissionPerEpoch            uint64                 `protobuf:"varint,17,opt,name=emission_per_epoch,json=emissionPerEpoch,proto3" json:"emission_per_epoch,omitempty"`
-	TreasuryAddress             []byte                 `protobuf:"bytes,18,opt,name=treasury_address,json=treasuryAddress,proto3" json:"treasury_address,omitempty"`
-	TreasuryBps                 uint32                 `protobuf:"varint,19,opt,name=treasury_bps,json=treasuryBps,proto3" json:"treasury_bps,omitempty"`
-	CanonicalChainId            uint64                 `protobuf:"varint,20,opt,name=canonical_chain_id,json=canonicalChainId,proto3" json:"canonical_chain_id,omitempty"`
-	CanonicalTokenAddress       []byte                 `protobuf:"bytes,21,opt,name=canonical_token_address,json=canonicalTokenAddress,proto3" json:"canonical_token_address,omitempty"`
-	CanonicalBridgeAddress      []byte                 `protobuf:"bytes,22,opt,name=canonical_bridge_address,json=canonicalBridgeAddress,proto3" json:"canonical_bridge_address,omitempty"`
-	ValidatorSetId              uint64                 `protobuf:"varint,23,opt,name=validator_set_id,json=validatorSetId,proto3" json:"validator_set_id,omitempty"`
-	BridgeEpochMintLimit        uint64                 `protobuf:"varint,24,opt,name=bridge_epoch_mint_limit,json=bridgeEpochMintLimit,proto3" json:"bridge_epoch_mint_limit,omitempty"`
-	BridgeTransferLimit         uint64                 `protobuf:"varint,25,opt,name=bridge_transfer_limit,json=bridgeTransferLimit,proto3" json:"bridge_transfer_limit,omitempty"`
-	SettlementIntervalBlocks    uint64                 `protobuf:"varint,26,opt,name=settlement_interval_blocks,json=settlementIntervalBlocks,proto3" json:"settlement_interval_blocks,omitempty"`
-	SupportedOutputSchemas      []string               `protobuf:"bytes,27,rep,name=supported_output_schemas,json=supportedOutputSchemas,proto3" json:"supported_output_schemas,omitempty"`
-	DefaultModels               []string               `protobuf:"bytes,28,rep,name=default_models,json=defaultModels,proto3" json:"default_models,omitempty"`
-	SettlementDomains           []*SettlementDomain    `protobuf:"bytes,31,rep,name=settlement_domains,json=settlementDomains,proto3" json:"settlement_domains,omitempty"`
+	MinimumServicerBond         uint64                 `protobuf:"varint,9,opt,name=minimum_servicer_bond,json=minimumServicerBond,proto3" json:"minimum_servicer_bond,omitempty"`
+	MinimumValidatorBond        uint64                 `protobuf:"varint,10,opt,name=minimum_validator_bond,json=minimumValidatorBond,proto3" json:"minimum_validator_bond,omitempty"`
+	InvalidReceiptSlashBps      uint32                 `protobuf:"varint,11,opt,name=invalid_receipt_slash_bps,json=invalidReceiptSlashBps,proto3" json:"invalid_receipt_slash_bps,omitempty"`
+	EpochBlocks                 uint64                 `protobuf:"varint,12,opt,name=epoch_blocks,json=epochBlocks,proto3" json:"epoch_blocks,omitempty"`
+	ServicerUnbondingBlocks     uint64                 `protobuf:"varint,13,opt,name=servicer_unbonding_blocks,json=servicerUnbondingBlocks,proto3" json:"servicer_unbonding_blocks,omitempty"`
+	EmissionPerEpoch            uint64                 `protobuf:"varint,14,opt,name=emission_per_epoch,json=emissionPerEpoch,proto3" json:"emission_per_epoch,omitempty"`
+	TreasuryAddress             []byte                 `protobuf:"bytes,15,opt,name=treasury_address,json=treasuryAddress,proto3" json:"treasury_address,omitempty"`
+	TreasuryBps                 uint32                 `protobuf:"varint,16,opt,name=treasury_bps,json=treasuryBps,proto3" json:"treasury_bps,omitempty"`
+	CanonicalChainId            uint64                 `protobuf:"varint,17,opt,name=canonical_chain_id,json=canonicalChainId,proto3" json:"canonical_chain_id,omitempty"`
+	CanonicalTokenAddress       []byte                 `protobuf:"bytes,18,opt,name=canonical_token_address,json=canonicalTokenAddress,proto3" json:"canonical_token_address,omitempty"`
+	CanonicalBridgeAddress      []byte                 `protobuf:"bytes,19,opt,name=canonical_bridge_address,json=canonicalBridgeAddress,proto3" json:"canonical_bridge_address,omitempty"`
+	ValidatorSetId              uint64                 `protobuf:"varint,20,opt,name=validator_set_id,json=validatorSetId,proto3" json:"validator_set_id,omitempty"`
+	BridgeEpochMintLimit        uint64                 `protobuf:"varint,21,opt,name=bridge_epoch_mint_limit,json=bridgeEpochMintLimit,proto3" json:"bridge_epoch_mint_limit,omitempty"`
+	BridgeTransferLimit         uint64                 `protobuf:"varint,22,opt,name=bridge_transfer_limit,json=bridgeTransferLimit,proto3" json:"bridge_transfer_limit,omitempty"`
+	SettlementIntervalBlocks    uint64                 `protobuf:"varint,23,opt,name=settlement_interval_blocks,json=settlementIntervalBlocks,proto3" json:"settlement_interval_blocks,omitempty"`
+	SupportedOutputSchemas      []string               `protobuf:"bytes,24,rep,name=supported_output_schemas,json=supportedOutputSchemas,proto3" json:"supported_output_schemas,omitempty"`
+	DefaultModels               []string               `protobuf:"bytes,25,rep,name=default_models,json=defaultModels,proto3" json:"default_models,omitempty"`
+	SettlementDomains           []*SettlementDomain    `protobuf:"bytes,26,rep,name=settlement_domains,json=settlementDomains,proto3" json:"settlement_domains,omitempty"`
 	// Wall-clock notice for a changed-roster EVM schedule. This is independent
 	// of Canopy block cadence and must exceed every supported verifier minimum.
-	ValidatorHandoffNoticeSeconds uint64 `protobuf:"varint,33,opt,name=validator_handoff_notice_seconds,json=validatorHandoffNoticeSeconds,proto3" json:"validator_handoff_notice_seconds,omitempty"`
+	ValidatorHandoffNoticeSeconds uint64 `protobuf:"varint,27,opt,name=validator_handoff_notice_seconds,json=validatorHandoffNoticeSeconds,proto3" json:"validator_handoff_notice_seconds,omitempty"`
 	// DER-encoded X.509 root that anchors Nitro attestation certificate chains.
 	// Governance replaces this atomically with the rest of the protocol params.
-	NitroTrustRoot []byte `protobuf:"bytes,34,opt,name=nitro_trust_root,json=nitroTrustRoot,proto3" json:"nitro_trust_root,omitempty"`
+	NitroTrustRoot []byte `protobuf:"bytes,28,opt,name=nitro_trust_root,json=nitroTrustRoot,proto3" json:"nitro_trust_root,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -2023,9 +2069,9 @@ func (x *ProtocolParams) GetEpochBlocks() uint64 {
 	return 0
 }
 
-func (x *ProtocolParams) GetUnbondingEpochs() uint64 {
+func (x *ProtocolParams) GetServicerUnbondingBlocks() uint64 {
 	if x != nil {
-		return x.UnbondingEpochs
+		return x.ServicerUnbondingBlocks
 	}
 	return 0
 }
@@ -2135,166 +2181,6 @@ func (x *ProtocolParams) GetNitroTrustRoot() []byte {
 	return nil
 }
 
-type StakeChange struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	OwnerAddress   []byte                 `protobuf:"bytes,1,opt,name=owner_address,json=ownerAddress,proto3" json:"owner_address,omitempty"`
-	BondIncrease   uint64                 `protobuf:"varint,2,opt,name=bond_increase,json=bondIncrease,proto3" json:"bond_increase,omitempty"`
-	Exit           bool                   `protobuf:"varint,3,opt,name=exit,proto3" json:"exit,omitempty"`
-	AutoCompound   bool                   `protobuf:"varint,4,opt,name=auto_compound,json=autoCompound,proto3" json:"auto_compound,omitempty"`
-	EffectiveEpoch uint64                 `protobuf:"varint,5,opt,name=effective_epoch,json=effectiveEpoch,proto3" json:"effective_epoch,omitempty"`
-	LockedIncrease uint64                 `protobuf:"varint,6,opt,name=locked_increase,json=lockedIncrease,proto3" json:"locked_increase,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
-}
-
-func (x *StakeChange) Reset() {
-	*x = StakeChange{}
-	mi := &file_account_proto_msgTypes[18]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *StakeChange) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*StakeChange) ProtoMessage() {}
-
-func (x *StakeChange) ProtoReflect() protoreflect.Message {
-	mi := &file_account_proto_msgTypes[18]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use StakeChange.ProtoReflect.Descriptor instead.
-func (*StakeChange) Descriptor() ([]byte, []int) {
-	return file_account_proto_rawDescGZIP(), []int{18}
-}
-
-func (x *StakeChange) GetOwnerAddress() []byte {
-	if x != nil {
-		return x.OwnerAddress
-	}
-	return nil
-}
-
-func (x *StakeChange) GetBondIncrease() uint64 {
-	if x != nil {
-		return x.BondIncrease
-	}
-	return 0
-}
-
-func (x *StakeChange) GetExit() bool {
-	if x != nil {
-		return x.Exit
-	}
-	return false
-}
-
-func (x *StakeChange) GetAutoCompound() bool {
-	if x != nil {
-		return x.AutoCompound
-	}
-	return false
-}
-
-func (x *StakeChange) GetEffectiveEpoch() uint64 {
-	if x != nil {
-		return x.EffectiveEpoch
-	}
-	return 0
-}
-
-func (x *StakeChange) GetLockedIncrease() uint64 {
-	if x != nil {
-		return x.LockedIncrease
-	}
-	return 0
-}
-
-type UnbondingRecord struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	OwnerAddress  []byte                 `protobuf:"bytes,1,opt,name=owner_address,json=ownerAddress,proto3" json:"owner_address,omitempty"`
-	Sequence      uint64                 `protobuf:"varint,2,opt,name=sequence,proto3" json:"sequence,omitempty"`
-	Amount        uint64                 `protobuf:"varint,3,opt,name=amount,proto3" json:"amount,omitempty"`
-	ReleaseEpoch  uint64                 `protobuf:"varint,4,opt,name=release_epoch,json=releaseEpoch,proto3" json:"release_epoch,omitempty"`
-	Withdrawn     bool                   `protobuf:"varint,5,opt,name=withdrawn,proto3" json:"withdrawn,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *UnbondingRecord) Reset() {
-	*x = UnbondingRecord{}
-	mi := &file_account_proto_msgTypes[19]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *UnbondingRecord) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*UnbondingRecord) ProtoMessage() {}
-
-func (x *UnbondingRecord) ProtoReflect() protoreflect.Message {
-	mi := &file_account_proto_msgTypes[19]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use UnbondingRecord.ProtoReflect.Descriptor instead.
-func (*UnbondingRecord) Descriptor() ([]byte, []int) {
-	return file_account_proto_rawDescGZIP(), []int{19}
-}
-
-func (x *UnbondingRecord) GetOwnerAddress() []byte {
-	if x != nil {
-		return x.OwnerAddress
-	}
-	return nil
-}
-
-func (x *UnbondingRecord) GetSequence() uint64 {
-	if x != nil {
-		return x.Sequence
-	}
-	return 0
-}
-
-func (x *UnbondingRecord) GetAmount() uint64 {
-	if x != nil {
-		return x.Amount
-	}
-	return 0
-}
-
-func (x *UnbondingRecord) GetReleaseEpoch() uint64 {
-	if x != nil {
-		return x.ReleaseEpoch
-	}
-	return 0
-}
-
-func (x *UnbondingRecord) GetWithdrawn() bool {
-	if x != nil {
-		return x.Withdrawn
-	}
-	return false
-}
-
 type SlashEvidence struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	EvidenceId     []byte                 `protobuf:"bytes,1,opt,name=evidence_id,json=evidenceId,proto3" json:"evidence_id,omitempty"`
@@ -2302,15 +2188,13 @@ type SlashEvidence struct {
 	Reason         string                 `protobuf:"bytes,3,opt,name=reason,proto3" json:"reason,omitempty"`
 	Penalty        uint64                 `protobuf:"varint,4,opt,name=penalty,proto3" json:"penalty,omitempty"`
 	ObservedHeight uint64                 `protobuf:"varint,5,opt,name=observed_height,json=observedHeight,proto3" json:"observed_height,omitempty"`
-	EffectiveEpoch uint64                 `protobuf:"varint,6,opt,name=effective_epoch,json=effectiveEpoch,proto3" json:"effective_epoch,omitempty"`
-	Status         string                 `protobuf:"bytes,7,opt,name=status,proto3" json:"status,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
 
 func (x *SlashEvidence) Reset() {
 	*x = SlashEvidence{}
-	mi := &file_account_proto_msgTypes[20]
+	mi := &file_account_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2322,7 +2206,7 @@ func (x *SlashEvidence) String() string {
 func (*SlashEvidence) ProtoMessage() {}
 
 func (x *SlashEvidence) ProtoReflect() protoreflect.Message {
-	mi := &file_account_proto_msgTypes[20]
+	mi := &file_account_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2335,7 +2219,7 @@ func (x *SlashEvidence) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SlashEvidence.ProtoReflect.Descriptor instead.
 func (*SlashEvidence) Descriptor() ([]byte, []int) {
-	return file_account_proto_rawDescGZIP(), []int{20}
+	return file_account_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *SlashEvidence) GetEvidenceId() []byte {
@@ -2373,20 +2257,6 @@ func (x *SlashEvidence) GetObservedHeight() uint64 {
 	return 0
 }
 
-func (x *SlashEvidence) GetEffectiveEpoch() uint64 {
-	if x != nil {
-		return x.EffectiveEpoch
-	}
-	return 0
-}
-
-func (x *SlashEvidence) GetStatus() string {
-	if x != nil {
-		return x.Status
-	}
-	return ""
-}
-
 type ProducerPayout struct {
 	state                 protoimpl.MessageState `protogen:"open.v1"`
 	OwnerAddress          []byte                 `protobuf:"bytes,1,opt,name=owner_address,json=ownerAddress,proto3" json:"owner_address,omitempty"`
@@ -2397,7 +2267,7 @@ type ProducerPayout struct {
 
 func (x *ProducerPayout) Reset() {
 	*x = ProducerPayout{}
-	mi := &file_account_proto_msgTypes[21]
+	mi := &file_account_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2409,7 +2279,7 @@ func (x *ProducerPayout) String() string {
 func (*ProducerPayout) ProtoMessage() {}
 
 func (x *ProducerPayout) ProtoReflect() protoreflect.Message {
-	mi := &file_account_proto_msgTypes[21]
+	mi := &file_account_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2422,7 +2292,7 @@ func (x *ProducerPayout) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProducerPayout.ProtoReflect.Descriptor instead.
 func (*ProducerPayout) Descriptor() ([]byte, []int) {
-	return file_account_proto_rawDescGZIP(), []int{21}
+	return file_account_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *ProducerPayout) GetOwnerAddress() []byte {
@@ -2450,7 +2320,7 @@ type ProducerRecord struct {
 
 func (x *ProducerRecord) Reset() {
 	*x = ProducerRecord{}
-	mi := &file_account_proto_msgTypes[22]
+	mi := &file_account_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2462,7 +2332,7 @@ func (x *ProducerRecord) String() string {
 func (*ProducerRecord) ProtoMessage() {}
 
 func (x *ProducerRecord) ProtoReflect() protoreflect.Message {
-	mi := &file_account_proto_msgTypes[22]
+	mi := &file_account_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2475,7 +2345,7 @@ func (x *ProducerRecord) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProducerRecord.ProtoReflect.Descriptor instead.
 func (*ProducerRecord) Descriptor() ([]byte, []int) {
-	return file_account_proto_rawDescGZIP(), []int{22}
+	return file_account_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *ProducerRecord) GetEpoch() uint64 {
@@ -2510,7 +2380,7 @@ type ProducerIdentity struct {
 
 func (x *ProducerIdentity) Reset() {
 	*x = ProducerIdentity{}
-	mi := &file_account_proto_msgTypes[23]
+	mi := &file_account_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2522,7 +2392,7 @@ func (x *ProducerIdentity) String() string {
 func (*ProducerIdentity) ProtoMessage() {}
 
 func (x *ProducerIdentity) ProtoReflect() protoreflect.Message {
-	mi := &file_account_proto_msgTypes[23]
+	mi := &file_account_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2535,7 +2405,7 @@ func (x *ProducerIdentity) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProducerIdentity.ProtoReflect.Descriptor instead.
 func (*ProducerIdentity) Descriptor() ([]byte, []int) {
-	return file_account_proto_rawDescGZIP(), []int{23}
+	return file_account_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *ProducerIdentity) GetOwnerAddress() []byte {
@@ -2558,7 +2428,7 @@ type RewardAllocation struct {
 
 func (x *RewardAllocation) Reset() {
 	*x = RewardAllocation{}
-	mi := &file_account_proto_msgTypes[24]
+	mi := &file_account_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2570,7 +2440,7 @@ func (x *RewardAllocation) String() string {
 func (*RewardAllocation) ProtoMessage() {}
 
 func (x *RewardAllocation) ProtoReflect() protoreflect.Message {
-	mi := &file_account_proto_msgTypes[24]
+	mi := &file_account_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2583,7 +2453,7 @@ func (x *RewardAllocation) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RewardAllocation.ProtoReflect.Descriptor instead.
 func (*RewardAllocation) Descriptor() ([]byte, []int) {
-	return file_account_proto_rawDescGZIP(), []int{24}
+	return file_account_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *RewardAllocation) GetProducerAddress() []byte {
@@ -2642,7 +2512,7 @@ type EpochAuthorization struct {
 
 func (x *EpochAuthorization) Reset() {
 	*x = EpochAuthorization{}
-	mi := &file_account_proto_msgTypes[25]
+	mi := &file_account_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2654,7 +2524,7 @@ func (x *EpochAuthorization) String() string {
 func (*EpochAuthorization) ProtoMessage() {}
 
 func (x *EpochAuthorization) ProtoReflect() protoreflect.Message {
-	mi := &file_account_proto_msgTypes[25]
+	mi := &file_account_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2667,7 +2537,7 @@ func (x *EpochAuthorization) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EpochAuthorization.ProtoReflect.Descriptor instead.
 func (*EpochAuthorization) Descriptor() ([]byte, []int) {
-	return file_account_proto_rawDescGZIP(), []int{25}
+	return file_account_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *EpochAuthorization) GetEpoch() uint64 {
@@ -2773,28 +2643,28 @@ type EpochClock struct {
 	// The epoch duration is snapshotted when the epoch begins. Handoff values
 	// are snapshotted atomically at the nominal boundary.
 	EpochBlocks              uint64 `protobuf:"varint,5,opt,name=epoch_blocks,json=epochBlocks,proto3" json:"epoch_blocks,omitempty"`
-	ValidatorHandoffPrepared bool   `protobuf:"varint,7,opt,name=validator_handoff_prepared,json=validatorHandoffPrepared,proto3" json:"validator_handoff_prepared,omitempty"`
+	ValidatorHandoffPrepared bool   `protobuf:"varint,6,opt,name=validator_handoff_prepared,json=validatorHandoffPrepared,proto3" json:"validator_handoff_prepared,omitempty"`
 	// Unix seconds at which scheduled EVM verifiers permanently stop accepting
 	// the outgoing committee until incoming activation.
-	ValidatorHandoffTimestamp uint64 `protobuf:"varint,8,opt,name=validator_handoff_timestamp,json=validatorHandoffTimestamp,proto3" json:"validator_handoff_timestamp,omitempty"`
+	ValidatorHandoffTimestamp uint64 `protobuf:"varint,7,opt,name=validator_handoff_timestamp,json=validatorHandoffTimestamp,proto3" json:"validator_handoff_timestamp,omitempty"`
 	// The domain set is frozen with the prepared validator roster. Governance
 	// edits apply to a later handoff and cannot rewrite an in-flight generation.
-	ValidatorHandoffDomains                 [][]byte `protobuf:"bytes,9,rep,name=validator_handoff_domains,json=validatorHandoffDomains,proto3" json:"validator_handoff_domains,omitempty"`
-	ValidatorHandoffAttempt                 uint64   `protobuf:"varint,10,opt,name=validator_handoff_attempt,json=validatorHandoffAttempt,proto3" json:"validator_handoff_attempt,omitempty"`
-	ConsensusTimeSeconds                    uint64   `protobuf:"varint,11,opt,name=consensus_time_seconds,json=consensusTimeSeconds,proto3" json:"consensus_time_seconds,omitempty"`
-	ValidatorHandoffNoticeSeconds           uint64   `protobuf:"varint,12,opt,name=validator_handoff_notice_seconds,json=validatorHandoffNoticeSeconds,proto3" json:"validator_handoff_notice_seconds,omitempty"`
-	ValidatorHandoffRosterHash              []byte   `protobuf:"bytes,13,opt,name=validator_handoff_roster_hash,json=validatorHandoffRosterHash,proto3" json:"validator_handoff_roster_hash,omitempty"`
-	ValidatorHandoffDomainSetHash           []byte   `protobuf:"bytes,14,opt,name=validator_handoff_domain_set_hash,json=validatorHandoffDomainSetHash,proto3" json:"validator_handoff_domain_set_hash,omitempty"`
-	ValidatorHandoffOutgoingAuthorityCutoff uint64   `protobuf:"varint,15,opt,name=validator_handoff_outgoing_authority_cutoff,json=validatorHandoffOutgoingAuthorityCutoff,proto3" json:"validator_handoff_outgoing_authority_cutoff,omitempty"`
-	ValidatorHandoffNativeChainId           uint64   `protobuf:"varint,16,opt,name=validator_handoff_native_chain_id,json=validatorHandoffNativeChainId,proto3" json:"validator_handoff_native_chain_id,omitempty"`
-	ValidatorHandoffCancelling              bool     `protobuf:"varint,17,opt,name=validator_handoff_cancelling,json=validatorHandoffCancelling,proto3" json:"validator_handoff_cancelling,omitempty"`
+	ValidatorHandoffDomains                 [][]byte `protobuf:"bytes,8,rep,name=validator_handoff_domains,json=validatorHandoffDomains,proto3" json:"validator_handoff_domains,omitempty"`
+	ValidatorHandoffAttempt                 uint64   `protobuf:"varint,9,opt,name=validator_handoff_attempt,json=validatorHandoffAttempt,proto3" json:"validator_handoff_attempt,omitempty"`
+	ConsensusTimeSeconds                    uint64   `protobuf:"varint,10,opt,name=consensus_time_seconds,json=consensusTimeSeconds,proto3" json:"consensus_time_seconds,omitempty"`
+	ValidatorHandoffNoticeSeconds           uint64   `protobuf:"varint,11,opt,name=validator_handoff_notice_seconds,json=validatorHandoffNoticeSeconds,proto3" json:"validator_handoff_notice_seconds,omitempty"`
+	ValidatorHandoffRosterHash              []byte   `protobuf:"bytes,12,opt,name=validator_handoff_roster_hash,json=validatorHandoffRosterHash,proto3" json:"validator_handoff_roster_hash,omitempty"`
+	ValidatorHandoffDomainSetHash           []byte   `protobuf:"bytes,13,opt,name=validator_handoff_domain_set_hash,json=validatorHandoffDomainSetHash,proto3" json:"validator_handoff_domain_set_hash,omitempty"`
+	ValidatorHandoffOutgoingAuthorityCutoff uint64   `protobuf:"varint,14,opt,name=validator_handoff_outgoing_authority_cutoff,json=validatorHandoffOutgoingAuthorityCutoff,proto3" json:"validator_handoff_outgoing_authority_cutoff,omitempty"`
+	ValidatorHandoffNativeChainId           uint64   `protobuf:"varint,15,opt,name=validator_handoff_native_chain_id,json=validatorHandoffNativeChainId,proto3" json:"validator_handoff_native_chain_id,omitempty"`
+	ValidatorHandoffCancelling              bool     `protobuf:"varint,16,opt,name=validator_handoff_cancelling,json=validatorHandoffCancelling,proto3" json:"validator_handoff_cancelling,omitempty"`
 	unknownFields                           protoimpl.UnknownFields
 	sizeCache                               protoimpl.SizeCache
 }
 
 func (x *EpochClock) Reset() {
 	*x = EpochClock{}
-	mi := &file_account_proto_msgTypes[26]
+	mi := &file_account_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2806,7 +2676,7 @@ func (x *EpochClock) String() string {
 func (*EpochClock) ProtoMessage() {}
 
 func (x *EpochClock) ProtoReflect() protoreflect.Message {
-	mi := &file_account_proto_msgTypes[26]
+	mi := &file_account_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2819,7 +2689,7 @@ func (x *EpochClock) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EpochClock.ProtoReflect.Descriptor instead.
 func (*EpochClock) Descriptor() ([]byte, []int) {
-	return file_account_proto_rawDescGZIP(), []int{26}
+	return file_account_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *EpochClock) GetCurrentEpoch() uint64 {
@@ -2945,7 +2815,7 @@ type BridgeState struct {
 
 func (x *BridgeState) Reset() {
 	*x = BridgeState{}
-	mi := &file_account_proto_msgTypes[27]
+	mi := &file_account_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2957,7 +2827,7 @@ func (x *BridgeState) String() string {
 func (*BridgeState) ProtoMessage() {}
 
 func (x *BridgeState) ProtoReflect() protoreflect.Message {
-	mi := &file_account_proto_msgTypes[27]
+	mi := &file_account_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2970,7 +2840,7 @@ func (x *BridgeState) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BridgeState.ProtoReflect.Descriptor instead.
 func (*BridgeState) Descriptor() ([]byte, []int) {
-	return file_account_proto_rawDescGZIP(), []int{27}
+	return file_account_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *BridgeState) GetOutboundNonce() uint64 {
@@ -3008,7 +2878,7 @@ type BridgeMint struct {
 
 func (x *BridgeMint) Reset() {
 	*x = BridgeMint{}
-	mi := &file_account_proto_msgTypes[28]
+	mi := &file_account_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3020,7 +2890,7 @@ func (x *BridgeMint) String() string {
 func (*BridgeMint) ProtoMessage() {}
 
 func (x *BridgeMint) ProtoReflect() protoreflect.Message {
-	mi := &file_account_proto_msgTypes[28]
+	mi := &file_account_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3033,7 +2903,7 @@ func (x *BridgeMint) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BridgeMint.ProtoReflect.Descriptor instead.
 func (*BridgeMint) Descriptor() ([]byte, []int) {
-	return file_account_proto_rawDescGZIP(), []int{28}
+	return file_account_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *BridgeMint) GetCanonicalChainTxHash() []byte {
@@ -3097,7 +2967,7 @@ type BridgeBurn struct {
 
 func (x *BridgeBurn) Reset() {
 	*x = BridgeBurn{}
-	mi := &file_account_proto_msgTypes[29]
+	mi := &file_account_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3109,7 +2979,7 @@ func (x *BridgeBurn) String() string {
 func (*BridgeBurn) ProtoMessage() {}
 
 func (x *BridgeBurn) ProtoReflect() protoreflect.Message {
-	mi := &file_account_proto_msgTypes[29]
+	mi := &file_account_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3122,7 +2992,7 @@ func (x *BridgeBurn) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BridgeBurn.ProtoReflect.Descriptor instead.
 func (*BridgeBurn) Descriptor() ([]byte, []int) {
-	return file_account_proto_rawDescGZIP(), []int{29}
+	return file_account_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *BridgeBurn) GetBurnId() []byte {
@@ -3211,7 +3081,7 @@ type ReplayMarker struct {
 
 func (x *ReplayMarker) Reset() {
 	*x = ReplayMarker{}
-	mi := &file_account_proto_msgTypes[30]
+	mi := &file_account_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3223,7 +3093,7 @@ func (x *ReplayMarker) String() string {
 func (*ReplayMarker) ProtoMessage() {}
 
 func (x *ReplayMarker) ProtoReflect() protoreflect.Message {
-	mi := &file_account_proto_msgTypes[30]
+	mi := &file_account_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3236,7 +3106,7 @@ func (x *ReplayMarker) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReplayMarker.ProtoReflect.Descriptor instead.
 func (*ReplayMarker) Descriptor() ([]byte, []int) {
-	return file_account_proto_rawDescGZIP(), []int{30}
+	return file_account_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *ReplayMarker) GetId() []byte {
@@ -3263,7 +3133,7 @@ type SettlementDomainLifecycleIntent struct {
 
 func (x *SettlementDomainLifecycleIntent) Reset() {
 	*x = SettlementDomainLifecycleIntent{}
-	mi := &file_account_proto_msgTypes[31]
+	mi := &file_account_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3275,7 +3145,7 @@ func (x *SettlementDomainLifecycleIntent) String() string {
 func (*SettlementDomainLifecycleIntent) ProtoMessage() {}
 
 func (x *SettlementDomainLifecycleIntent) ProtoReflect() protoreflect.Message {
-	mi := &file_account_proto_msgTypes[31]
+	mi := &file_account_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3288,7 +3158,7 @@ func (x *SettlementDomainLifecycleIntent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SettlementDomainLifecycleIntent.ProtoReflect.Descriptor instead.
 func (*SettlementDomainLifecycleIntent) Descriptor() ([]byte, []int) {
-	return file_account_proto_rawDescGZIP(), []int{31}
+	return file_account_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *SettlementDomainLifecycleIntent) GetId() []byte {
@@ -3342,28 +3212,28 @@ type QuorumProof struct {
 	ProofKind                 string                 `protobuf:"bytes,1,opt,name=proof_kind,json=proofKind,proto3" json:"proof_kind,omitempty"`
 	ProofId                   []byte                 `protobuf:"bytes,2,opt,name=proof_id,json=proofId,proto3" json:"proof_id,omitempty"`
 	Digest                    []byte                 `protobuf:"bytes,3,opt,name=digest,proto3" json:"digest,omitempty"`
-	ValidatorSetId            uint64                 `protobuf:"varint,5,opt,name=validator_set_id,json=validatorSetId,proto3" json:"validator_set_id,omitempty"`
-	SignerBitmap              []byte                 `protobuf:"bytes,8,opt,name=signer_bitmap,json=signerBitmap,proto3" json:"signer_bitmap,omitempty"`
-	AggregateSignatureEip2537 []byte                 `protobuf:"bytes,10,opt,name=aggregate_signature_eip2537,json=aggregateSignatureEip2537,proto3" json:"aggregate_signature_eip2537,omitempty"`
-	SignedWeight              uint64                 `protobuf:"varint,11,opt,name=signed_weight,json=signedWeight,proto3" json:"signed_weight,omitempty"`
-	TotalWeight               uint64                 `protobuf:"varint,12,opt,name=total_weight,json=totalWeight,proto3" json:"total_weight,omitempty"`
-	CompletedHeight           uint64                 `protobuf:"varint,13,opt,name=completed_height,json=completedHeight,proto3" json:"completed_height,omitempty"`
-	NewValidatorSetId         uint64                 `protobuf:"varint,14,opt,name=new_validator_set_id,json=newValidatorSetId,proto3" json:"new_validator_set_id,omitempty"`
-	RotationNonce             uint64                 `protobuf:"varint,16,opt,name=rotation_nonce,json=rotationNonce,proto3" json:"rotation_nonce,omitempty"`
-	SettlementDomainId        []byte                 `protobuf:"bytes,17,opt,name=settlement_domain_id,json=settlementDomainId,proto3" json:"settlement_domain_id,omitempty"`
-	HandoffGeneration         []byte                 `protobuf:"bytes,18,opt,name=handoff_generation,json=handoffGeneration,proto3" json:"handoff_generation,omitempty"`
-	HandoffTimestamp          uint64                 `protobuf:"varint,19,opt,name=handoff_timestamp,json=handoffTimestamp,proto3" json:"handoff_timestamp,omitempty"`
-	ControlBlockNumber        uint64                 `protobuf:"varint,20,opt,name=control_block_number,json=controlBlockNumber,proto3" json:"control_block_number,omitempty"`
-	ControlBlockHash          []byte                 `protobuf:"bytes,21,opt,name=control_block_hash,json=controlBlockHash,proto3" json:"control_block_hash,omitempty"`
-	LifecycleIntentId         []byte                 `protobuf:"bytes,22,opt,name=lifecycle_intent_id,json=lifecycleIntentId,proto3" json:"lifecycle_intent_id,omitempty"`
-	OutgoingAuthorityCutoff   uint64                 `protobuf:"varint,23,opt,name=outgoing_authority_cutoff,json=outgoingAuthorityCutoff,proto3" json:"outgoing_authority_cutoff,omitempty"`
+	ValidatorSetId            uint64                 `protobuf:"varint,4,opt,name=validator_set_id,json=validatorSetId,proto3" json:"validator_set_id,omitempty"`
+	SignerBitmap              []byte                 `protobuf:"bytes,5,opt,name=signer_bitmap,json=signerBitmap,proto3" json:"signer_bitmap,omitempty"`
+	AggregateSignatureEip2537 []byte                 `protobuf:"bytes,6,opt,name=aggregate_signature_eip2537,json=aggregateSignatureEip2537,proto3" json:"aggregate_signature_eip2537,omitempty"`
+	SignedWeight              uint64                 `protobuf:"varint,7,opt,name=signed_weight,json=signedWeight,proto3" json:"signed_weight,omitempty"`
+	TotalWeight               uint64                 `protobuf:"varint,8,opt,name=total_weight,json=totalWeight,proto3" json:"total_weight,omitempty"`
+	CompletedHeight           uint64                 `protobuf:"varint,9,opt,name=completed_height,json=completedHeight,proto3" json:"completed_height,omitempty"`
+	NewValidatorSetId         uint64                 `protobuf:"varint,10,opt,name=new_validator_set_id,json=newValidatorSetId,proto3" json:"new_validator_set_id,omitempty"`
+	RotationNonce             uint64                 `protobuf:"varint,11,opt,name=rotation_nonce,json=rotationNonce,proto3" json:"rotation_nonce,omitempty"`
+	SettlementDomainId        []byte                 `protobuf:"bytes,12,opt,name=settlement_domain_id,json=settlementDomainId,proto3" json:"settlement_domain_id,omitempty"`
+	HandoffGeneration         []byte                 `protobuf:"bytes,13,opt,name=handoff_generation,json=handoffGeneration,proto3" json:"handoff_generation,omitempty"`
+	HandoffTimestamp          uint64                 `protobuf:"varint,14,opt,name=handoff_timestamp,json=handoffTimestamp,proto3" json:"handoff_timestamp,omitempty"`
+	ControlBlockNumber        uint64                 `protobuf:"varint,15,opt,name=control_block_number,json=controlBlockNumber,proto3" json:"control_block_number,omitempty"`
+	ControlBlockHash          []byte                 `protobuf:"bytes,16,opt,name=control_block_hash,json=controlBlockHash,proto3" json:"control_block_hash,omitempty"`
+	LifecycleIntentId         []byte                 `protobuf:"bytes,17,opt,name=lifecycle_intent_id,json=lifecycleIntentId,proto3" json:"lifecycle_intent_id,omitempty"`
+	OutgoingAuthorityCutoff   uint64                 `protobuf:"varint,18,opt,name=outgoing_authority_cutoff,json=outgoingAuthorityCutoff,proto3" json:"outgoing_authority_cutoff,omitempty"`
 	unknownFields             protoimpl.UnknownFields
 	sizeCache                 protoimpl.SizeCache
 }
 
 func (x *QuorumProof) Reset() {
 	*x = QuorumProof{}
-	mi := &file_account_proto_msgTypes[32]
+	mi := &file_account_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3375,7 +3245,7 @@ func (x *QuorumProof) String() string {
 func (*QuorumProof) ProtoMessage() {}
 
 func (x *QuorumProof) ProtoReflect() protoreflect.Message {
-	mi := &file_account_proto_msgTypes[32]
+	mi := &file_account_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3388,7 +3258,7 @@ func (x *QuorumProof) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use QuorumProof.ProtoReflect.Descriptor instead.
 func (*QuorumProof) Descriptor() ([]byte, []int) {
-	return file_account_proto_rawDescGZIP(), []int{32}
+	return file_account_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *QuorumProof) GetProofKind() string {
@@ -3541,7 +3411,7 @@ type ConsensusCertificate struct {
 
 func (x *ConsensusCertificate) Reset() {
 	*x = ConsensusCertificate{}
-	mi := &file_account_proto_msgTypes[33]
+	mi := &file_account_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3553,7 +3423,7 @@ func (x *ConsensusCertificate) String() string {
 func (*ConsensusCertificate) ProtoMessage() {}
 
 func (x *ConsensusCertificate) ProtoReflect() protoreflect.Message {
-	mi := &file_account_proto_msgTypes[33]
+	mi := &file_account_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3566,7 +3436,7 @@ func (x *ConsensusCertificate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConsensusCertificate.ProtoReflect.Descriptor instead.
 func (*ConsensusCertificate) Descriptor() ([]byte, []int) {
-	return file_account_proto_rawDescGZIP(), []int{33}
+	return file_account_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *ConsensusCertificate) GetKind() string {
@@ -3673,7 +3543,7 @@ type ValidatorHandoffDomainManifest struct {
 
 func (x *ValidatorHandoffDomainManifest) Reset() {
 	*x = ValidatorHandoffDomainManifest{}
-	mi := &file_account_proto_msgTypes[34]
+	mi := &file_account_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3685,7 +3555,7 @@ func (x *ValidatorHandoffDomainManifest) String() string {
 func (*ValidatorHandoffDomainManifest) ProtoMessage() {}
 
 func (x *ValidatorHandoffDomainManifest) ProtoReflect() protoreflect.Message {
-	mi := &file_account_proto_msgTypes[34]
+	mi := &file_account_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3698,7 +3568,7 @@ func (x *ValidatorHandoffDomainManifest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ValidatorHandoffDomainManifest.ProtoReflect.Descriptor instead.
 func (*ValidatorHandoffDomainManifest) Descriptor() ([]byte, []int) {
-	return file_account_proto_rawDescGZIP(), []int{34}
+	return file_account_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *ValidatorHandoffDomainManifest) GetSettlementDomainId() []byte {
@@ -3781,7 +3651,7 @@ type ValidatorHandoffManifest struct {
 
 func (x *ValidatorHandoffManifest) Reset() {
 	*x = ValidatorHandoffManifest{}
-	mi := &file_account_proto_msgTypes[35]
+	mi := &file_account_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3793,7 +3663,7 @@ func (x *ValidatorHandoffManifest) String() string {
 func (*ValidatorHandoffManifest) ProtoMessage() {}
 
 func (x *ValidatorHandoffManifest) ProtoReflect() protoreflect.Message {
-	mi := &file_account_proto_msgTypes[35]
+	mi := &file_account_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3806,7 +3676,7 @@ func (x *ValidatorHandoffManifest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ValidatorHandoffManifest.ProtoReflect.Descriptor instead.
 func (*ValidatorHandoffManifest) Descriptor() ([]byte, []int) {
-	return file_account_proto_rawDescGZIP(), []int{35}
+	return file_account_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *ValidatorHandoffManifest) GetRoot() []byte {
@@ -3914,7 +3784,7 @@ type ValidatorHandoffCancellationDomainManifest struct {
 
 func (x *ValidatorHandoffCancellationDomainManifest) Reset() {
 	*x = ValidatorHandoffCancellationDomainManifest{}
-	mi := &file_account_proto_msgTypes[36]
+	mi := &file_account_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3926,7 +3796,7 @@ func (x *ValidatorHandoffCancellationDomainManifest) String() string {
 func (*ValidatorHandoffCancellationDomainManifest) ProtoMessage() {}
 
 func (x *ValidatorHandoffCancellationDomainManifest) ProtoReflect() protoreflect.Message {
-	mi := &file_account_proto_msgTypes[36]
+	mi := &file_account_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3939,7 +3809,7 @@ func (x *ValidatorHandoffCancellationDomainManifest) ProtoReflect() protoreflect
 
 // Deprecated: Use ValidatorHandoffCancellationDomainManifest.ProtoReflect.Descriptor instead.
 func (*ValidatorHandoffCancellationDomainManifest) Descriptor() ([]byte, []int) {
-	return file_account_proto_rawDescGZIP(), []int{36}
+	return file_account_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *ValidatorHandoffCancellationDomainManifest) GetSettlementDomainId() []byte {
@@ -4001,7 +3871,7 @@ type ValidatorHandoffCancellationManifest struct {
 
 func (x *ValidatorHandoffCancellationManifest) Reset() {
 	*x = ValidatorHandoffCancellationManifest{}
-	mi := &file_account_proto_msgTypes[37]
+	mi := &file_account_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4013,7 +3883,7 @@ func (x *ValidatorHandoffCancellationManifest) String() string {
 func (*ValidatorHandoffCancellationManifest) ProtoMessage() {}
 
 func (x *ValidatorHandoffCancellationManifest) ProtoReflect() protoreflect.Message {
-	mi := &file_account_proto_msgTypes[37]
+	mi := &file_account_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4026,7 +3896,7 @@ func (x *ValidatorHandoffCancellationManifest) ProtoReflect() protoreflect.Messa
 
 // Deprecated: Use ValidatorHandoffCancellationManifest.ProtoReflect.Descriptor instead.
 func (*ValidatorHandoffCancellationManifest) Descriptor() ([]byte, []int) {
-	return file_account_proto_rawDescGZIP(), []int{37}
+	return file_account_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *ValidatorHandoffCancellationManifest) GetRoot() []byte {
@@ -4102,7 +3972,7 @@ type SettlementDomainRotationState struct {
 
 func (x *SettlementDomainRotationState) Reset() {
 	*x = SettlementDomainRotationState{}
-	mi := &file_account_proto_msgTypes[38]
+	mi := &file_account_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4114,7 +3984,7 @@ func (x *SettlementDomainRotationState) String() string {
 func (*SettlementDomainRotationState) ProtoMessage() {}
 
 func (x *SettlementDomainRotationState) ProtoReflect() protoreflect.Message {
-	mi := &file_account_proto_msgTypes[38]
+	mi := &file_account_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4127,7 +3997,7 @@ func (x *SettlementDomainRotationState) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SettlementDomainRotationState.ProtoReflect.Descriptor instead.
 func (*SettlementDomainRotationState) Descriptor() ([]byte, []int) {
-	return file_account_proto_rawDescGZIP(), []int{38}
+	return file_account_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *SettlementDomainRotationState) GetSettlementDomainId() []byte {
@@ -4156,7 +4026,7 @@ type QuorumSignatureShare struct {
 
 func (x *QuorumSignatureShare) Reset() {
 	*x = QuorumSignatureShare{}
-	mi := &file_account_proto_msgTypes[39]
+	mi := &file_account_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4168,7 +4038,7 @@ func (x *QuorumSignatureShare) String() string {
 func (*QuorumSignatureShare) ProtoMessage() {}
 
 func (x *QuorumSignatureShare) ProtoReflect() protoreflect.Message {
-	mi := &file_account_proto_msgTypes[39]
+	mi := &file_account_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4181,7 +4051,7 @@ func (x *QuorumSignatureShare) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use QuorumSignatureShare.ProtoReflect.Descriptor instead.
 func (*QuorumSignatureShare) Descriptor() ([]byte, []int) {
-	return file_account_proto_rawDescGZIP(), []int{39}
+	return file_account_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *QuorumSignatureShare) GetProofId() []byte {
@@ -4216,11 +4086,17 @@ var File_account_proto protoreflect.FileDescriptor
 
 const file_account_proto_rawDesc = "" +
 	"\n" +
-	"\raccount.proto\x12\x05types\"Q\n" +
+	"\raccount.proto\x12\x05types\"\xef\x02\n" +
 	"\aAccount\x12\x18\n" +
 	"\aaddress\x18\x01 \x01(\fR\aaddress\x12\x16\n" +
-	"\x06amount\x18\x02 \x01(\x04R\x06amount\x12\x14\n" +
-	"\x05nonce\x18\a \x01(\x04R\x05nonce\".\n" +
+	"\x06amount\x18\x02 \x01(\x04R\x06amount\x12%\n" +
+	"\x0evesting_amount\x18\x03 \x01(\x04R\rvestingAmount\x120\n" +
+	"\x14vesting_start_height\x18\x04 \x01(\x04R\x12vestingStartHeight\x120\n" +
+	"\x14vesting_cliff_height\x18\x05 \x01(\x04R\x12vestingCliffHeight\x12,\n" +
+	"\x12vesting_end_height\x18\x06 \x01(\x04R\x10vestingEndHeight\x12\x14\n" +
+	"\x05nonce\x18\a \x01(\x04R\x05nonce\x12)\n" +
+	"\x10unbonding_amount\x18\b \x01(\x04R\x0funbondingAmount\x128\n" +
+	"\x18unbonding_release_height\x18\t \x01(\x04R\x16unbondingReleaseHeight\".\n" +
 	"\x04Pool\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x04R\x02id\x12\x16\n" +
 	"\x06amount\x18\x02 \x01(\x04R\x06amount\"\xd1\x02\n" +
@@ -4252,7 +4128,7 @@ const file_account_proto_rawDesc = "" +
 	"\x04pcr1\x18\x06 \x01(\fR\x04pcr1\x12\x12\n" +
 	"\x04pcr2\x18\a \x01(\fR\x04pcr2\x12+\n" +
 	"\x11registered_height\x18\b \x01(\x04R\x10registeredHeight\x12\x16\n" +
-	"\x06active\x18\t \x01(\bR\x06active\"\x84\x03\n" +
+	"\x06status\x18\t \x01(\tR\x06status\"\xd2\x02\n" +
 	"\bServicer\x12#\n" +
 	"\rowner_address\x18\x01 \x01(\fR\fownerAddress\x12,\n" +
 	"\x12evm_payout_address\x18\x02 \x01(\fR\x10evmPayoutAddress\x12\x1c\n" +
@@ -4263,53 +4139,51 @@ const file_account_proto_rawDesc = "" +
 	"\x06active\x18\x06 \x01(\bR\x06active\x12+\n" +
 	"\x11registered_height\x18\a \x01(\x04R\x10registeredHeight\x12#\n" +
 	"\rfailure_count\x18\b \x01(\x04R\ffailureCount\x12#\n" +
-	"\rauto_compound\x18\t \x01(\bR\fautoCompound\x12'\n" +
-	"\x0faccrued_rewards\x18\n" +
-	" \x01(\x04R\x0eaccruedRewards\x12#\n" +
-	"\rtotal_slashed\x18\v \x01(\x04R\ftotalSlashed\"\xa9\x02\n" +
+	"\rtotal_slashed\x18\t \x01(\x04R\ftotalSlashed\x12\x1a\n" +
+	"\brevision\x18\n" +
+	" \x01(\x04R\brevision\"\x9d\x02\n" +
 	"\n" +
 	"Assignment\x12\x14\n" +
 	"\x05model\x18\x01 \x01(\tR\x05model\x12)\n" +
 	"\x10servicer_address\x18\x02 \x01(\fR\x0fservicerAddress\x12\x1c\n" +
-	"\tcompleted\x18\x04 \x01(\bR\tcompleted\x12!\n" +
-	"\fexecution_id\x18\x05 \x01(\tR\vexecutionId\x12\x1c\n" +
+	"\tcompleted\x18\x03 \x01(\bR\tcompleted\x12!\n" +
+	"\fexecution_id\x18\x04 \x01(\tR\vexecutionId\x12\x1c\n" +
 	"\n" +
-	"tee_key_id\x18\a \x01(\tR\bteeKeyId\x12\x1a\n" +
-	"\bprovider\x18\b \x01(\tR\bprovider\x12'\n" +
-	"\x0fterminal_status\x18\t \x01(\tR\x0eterminalStatus\x12*\n" +
-	"\x11max_provider_cost\x18\n" +
-	" \x01(\x04R\x0fmaxProviderCostJ\x04\b\x03\x10\x04J\x04\b\x06\x10\a\"\xbe\b\n" +
+	"tee_key_id\x18\x05 \x01(\tR\bteeKeyId\x12\x1a\n" +
+	"\bprovider\x18\x06 \x01(\tR\bprovider\x12'\n" +
+	"\x0fterminal_status\x18\a \x01(\tR\x0eterminalStatus\x12*\n" +
+	"\x11max_provider_cost\x18\b \x01(\x04R\x0fmaxProviderCost\"\x94\b\n" +
 	"\rRequestRecord\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12\x1d\n" +
 	"\n" +
 	"input_hash\x18\x02 \x01(\fR\tinputHash\x12\x1c\n" +
 	"\trequester\x18\x03 \x01(\fR\trequester\x12\x1f\n" +
-	"\voutput_type\x18\x05 \x01(\tR\n" +
+	"\voutput_type\x18\x04 \x01(\tR\n" +
 	"outputType\x12\x16\n" +
-	"\x06models\x18\x06 \x03(\tR\x06models\x12)\n" +
-	"\x10execution_quorum\x18\a \x01(\rR\x0fexecutionQuorum\x12'\n" +
-	"\x0fdeadline_height\x18\t \x01(\x04R\x0edeadlineHeight\x12+\n" +
-	"\x11authorized_height\x18\n" +
-	" \x01(\x04R\x10authorizedHeight\x12'\n" +
-	"\x0fassignment_seed\x18\v \x01(\fR\x0eassignmentSeed\x123\n" +
-	"\vassignments\x18\f \x03(\v2\x11.types.AssignmentR\vassignments\x12\x16\n" +
-	"\x06status\x18\r \x01(\tR\x06status\x122\n" +
-	"\x15consensus_output_hash\x18\x0f \x01(\fR\x13consensusOutputHash\x12'\n" +
-	"\x0fagreement_count\x18\x10 \x01(\rR\x0eagreementCount\x12,\n" +
-	"\x12settlement_tx_hash\x18\x11 \x01(\fR\x10settlementTxHash\x12-\n" +
-	"\x12parameter_revision\x18\x13 \x01(\x04R\x11parameterRevision\x12,\n" +
-	"\x12foundation_fee_bps\x18\x14 \x01(\rR\x10foundationFeeBps\x12.\n" +
-	"\x13servicer_margin_bps\x18\x15 \x01(\rR\x11servicerMarginBps\x12@\n" +
-	"\x1cauthorization_signature_hash\x18\x18 \x01(\fR\x1aauthorizationSignatureHash\x12,\n" +
-	"\x12request_archive_id\x18\x1a \x01(\tR\x10requestArchiveId\x120\n" +
-	"\x14settlement_domain_id\x18\x1b \x01(\fR\x12settlementDomainId\x12%\n" +
-	"\x0eoutput_minimum\x18\x1c \x01(\x03R\routputMinimum\x12%\n" +
-	"\x0eoutput_maximum\x18\x1d \x01(\x03R\routputMaximum\x12%\n" +
-	"\x0eoutput_choices\x18\x1e \x03(\tR\routputChoices\x12\x1f\n" +
-	"\vschema_hash\x18\x1f \x01(\fR\n" +
+	"\x06models\x18\x05 \x03(\tR\x06models\x12)\n" +
+	"\x10execution_quorum\x18\x06 \x01(\rR\x0fexecutionQuorum\x12'\n" +
+	"\x0fdeadline_height\x18\a \x01(\x04R\x0edeadlineHeight\x12+\n" +
+	"\x11authorized_height\x18\b \x01(\x04R\x10authorizedHeight\x12'\n" +
+	"\x0fassignment_seed\x18\t \x01(\fR\x0eassignmentSeed\x123\n" +
+	"\vassignments\x18\n" +
+	" \x03(\v2\x11.types.AssignmentR\vassignments\x12\x16\n" +
+	"\x06status\x18\v \x01(\tR\x06status\x122\n" +
+	"\x15consensus_output_hash\x18\f \x01(\fR\x13consensusOutputHash\x12'\n" +
+	"\x0fagreement_count\x18\r \x01(\rR\x0eagreementCount\x12,\n" +
+	"\x12settlement_tx_hash\x18\x0e \x01(\fR\x10settlementTxHash\x12-\n" +
+	"\x12parameter_revision\x18\x0f \x01(\x04R\x11parameterRevision\x12,\n" +
+	"\x12foundation_fee_bps\x18\x10 \x01(\rR\x10foundationFeeBps\x12.\n" +
+	"\x13servicer_margin_bps\x18\x11 \x01(\rR\x11servicerMarginBps\x12@\n" +
+	"\x1cauthorization_signature_hash\x18\x12 \x01(\fR\x1aauthorizationSignatureHash\x12,\n" +
+	"\x12request_archive_id\x18\x13 \x01(\tR\x10requestArchiveId\x120\n" +
+	"\x14settlement_domain_id\x18\x14 \x01(\fR\x12settlementDomainId\x12%\n" +
+	"\x0eoutput_minimum\x18\x15 \x01(\x03R\routputMinimum\x12%\n" +
+	"\x0eoutput_maximum\x18\x16 \x01(\x03R\routputMaximum\x12%\n" +
+	"\x0eoutput_choices\x18\x17 \x03(\tR\routputChoices\x12\x1f\n" +
+	"\vschema_hash\x18\x18 \x01(\fR\n" +
 	"schemaHash\x12'\n" +
-	"\x0freserved_budget\x18  \x01(\x04R\x0ereservedBudgetJ\x04\b\x04\x10\x05J\x04\b\b\x10\tJ\x04\b\x0e\x10\x0fJ\x04\b\x12\x10\x13J\x04\b\x16\x10\x17J\x04\b\x17\x10\x18J\x04\b\x19\x10\x1a\"\xc0\x05\n" +
+	"\x0freserved_budget\x18\x19 \x01(\x04R\x0ereservedBudget\"\xc0\x05\n" +
 	"\x0fExecutionRecord\x12!\n" +
 	"\fexecution_id\x18\x01 \x01(\tR\vexecutionId\x12\x1d\n" +
 	"\n" +
@@ -4367,7 +4241,7 @@ const file_account_proto_rawDesc = "" +
 	"\vprovisional\x18\x06 \x01(\x04R\vprovisional\x121\n" +
 	"\x14provisional_reserved\x18\a \x01(\x04R\x13provisionalReserved\x12\x18\n" +
 	"\areorged\x18\b \x01(\x04R\areorged\x120\n" +
-	"\x14settlement_domain_id\x18\t \x01(\fR\x12settlementDomainId\"\xae\x03\n" +
+	"\x14settlement_domain_id\x18\t \x01(\fR\x12settlementDomainId\"\x9c\x03\n" +
 	"\x11ReservationRecord\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12\x1c\n" +
@@ -4376,13 +4250,12 @@ const file_account_proto_rawDesc = "" +
 	"\x05spent\x18\x04 \x01(\x04R\x05spent\x12\x1a\n" +
 	"\breleased\x18\x05 \x01(\x04R\breleased\x12\x16\n" +
 	"\x06status\x18\x06 \x01(\tR\x06status\x12'\n" +
-	"\x0freserved_height\x18\n" +
-	" \x01(\x04R\x0ereservedHeight\x12'\n" +
-	"\x0freleased_height\x18\v \x01(\x04R\x0ereleasedHeight\x125\n" +
-	"\x16authorization_deadline\x18\f \x01(\x04R\x15authorizationDeadline\x12-\n" +
-	"\x12provisional_budget\x18\r \x01(\x04R\x11provisionalBudget\x120\n" +
-	"\x14settlement_domain_id\x18\x0e \x01(\fR\x12settlementDomainIdJ\x04\b\a\x10\bJ\x04\b\b\x10\tJ\x04\b\t\x10\n" +
-	"\"\xb2\x01\n" +
+	"\x0freserved_height\x18\a \x01(\x04R\x0ereservedHeight\x12'\n" +
+	"\x0freleased_height\x18\b \x01(\x04R\x0ereleasedHeight\x125\n" +
+	"\x16authorization_deadline\x18\t \x01(\x04R\x15authorizationDeadline\x12-\n" +
+	"\x12provisional_budget\x18\n" +
+	" \x01(\x04R\x11provisionalBudget\x120\n" +
+	"\x14settlement_domain_id\x18\v \x01(\fR\x12settlementDomainId\"\xb2\x01\n" +
 	"\x14PendingAuthorization\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x120\n" +
@@ -4404,17 +4277,17 @@ const file_account_proto_rawDesc = "" +
 	"\rconfirmations\x18\v \x01(\rR\rconfirmations\x12\x16\n" +
 	"\x06active\x18\f \x01(\bR\x06active\x12-\n" +
 	"\x12authorization_name\x18\r \x01(\tR\x11authorizationName\x123\n" +
-	"\x15authorization_version\x18\x0e \x01(\tR\x14authorizationVersion\"\x9d\x01\n" +
+	"\x15authorization_version\x18\x0e \x01(\tR\x14authorizationVersion\"\x91\x01\n" +
 	"\vModelParams\x12\x14\n" +
 	"\x05model\x18\x01 \x01(\tR\x05model\x12\x1a\n" +
 	"\bprovider\x18\x02 \x01(\tR\bprovider\x128\n" +
-	"\x18maximum_execution_budget\x18\x05 \x01(\x04R\x16maximumExecutionBudget\x12\x16\n" +
-	"\x06active\x18\x06 \x01(\bR\x06activeJ\x04\b\x03\x10\x04J\x04\b\x04\x10\x05\"_\n" +
+	"\x18maximum_execution_budget\x18\x03 \x01(\x04R\x16maximumExecutionBudget\x12\x16\n" +
+	"\x06active\x18\x04 \x01(\bR\x06active\"_\n" +
 	"\tPCRPolicy\x12\x12\n" +
 	"\x04pcr0\x18\x01 \x01(\fR\x04pcr0\x12\x12\n" +
 	"\x04pcr1\x18\x02 \x01(\fR\x04pcr1\x12\x12\n" +
 	"\x04pcr2\x18\x03 \x01(\fR\x04pcr2\x12\x16\n" +
-	"\x06active\x18\x04 \x01(\bR\x06active\"\xad\v\n" +
+	"\x06active\x18\x04 \x01(\bR\x06active\"\x9a\v\n" +
 	"\x0eProtocolParams\x12\x1a\n" +
 	"\brevision\x18\x01 \x01(\x04R\brevision\x12*\n" +
 	"\x06models\x18\x02 \x03(\v2\x12.types.ModelParamsR\x06models\x125\n" +
@@ -4424,50 +4297,34 @@ const file_account_proto_rawDesc = "" +
 	"\x10quorum_numerator\x18\x06 \x01(\rR\x0fquorumNumerator\x12-\n" +
 	"\x12quorum_denominator\x18\a \x01(\rR\x11quorumDenominator\x12B\n" +
 	"\x1dauthorization_deadline_blocks\x18\b \x01(\x04R\x1bauthorizationDeadlineBlocks\x122\n" +
-	"\x15minimum_servicer_bond\x18\v \x01(\x04R\x13minimumServicerBond\x124\n" +
-	"\x16minimum_validator_bond\x18\f \x01(\x04R\x14minimumValidatorBond\x129\n" +
-	"\x19invalid_receipt_slash_bps\x18\x0e \x01(\rR\x16invalidReceiptSlashBps\x12!\n" +
-	"\fepoch_blocks\x18\x0f \x01(\x04R\vepochBlocks\x12)\n" +
-	"\x10unbonding_epochs\x18\x10 \x01(\x04R\x0funbondingEpochs\x12,\n" +
-	"\x12emission_per_epoch\x18\x11 \x01(\x04R\x10emissionPerEpoch\x12)\n" +
-	"\x10treasury_address\x18\x12 \x01(\fR\x0ftreasuryAddress\x12!\n" +
-	"\ftreasury_bps\x18\x13 \x01(\rR\vtreasuryBps\x12,\n" +
-	"\x12canonical_chain_id\x18\x14 \x01(\x04R\x10canonicalChainId\x126\n" +
-	"\x17canonical_token_address\x18\x15 \x01(\fR\x15canonicalTokenAddress\x128\n" +
-	"\x18canonical_bridge_address\x18\x16 \x01(\fR\x16canonicalBridgeAddress\x12(\n" +
-	"\x10validator_set_id\x18\x17 \x01(\x04R\x0evalidatorSetId\x125\n" +
-	"\x17bridge_epoch_mint_limit\x18\x18 \x01(\x04R\x14bridgeEpochMintLimit\x122\n" +
-	"\x15bridge_transfer_limit\x18\x19 \x01(\x04R\x13bridgeTransferLimit\x12<\n" +
-	"\x1asettlement_interval_blocks\x18\x1a \x01(\x04R\x18settlementIntervalBlocks\x128\n" +
-	"\x18supported_output_schemas\x18\x1b \x03(\tR\x16supportedOutputSchemas\x12%\n" +
-	"\x0edefault_models\x18\x1c \x03(\tR\rdefaultModels\x12F\n" +
-	"\x12settlement_domains\x18\x1f \x03(\v2\x17.types.SettlementDomainR\x11settlementDomains\x12G\n" +
-	" validator_handoff_notice_seconds\x18! \x01(\x04R\x1dvalidatorHandoffNoticeSeconds\x12(\n" +
-	"\x10nitro_trust_root\x18\" \x01(\fR\x0enitroTrustRootJ\x04\b\t\x10\n" +
-	"J\x04\b\n" +
-	"\x10\vJ\x04\b\r\x10\x0eJ\x04\b\x1d\x10\x1eJ\x04\b\x1e\x10\x1fJ\x04\b \x10!\"\xe2\x01\n" +
-	"\vStakeChange\x12#\n" +
-	"\rowner_address\x18\x01 \x01(\fR\fownerAddress\x12#\n" +
-	"\rbond_increase\x18\x02 \x01(\x04R\fbondIncrease\x12\x12\n" +
-	"\x04exit\x18\x03 \x01(\bR\x04exit\x12#\n" +
-	"\rauto_compound\x18\x04 \x01(\bR\fautoCompound\x12'\n" +
-	"\x0feffective_epoch\x18\x05 \x01(\x04R\x0eeffectiveEpoch\x12'\n" +
-	"\x0flocked_increase\x18\x06 \x01(\x04R\x0elockedIncrease\"\xad\x01\n" +
-	"\x0fUnbondingRecord\x12#\n" +
-	"\rowner_address\x18\x01 \x01(\fR\fownerAddress\x12\x1a\n" +
-	"\bsequence\x18\x02 \x01(\x04R\bsequence\x12\x16\n" +
-	"\x06amount\x18\x03 \x01(\x04R\x06amount\x12#\n" +
-	"\rrelease_epoch\x18\x04 \x01(\x04R\freleaseEpoch\x12\x1c\n" +
-	"\twithdrawn\x18\x05 \x01(\bR\twithdrawn\"\xf3\x01\n" +
+	"\x15minimum_servicer_bond\x18\t \x01(\x04R\x13minimumServicerBond\x124\n" +
+	"\x16minimum_validator_bond\x18\n" +
+	" \x01(\x04R\x14minimumValidatorBond\x129\n" +
+	"\x19invalid_receipt_slash_bps\x18\v \x01(\rR\x16invalidReceiptSlashBps\x12!\n" +
+	"\fepoch_blocks\x18\f \x01(\x04R\vepochBlocks\x12:\n" +
+	"\x19servicer_unbonding_blocks\x18\r \x01(\x04R\x17servicerUnbondingBlocks\x12,\n" +
+	"\x12emission_per_epoch\x18\x0e \x01(\x04R\x10emissionPerEpoch\x12)\n" +
+	"\x10treasury_address\x18\x0f \x01(\fR\x0ftreasuryAddress\x12!\n" +
+	"\ftreasury_bps\x18\x10 \x01(\rR\vtreasuryBps\x12,\n" +
+	"\x12canonical_chain_id\x18\x11 \x01(\x04R\x10canonicalChainId\x126\n" +
+	"\x17canonical_token_address\x18\x12 \x01(\fR\x15canonicalTokenAddress\x128\n" +
+	"\x18canonical_bridge_address\x18\x13 \x01(\fR\x16canonicalBridgeAddress\x12(\n" +
+	"\x10validator_set_id\x18\x14 \x01(\x04R\x0evalidatorSetId\x125\n" +
+	"\x17bridge_epoch_mint_limit\x18\x15 \x01(\x04R\x14bridgeEpochMintLimit\x122\n" +
+	"\x15bridge_transfer_limit\x18\x16 \x01(\x04R\x13bridgeTransferLimit\x12<\n" +
+	"\x1asettlement_interval_blocks\x18\x17 \x01(\x04R\x18settlementIntervalBlocks\x128\n" +
+	"\x18supported_output_schemas\x18\x18 \x03(\tR\x16supportedOutputSchemas\x12%\n" +
+	"\x0edefault_models\x18\x19 \x03(\tR\rdefaultModels\x12F\n" +
+	"\x12settlement_domains\x18\x1a \x03(\v2\x17.types.SettlementDomainR\x11settlementDomains\x12G\n" +
+	" validator_handoff_notice_seconds\x18\x1b \x01(\x04R\x1dvalidatorHandoffNoticeSeconds\x12(\n" +
+	"\x10nitro_trust_root\x18\x1c \x01(\fR\x0enitroTrustRoot\"\xb2\x01\n" +
 	"\rSlashEvidence\x12\x1f\n" +
 	"\vevidence_id\x18\x01 \x01(\fR\n" +
 	"evidenceId\x12%\n" +
 	"\x0etarget_address\x18\x02 \x01(\fR\rtargetAddress\x12\x16\n" +
 	"\x06reason\x18\x03 \x01(\tR\x06reason\x12\x18\n" +
 	"\apenalty\x18\x04 \x01(\x04R\apenalty\x12'\n" +
-	"\x0fobserved_height\x18\x05 \x01(\x04R\x0eobservedHeight\x12'\n" +
-	"\x0feffective_epoch\x18\x06 \x01(\x04R\x0eeffectiveEpoch\x12\x16\n" +
-	"\x06status\x18\a \x01(\tR\x06status\"m\n" +
+	"\x0fobserved_height\x18\x05 \x01(\x04R\x0eobservedHeight\"m\n" +
 	"\x0eProducerPayout\x12#\n" +
 	"\rowner_address\x18\x01 \x01(\fR\fownerAddress\x126\n" +
 	"\x17canonical_chain_address\x18\x02 \x01(\fR\x15canonicalChainAddress\"i\n" +
@@ -4500,7 +4357,7 @@ const file_account_proto_rawDesc = "" +
 	" \x01(\fR\x14canonicalChainDigest\x12\x16\n" +
 	"\x06status\x18\v \x01(\tR\x06status\x12+\n" +
 	"\x11compounded_amount\x18\f \x01(\x04R\x10compoundedAmount\x12>\n" +
-	"\x1ccanonical_chain_mint_tx_hash\x18\r \x01(\fR\x18canonicalChainMintTxHash\"\xb2\a\n" +
+	"\x1ccanonical_chain_mint_tx_hash\x18\r \x01(\fR\x18canonicalChainMintTxHash\"\xac\a\n" +
 	"\n" +
 	"EpochClock\x12#\n" +
 	"\rcurrent_epoch\x18\x01 \x01(\x04R\fcurrentEpoch\x12!\n" +
@@ -4509,18 +4366,18 @@ const file_account_proto_rawDesc = "" +
 	"end_height\x18\x03 \x01(\x04R\tendHeight\x12(\n" +
 	"\x10validator_set_id\x18\x04 \x01(\x04R\x0evalidatorSetId\x12!\n" +
 	"\fepoch_blocks\x18\x05 \x01(\x04R\vepochBlocks\x12<\n" +
-	"\x1avalidator_handoff_prepared\x18\a \x01(\bR\x18validatorHandoffPrepared\x12>\n" +
-	"\x1bvalidator_handoff_timestamp\x18\b \x01(\x04R\x19validatorHandoffTimestamp\x12:\n" +
-	"\x19validator_handoff_domains\x18\t \x03(\fR\x17validatorHandoffDomains\x12:\n" +
-	"\x19validator_handoff_attempt\x18\n" +
-	" \x01(\x04R\x17validatorHandoffAttempt\x124\n" +
-	"\x16consensus_time_seconds\x18\v \x01(\x04R\x14consensusTimeSeconds\x12G\n" +
-	" validator_handoff_notice_seconds\x18\f \x01(\x04R\x1dvalidatorHandoffNoticeSeconds\x12A\n" +
-	"\x1dvalidator_handoff_roster_hash\x18\r \x01(\fR\x1avalidatorHandoffRosterHash\x12H\n" +
-	"!validator_handoff_domain_set_hash\x18\x0e \x01(\fR\x1dvalidatorHandoffDomainSetHash\x12\\\n" +
-	"+validator_handoff_outgoing_authority_cutoff\x18\x0f \x01(\x04R'validatorHandoffOutgoingAuthorityCutoff\x12H\n" +
-	"!validator_handoff_native_chain_id\x18\x10 \x01(\x04R\x1dvalidatorHandoffNativeChainId\x12@\n" +
-	"\x1cvalidator_handoff_cancelling\x18\x11 \x01(\bR\x1avalidatorHandoffCancellingJ\x04\b\x06\x10\a\"{\n" +
+	"\x1avalidator_handoff_prepared\x18\x06 \x01(\bR\x18validatorHandoffPrepared\x12>\n" +
+	"\x1bvalidator_handoff_timestamp\x18\a \x01(\x04R\x19validatorHandoffTimestamp\x12:\n" +
+	"\x19validator_handoff_domains\x18\b \x03(\fR\x17validatorHandoffDomains\x12:\n" +
+	"\x19validator_handoff_attempt\x18\t \x01(\x04R\x17validatorHandoffAttempt\x124\n" +
+	"\x16consensus_time_seconds\x18\n" +
+	" \x01(\x04R\x14consensusTimeSeconds\x12G\n" +
+	" validator_handoff_notice_seconds\x18\v \x01(\x04R\x1dvalidatorHandoffNoticeSeconds\x12A\n" +
+	"\x1dvalidator_handoff_roster_hash\x18\f \x01(\fR\x1avalidatorHandoffRosterHash\x12H\n" +
+	"!validator_handoff_domain_set_hash\x18\r \x01(\fR\x1dvalidatorHandoffDomainSetHash\x12\\\n" +
+	"+validator_handoff_outgoing_authority_cutoff\x18\x0e \x01(\x04R'validatorHandoffOutgoingAuthorityCutoff\x12H\n" +
+	"!validator_handoff_native_chain_id\x18\x0f \x01(\x04R\x1dvalidatorHandoffNativeChainId\x12@\n" +
+	"\x1cvalidator_handoff_cancelling\x18\x10 \x01(\bR\x1avalidatorHandoffCancelling\"{\n" +
 	"\vBridgeState\x12%\n" +
 	"\x0eoutbound_nonce\x18\x01 \x01(\x04R\routboundNonce\x12\x1d\n" +
 	"\n" +
@@ -4556,29 +4413,28 @@ const file_account_proto_rawDesc = "" +
 	"\x17deactivation_generation\x18\x03 \x01(\fR\x16deactivationGeneration\x12\x16\n" +
 	"\x06action\x18\x04 \x01(\tR\x06action\x12\x14\n" +
 	"\x05nonce\x18\x05 \x01(\x04R\x05nonce\x12(\n" +
-	"\x10expires_at_epoch\x18\x06 \x01(\x04R\x0eexpiresAtEpoch\"\xb1\x06\n" +
+	"\x10expires_at_epoch\x18\x06 \x01(\x04R\x0eexpiresAtEpoch\"\x93\x06\n" +
 	"\vQuorumProof\x12\x1d\n" +
 	"\n" +
 	"proof_kind\x18\x01 \x01(\tR\tproofKind\x12\x19\n" +
 	"\bproof_id\x18\x02 \x01(\fR\aproofId\x12\x16\n" +
 	"\x06digest\x18\x03 \x01(\fR\x06digest\x12(\n" +
-	"\x10validator_set_id\x18\x05 \x01(\x04R\x0evalidatorSetId\x12#\n" +
-	"\rsigner_bitmap\x18\b \x01(\fR\fsignerBitmap\x12>\n" +
-	"\x1baggregate_signature_eip2537\x18\n" +
-	" \x01(\fR\x19aggregateSignatureEip2537\x12#\n" +
-	"\rsigned_weight\x18\v \x01(\x04R\fsignedWeight\x12!\n" +
-	"\ftotal_weight\x18\f \x01(\x04R\vtotalWeight\x12)\n" +
-	"\x10completed_height\x18\r \x01(\x04R\x0fcompletedHeight\x12/\n" +
-	"\x14new_validator_set_id\x18\x0e \x01(\x04R\x11newValidatorSetId\x12%\n" +
-	"\x0erotation_nonce\x18\x10 \x01(\x04R\rrotationNonce\x120\n" +
-	"\x14settlement_domain_id\x18\x11 \x01(\fR\x12settlementDomainId\x12-\n" +
-	"\x12handoff_generation\x18\x12 \x01(\fR\x11handoffGeneration\x12+\n" +
-	"\x11handoff_timestamp\x18\x13 \x01(\x04R\x10handoffTimestamp\x120\n" +
-	"\x14control_block_number\x18\x14 \x01(\x04R\x12controlBlockNumber\x12,\n" +
-	"\x12control_block_hash\x18\x15 \x01(\fR\x10controlBlockHash\x12.\n" +
-	"\x13lifecycle_intent_id\x18\x16 \x01(\fR\x11lifecycleIntentId\x12:\n" +
-	"\x19outgoing_authority_cutoff\x18\x17 \x01(\x04R\x17outgoingAuthorityCutoffJ\x04\b\x04\x10\x05J\x04\b\x06\x10\aJ\x04\b\a\x10\bJ\x04\b\t\x10\n" +
-	"J\x04\b\x0f\x10\x10\"\xca\x03\n" +
+	"\x10validator_set_id\x18\x04 \x01(\x04R\x0evalidatorSetId\x12#\n" +
+	"\rsigner_bitmap\x18\x05 \x01(\fR\fsignerBitmap\x12>\n" +
+	"\x1baggregate_signature_eip2537\x18\x06 \x01(\fR\x19aggregateSignatureEip2537\x12#\n" +
+	"\rsigned_weight\x18\a \x01(\x04R\fsignedWeight\x12!\n" +
+	"\ftotal_weight\x18\b \x01(\x04R\vtotalWeight\x12)\n" +
+	"\x10completed_height\x18\t \x01(\x04R\x0fcompletedHeight\x12/\n" +
+	"\x14new_validator_set_id\x18\n" +
+	" \x01(\x04R\x11newValidatorSetId\x12%\n" +
+	"\x0erotation_nonce\x18\v \x01(\x04R\rrotationNonce\x120\n" +
+	"\x14settlement_domain_id\x18\f \x01(\fR\x12settlementDomainId\x12-\n" +
+	"\x12handoff_generation\x18\r \x01(\fR\x11handoffGeneration\x12+\n" +
+	"\x11handoff_timestamp\x18\x0e \x01(\x04R\x10handoffTimestamp\x120\n" +
+	"\x14control_block_number\x18\x0f \x01(\x04R\x12controlBlockNumber\x12,\n" +
+	"\x12control_block_hash\x18\x10 \x01(\fR\x10controlBlockHash\x12.\n" +
+	"\x13lifecycle_intent_id\x18\x11 \x01(\fR\x11lifecycleIntentId\x12:\n" +
+	"\x19outgoing_authority_cutoff\x18\x12 \x01(\x04R\x17outgoingAuthorityCutoff\"\xca\x03\n" +
 	"\x14ConsensusCertificate\x12\x12\n" +
 	"\x04kind\x18\x01 \x01(\tR\x04kind\x12\x10\n" +
 	"\x03key\x18\x02 \x01(\fR\x03key\x12\x16\n" +
@@ -4659,7 +4515,7 @@ func file_account_proto_rawDescGZIP() []byte {
 	return file_account_proto_rawDescData
 }
 
-var file_account_proto_msgTypes = make([]protoimpl.MessageInfo, 40)
+var file_account_proto_msgTypes = make([]protoimpl.MessageInfo, 38)
 var file_account_proto_goTypes = []any{
 	(*Account)(nil),                                    // 0: types.Account
 	(*Pool)(nil),                                       // 1: types.Pool
@@ -4679,37 +4535,35 @@ var file_account_proto_goTypes = []any{
 	(*ModelParams)(nil),                                // 15: types.ModelParams
 	(*PCRPolicy)(nil),                                  // 16: types.PCRPolicy
 	(*ProtocolParams)(nil),                             // 17: types.ProtocolParams
-	(*StakeChange)(nil),                                // 18: types.StakeChange
-	(*UnbondingRecord)(nil),                            // 19: types.UnbondingRecord
-	(*SlashEvidence)(nil),                              // 20: types.SlashEvidence
-	(*ProducerPayout)(nil),                             // 21: types.ProducerPayout
-	(*ProducerRecord)(nil),                             // 22: types.ProducerRecord
-	(*ProducerIdentity)(nil),                           // 23: types.ProducerIdentity
-	(*RewardAllocation)(nil),                           // 24: types.RewardAllocation
-	(*EpochAuthorization)(nil),                         // 25: types.EpochAuthorization
-	(*EpochClock)(nil),                                 // 26: types.EpochClock
-	(*BridgeState)(nil),                                // 27: types.BridgeState
-	(*BridgeMint)(nil),                                 // 28: types.BridgeMint
-	(*BridgeBurn)(nil),                                 // 29: types.BridgeBurn
-	(*ReplayMarker)(nil),                               // 30: types.ReplayMarker
-	(*SettlementDomainLifecycleIntent)(nil),            // 31: types.SettlementDomainLifecycleIntent
-	(*QuorumProof)(nil),                                // 32: types.QuorumProof
-	(*ConsensusCertificate)(nil),                       // 33: types.ConsensusCertificate
-	(*ValidatorHandoffDomainManifest)(nil),             // 34: types.ValidatorHandoffDomainManifest
-	(*ValidatorHandoffManifest)(nil),                   // 35: types.ValidatorHandoffManifest
-	(*ValidatorHandoffCancellationDomainManifest)(nil), // 36: types.ValidatorHandoffCancellationDomainManifest
-	(*ValidatorHandoffCancellationManifest)(nil),       // 37: types.ValidatorHandoffCancellationManifest
-	(*SettlementDomainRotationState)(nil),              // 38: types.SettlementDomainRotationState
-	(*QuorumSignatureShare)(nil),                       // 39: types.QuorumSignatureShare
+	(*SlashEvidence)(nil),                              // 18: types.SlashEvidence
+	(*ProducerPayout)(nil),                             // 19: types.ProducerPayout
+	(*ProducerRecord)(nil),                             // 20: types.ProducerRecord
+	(*ProducerIdentity)(nil),                           // 21: types.ProducerIdentity
+	(*RewardAllocation)(nil),                           // 22: types.RewardAllocation
+	(*EpochAuthorization)(nil),                         // 23: types.EpochAuthorization
+	(*EpochClock)(nil),                                 // 24: types.EpochClock
+	(*BridgeState)(nil),                                // 25: types.BridgeState
+	(*BridgeMint)(nil),                                 // 26: types.BridgeMint
+	(*BridgeBurn)(nil),                                 // 27: types.BridgeBurn
+	(*ReplayMarker)(nil),                               // 28: types.ReplayMarker
+	(*SettlementDomainLifecycleIntent)(nil),            // 29: types.SettlementDomainLifecycleIntent
+	(*QuorumProof)(nil),                                // 30: types.QuorumProof
+	(*ConsensusCertificate)(nil),                       // 31: types.ConsensusCertificate
+	(*ValidatorHandoffDomainManifest)(nil),             // 32: types.ValidatorHandoffDomainManifest
+	(*ValidatorHandoffManifest)(nil),                   // 33: types.ValidatorHandoffManifest
+	(*ValidatorHandoffCancellationDomainManifest)(nil), // 34: types.ValidatorHandoffCancellationDomainManifest
+	(*ValidatorHandoffCancellationManifest)(nil),       // 35: types.ValidatorHandoffCancellationManifest
+	(*SettlementDomainRotationState)(nil),              // 36: types.SettlementDomainRotationState
+	(*QuorumSignatureShare)(nil),                       // 37: types.QuorumSignatureShare
 }
 var file_account_proto_depIdxs = []int32{
 	5,  // 0: types.RequestRecord.assignments:type_name -> types.Assignment
 	15, // 1: types.ProtocolParams.models:type_name -> types.ModelParams
 	16, // 2: types.ProtocolParams.approved_pcrs:type_name -> types.PCRPolicy
 	14, // 3: types.ProtocolParams.settlement_domains:type_name -> types.SettlementDomain
-	24, // 4: types.EpochAuthorization.allocations:type_name -> types.RewardAllocation
-	34, // 5: types.ValidatorHandoffManifest.domains:type_name -> types.ValidatorHandoffDomainManifest
-	36, // 6: types.ValidatorHandoffCancellationManifest.domains:type_name -> types.ValidatorHandoffCancellationDomainManifest
+	22, // 4: types.EpochAuthorization.allocations:type_name -> types.RewardAllocation
+	32, // 5: types.ValidatorHandoffManifest.domains:type_name -> types.ValidatorHandoffDomainManifest
+	34, // 6: types.ValidatorHandoffCancellationManifest.domains:type_name -> types.ValidatorHandoffCancellationDomainManifest
 	7,  // [7:7] is the sub-list for method output_type
 	7,  // [7:7] is the sub-list for method input_type
 	7,  // [7:7] is the sub-list for extension type_name
@@ -4728,7 +4582,7 @@ func file_account_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_account_proto_rawDesc), len(file_account_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   40,
+			NumMessages:   38,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

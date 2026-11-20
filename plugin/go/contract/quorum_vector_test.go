@@ -46,11 +46,9 @@ func TestBDNEIP2537CrossLanguageVector(t *testing.T) {
 	sort.Slice(validators, func(i, j int) bool {
 		return string(validators[i].PublicKey) < string(validators[j].PublicKey)
 	})
-	message := &MessageSubmitQuorumSignature{
-		ProofKind: "settlement", Digest: digest[:], Message: digest[:], ValidatorSetId: 1,
-	}
-	message.ProofId = quorumProofID(message.ProofKind, message.ValidatorSetId, message.Digest)
-	proof, err := buildQuorumProof(42, message, validators, signatures, 200, 200)
+	message := &MessageGovernanceVote{Digest: digest[:], ValidatorSetId: 1}
+	message.ProposalId = quorumProofID("governance-action", message.ValidatorSetId, message.Digest)
+	proof, err := buildGovernanceProof(42, message, validators, signatures, 200, 200)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,10 +57,4 @@ func TestBDNEIP2537CrossLanguageVector(t *testing.T) {
 	}
 	t.Logf("digest=%s", hex.EncodeToString(digest[:]))
 	t.Logf("signature=%s", hex.EncodeToString(proof.AggregateSignatureEip2537))
-}
-
-func TestRequestFinalizationProofKindIsAllowed(t *testing.T) {
-	if !allowedProofKinds["request-finalization"] {
-		t.Fatal("request-finalization quorum certificates must be accepted")
-	}
 }

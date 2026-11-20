@@ -80,99 +80,6 @@ type preparedSettlementCandidate struct {
 	certificateKey []byte
 }
 
-// repairOverlappingSettlementCertificates is a bounded compatibility repair
-// for certificates produced before per-request serialization. If part of one
-// certificate is already settled, its remaining executions cannot be relayed
-// without replaying exactly-once results. Requeue only that mixed request so a
-// fresh certificate can cover its still-unsettled suffix.
-func (c *Contract) repairOverlappingSettlementCertificates(records map[string]proto.Message, deletes *[][]byte) *PluginError {
-	next := new(ReplayMarker)
-	if found, err := c.read(KeyForSettlementRepairCursorNext(), next); err != nil {
-		return err
-	} else if !found {
-		next.Id = nil
-	}
-	current := &ReplayMarker{Id: append([]byte(nil), next.Id...)}
-	const repairPageSize = uint64(8)
-	entries, err := c.rangeReadPage(CertifiedSettlementIndexPrefix(), current.Id, repairPageSize)
-	if err != nil {
-		return err
-	}
-	following := &ReplayMarker{}
-	if uint64(len(entries)) == repairPageSize {
-		following.Id = append([]byte(nil), entries[len(entries)-1].Key...)
-	}
-	records[string(KeyForSettlementRepairCursorCurrent())] = current
-	records[string(KeyForSettlementRepairCursorNext())] = following
-	prefix := CertifiedSettlementIndexPrefix()
-	for _, entry := range entries {
-		requestID, valid := trailingKeySegment(entry.Key, prefix)
-		marker := new(ReplayMarker)
-		if !valid || Unmarshal(entry.Value, marker) != nil || len(marker.Id) == 0 {
-			continue
-		}
-		certificates, readErr := c.rangeReadPage(ConsensusCertificateIdentityPrefix("settlement", marker.Id), nil, 8)
-		if readErr != nil {
-			return readErr
-		}
-		var latest *ConsensusCertificate
-		for _, certificateEntry := range certificates {
-			certificate := new(ConsensusCertificate)
-			if Unmarshal(certificateEntry.Value, certificate) == nil && (latest == nil || certificate.CompletedHeight > latest.CompletedHeight) {
-				latest = certificate
-			}
-		}
-		if latest == nil {
-			continue
-		}
-		batch := new(certifiedSettlementBatch)
-		if json.Unmarshal(latest.Payload, batch) != nil {
-			continue
-		}
-		var certified *certifiedSettlementRequest
-		for index := range batch.Requests {
-			if batch.Requests[index].RequestID == string(requestID) {
-				certified = &batch.Requests[index]
-				break
-			}
-		}
-		if certified == nil {
-			continue
-		}
-		settled, unsettled := 0, 0
-		for _, item := range certified.Executions {
-			execution := new(ExecutionRecord)
-			if found, executionErr := c.read(KeyForExecution(item.ExecutionID), execution); executionErr != nil {
-				return executionErr
-			} else if !found {
-				continue
-			} else if execution.Settled {
-				settled++
-			} else {
-				unsettled++
-			}
-		}
-		if settled == 0 || unsettled == 0 {
-			continue
-		}
-		records[string(KeyForUncertifiedSettlementIndex(string(requestID)))] = &RequestRecord{RequestId: string(requestID)}
-		*deletes = append(*deletes, KeyForCertifiedSettlementIndex(string(requestID)))
-	}
-	return nil
-}
-
-func trailingKeySegment(key, prefix []byte) ([]byte, bool) {
-	if !bytes.HasPrefix(key, prefix) || len(key) <= len(prefix) {
-		return nil, false
-	}
-	tail := key[len(prefix):]
-	length := int(tail[0])
-	if length == 0 || len(tail) != length+1 {
-		return nil, false
-	}
-	return append([]byte(nil), tail[1:]...), true
-}
-
 func (c *Contract) settlementAuxiliaryCandidates(clock *EpochClock, limit int) ([]*AuxiliaryCandidate, *PluginError) {
 	if limit <= 0 {
 		return nil, nil
@@ -615,7 +522,7 @@ func settlementOutput(request certifiedSettlementRequest, execution certifiedSet
 }
 
 func requestSchemaHash(request certifiedSettlementRequest) []byte {
-	message := &MessageObserveAuthorization{OutputType: request.OutputType, OutputMinimum: request.OutputSchema.Minimum, OutputMaximum: request.OutputSchema.Maximum, OutputChoices: request.OutputSchema.Choices}
+	message := &Authorization{OutputType: request.OutputType, OutputMinimum: request.OutputSchema.Minimum, OutputMaximum: request.OutputSchema.Maximum, OutputChoices: request.OutputSchema.Choices}
 	return requestOutputSchemaHash(message)
 }
 

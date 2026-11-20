@@ -20,7 +20,6 @@ func TestCompressedExecutionSignerDiscoveryNeverDecompresses(t *testing.T) {
 	binary.LittleEndian.PutUint32(compressed[len(compressed)-4:], 32)
 	message := &MessageSubmitExecutions{
 		ServicerAddress:      bytes.Repeat([]byte{1}, addressSize),
-		PublicKey:            bytes.Repeat([]byte{2}, ed25519.PublicKeySize),
 		CompressedExecutions: compressed,
 	}
 	if _, err := checkSubmitExecutions(message); err != nil {
@@ -46,7 +45,7 @@ func TestCompressedExecutionExpandsWithinReceiptBudget(t *testing.T) {
 	signature := make([]byte, ed25519.SignatureSize)
 	_, _ = rand.Read(receipt)
 	_, _ = rand.Read(signature)
-	payload, err := proto.Marshal(&MessageSubmitExecutions{Executions: []*MessageSubmitExecution{{ReceiptJson: receipt, Signature: signature}}})
+	payload, err := proto.Marshal(&MessageSubmitExecutions{Executions: []*ExecutionSubmission{{ReceiptJson: receipt, Signature: signature}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,7 +55,6 @@ func TestCompressedExecutionExpandsWithinReceiptBudget(t *testing.T) {
 	_ = writer.Close()
 	message := &MessageSubmitExecutions{
 		ServicerAddress:      bytes.Repeat([]byte{1}, addressSize),
-		PublicKey:            bytes.Repeat([]byte{2}, ed25519.PublicKeySize),
 		CompressedExecutions: compressed.Bytes(),
 	}
 	if _, checkErr := checkSubmitExecutions(message); checkErr != nil {
@@ -77,7 +75,6 @@ func BenchmarkCompressedExecutionProposalRecheck(b *testing.B) {
 	for b.Loop() {
 		message := &MessageSubmitExecutions{
 			ServicerAddress:      bytes.Repeat([]byte{1}, addressSize),
-			PublicKey:            bytes.Repeat([]byte{2}, ed25519.PublicKeySize),
 			CompressedExecutions: compressed,
 		}
 		if _, err := checkSubmitExecutions(message); err != nil {

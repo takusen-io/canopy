@@ -20,7 +20,7 @@ func keccak(parts ...[]byte) []byte {
 	return hash.Sum(nil)
 }
 
-func verifyEOARequestAuthorization(message *MessageObserveAuthorization, params *ProtocolParams) *PluginError {
+func verifyEOARequestAuthorization(message *Authorization, params *ProtocolParams) *PluginError {
 	domainConfig, domainErr := settlementDomain(params, message.SettlementDomainId, true)
 	if domainErr != nil {
 		return domainErr
@@ -81,7 +81,7 @@ func verifyEOARequestAuthorization(message *MessageObserveAuthorization, params 
 // independent secp256k1 recoveries in a direct-authorization cohort. Results
 // are retained by input index and inspected in request order, so every node
 // returns the same first error regardless of goroutine scheduling or CPU count.
-func verifyEOARequestAuthorizations(messages []*MessageObserveAuthorization, params *ProtocolParams) *PluginError {
+func verifyEOARequestAuthorizations(messages []*Authorization, params *ProtocolParams) *PluginError {
 	if len(messages) == 0 {
 		return nil
 	}

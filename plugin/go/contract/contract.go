@@ -11,28 +11,21 @@ import (
 )
 
 const (
-	MessageRevokeEnclaveName         = "takusenRevokeEnclave"
 	MessageRegisterServicerName      = "takusenRegisterServicer"
-	MessageUpdateServicerName        = "takusenUpdateServicer"
+	MessageManageServicerName        = "takusenManageServicer"
 	MessageObserveDepositName        = "takusenObserveDeposit"
 	MessageResolveDepositName        = "takusenResolveDeposit"
 	MessageResolveSettlementName     = "takusenResolveSettlement"
-	MessageObserveAuthorizationName  = "takusenObserveAuthorization"
 	MessageObserveAuthorizationsName = "takusenObserveAuthorizations"
 	MessageQueueAuthorizationName    = "takusenQueueAuthorization"
-	MessageSubmitExecutionName       = "takusenSubmitExecution"
 	MessageSubmitExecutionsName      = "takusenSubmitExecutions"
-	MessageFinalizeRequestName       = "takusenFinalizeRequest"
 	MessageFinalizeRequestsName      = "takusenFinalizeRequests"
-	MessageSubmitQuorumSignatureName = "takusenSubmitQuorumSignature"
+	MessageGovernanceVoteName        = "takusenGovernanceVote"
 	MessageObserveBridgeLockName     = "takusenObserveBridgeLock"
 	MessageObserveBridgeReleaseName  = "takusenObserveBridgeRelease"
 	MessageObserveEpochMintName      = "takusenObserveEpochMint"
 	MessageBurnBridgeName            = "takusenBurnBridge"
-	MessageQueueServicerStakeName    = "takusenQueueServicerStake"
-	MessageWithdrawUnbondedName      = "takusenWithdrawUnbonded"
 	MessageSetProducerPayoutName     = "takusenSetProducerPayout"
-	MessageObserveSlashEvidenceName  = "takusenObserveSlashEvidence"
 )
 
 var ContractConfig = &PluginConfig{
@@ -42,64 +35,50 @@ var ContractConfig = &PluginConfig{
 	ValidatorSetEpochs:        true,
 	GovernanceParameterSpaces: []string{"takusen"},
 	SupportedTransactions: []string{
-		MessageRevokeEnclaveName,
 		MessageRegisterServicerName,
-		MessageUpdateServicerName,
+		MessageManageServicerName,
 		MessageObserveDepositName,
 		MessageResolveDepositName,
 		MessageResolveSettlementName,
-		MessageObserveAuthorizationName,
 		MessageObserveAuthorizationsName,
 		MessageQueueAuthorizationName,
-		MessageSubmitExecutionName,
 		MessageSubmitExecutionsName,
-		MessageFinalizeRequestName,
 		MessageFinalizeRequestsName,
-		MessageSubmitQuorumSignatureName,
+		MessageGovernanceVoteName,
 		MessageObserveBridgeLockName,
 		MessageObserveBridgeReleaseName,
 		MessageObserveEpochMintName,
 		MessageBurnBridgeName,
-		MessageQueueServicerStakeName,
-		MessageWithdrawUnbondedName,
 		MessageSetProducerPayoutName,
-		MessageObserveSlashEvidenceName,
 	},
 	TransactionTypeUrls: []string{
-		"type.googleapis.com/types.MessageRevokeEnclave",
 		"type.googleapis.com/types.MessageRegisterServicer",
-		"type.googleapis.com/types.MessageUpdateServicer",
+		"type.googleapis.com/types.MessageManageServicer",
 		"type.googleapis.com/types.MessageObserveDeposit",
 		"type.googleapis.com/types.MessageResolveDeposit",
 		"type.googleapis.com/types.MessageResolveSettlement",
-		"type.googleapis.com/types.MessageObserveAuthorization",
 		"type.googleapis.com/types.MessageObserveAuthorizations",
 		"type.googleapis.com/types.MessageQueueAuthorization",
-		"type.googleapis.com/types.MessageSubmitExecution",
 		"type.googleapis.com/types.MessageSubmitExecutions",
-		"type.googleapis.com/types.MessageFinalizeRequest",
 		"type.googleapis.com/types.MessageFinalizeRequests",
-		"type.googleapis.com/types.MessageSubmitQuorumSignature",
+		"type.googleapis.com/types.MessageGovernanceVote",
 		"type.googleapis.com/types.MessageObserveBridgeLock",
 		"type.googleapis.com/types.MessageObserveBridgeRelease",
 		"type.googleapis.com/types.MessageObserveEpochMint",
 		"type.googleapis.com/types.MessageBurnBridge",
-		"type.googleapis.com/types.MessageQueueServicerStake",
-		"type.googleapis.com/types.MessageWithdrawUnbonded",
 		"type.googleapis.com/types.MessageSetProducerPayout",
-		"type.googleapis.com/types.MessageObserveSlashEvidence",
 	},
 	CustomStatePrefixes: [][]byte{
 		enclavePrefix, servicerPrefix, requestPrefix, executionPrefix,
 		observationPrefix, blockAnchorPrefix,
 		quorumProofPrefix, quorumSharePrefix,
 		depositPrefix, creditPrefix, reservationPrefix,
-		observationClaimPrefix, protocolParamsPrefix, stakeChangePrefix,
-		unbondingPrefix, slashEvidencePrefix, producerPayoutPrefix,
+		observationClaimPrefix, protocolParamsPrefix,
+		slashEvidencePrefix, producerPayoutPrefix,
 		producerPrefix, epochAuthorizationPrefix, bridgeStatePrefix,
 		bridgeMintPrefix, bridgeNoncePrefix, bridgeBurnPrefix, epochClockPrefix,
 		assignmentIndexPrefix, epochValidatorPrefix, settlementIndexPrefix, producerIdentityPrefix,
-		rotationProofIndexPrefix, pendingSlashPrefix, latestEpochPrefix, provisionalReservationIndexPrefix,
+		rotationProofIndexPrefix, latestEpochPrefix, provisionalReservationIndexPrefix,
 		activeServicerIndexPrefix, pendingEpochAuthorizationPrefix, pendingBridgeBurnPrefix,
 		handoffManifestPrefix, domainRotationStatePrefix, handoffCancellationManifestPrefix,
 		consensusCertificatePrefix, nativeAuthorizationIntentPrefix, pendingAuthorizationPrefix,
@@ -202,11 +181,8 @@ func (c *Contract) BeginBlock(request *PluginBeginRequest) *PluginBeginResponse 
 		records[key] = record
 	}
 	deletes = append(deletes, certificateDeletes...)
-	if repairErr := c.repairOverlappingSettlementCertificates(records, &deletes); repairErr != nil {
-		return &PluginBeginResponse{Error: repairErr}
-	}
-	if cursorErr := c.advanceTimeoutCandidateCursor(records); cursorErr != nil {
-		return &PluginBeginResponse{Error: cursorErr}
+	if timeoutErr := c.stageTimedOutRequests(request.Height, records, &deletes); timeoutErr != nil {
+		return &PluginBeginResponse{Error: timeoutErr}
 	}
 	if cursorErr := c.advanceSettlementCandidateCursor(records); cursorErr != nil {
 		return &PluginBeginResponse{Error: cursorErr}
@@ -246,34 +222,26 @@ func (c *Contract) CheckTx(request *PluginCheckRequest) *PluginCheckResponse {
 	}
 	var signer []byte
 	switch message := message.(type) {
-	case *MessageRevokeEnclave:
-		signer, err = checkRevokeEnclave(message)
 	case *MessageRegisterServicer:
 		signer, err = checkRegisterServicer(message)
-	case *MessageUpdateServicer:
-		signer, err = checkUpdateServicer(message)
+	case *MessageManageServicer:
+		signer, err = checkManageServicer(message)
 	case *MessageObserveDeposit:
 		signer, err = checkObserveDeposit(message)
 	case *MessageResolveDeposit:
 		signer, err = checkResolveDeposit(message)
 	case *MessageResolveSettlement:
 		signer, err = checkResolveSettlement(message)
-	case *MessageObserveAuthorization:
-		signer, err = checkObserveAuthorization(message)
 	case *MessageObserveAuthorizations:
 		signer, err = checkObserveAuthorizations(message)
 	case *MessageQueueAuthorization:
 		signer, err = checkQueueAuthorization(message)
-	case *MessageSubmitExecution:
-		signer, err = checkSubmitExecution(message)
 	case *MessageSubmitExecutions:
 		signer, err = checkSubmitExecutions(message)
-	case *MessageFinalizeRequest:
-		signer, err = checkFinalizeRequest(message)
 	case *MessageFinalizeRequests:
 		signer, err = checkFinalizeRequests(message)
-	case *MessageSubmitQuorumSignature:
-		signer, err = checkSubmitQuorumSignature(message)
+	case *MessageGovernanceVote:
+		signer, err = checkGovernanceVote(message)
 	case *MessageObserveBridgeLock:
 		signer, err = checkObserveBridgeLock(message)
 	case *MessageObserveBridgeRelease:
@@ -282,14 +250,8 @@ func (c *Contract) CheckTx(request *PluginCheckRequest) *PluginCheckResponse {
 		signer, err = checkObserveEpochMint(message)
 	case *MessageBurnBridge:
 		signer, err = checkBurnBridge(message)
-	case *MessageQueueServicerStake:
-		signer, err = checkQueueServicerStake(message)
-	case *MessageWithdrawUnbonded:
-		signer, err = checkWithdrawUnbonded(message)
 	case *MessageSetProducerPayout:
 		signer, err = checkSetProducerPayout(message)
-	case *MessageObserveSlashEvidence:
-		signer, err = checkObserveSlashEvidence(message)
 	default:
 		return &PluginCheckResponse{Error: ErrInvalidMessageCast()}
 	}
@@ -311,34 +273,26 @@ func (c *Contract) DeliverTx(request *PluginDeliverRequest) *PluginDeliverRespon
 		return &PluginDeliverResponse{Error: err}
 	}
 	switch message := message.(type) {
-	case *MessageRevokeEnclave:
-		return c.deliverRevokeEnclave(request.Height, message)
 	case *MessageRegisterServicer:
 		return c.deliverRegisterServicer(request.Height, request.TimeMicros, message)
-	case *MessageUpdateServicer:
-		return c.deliverUpdateServicer(message)
+	case *MessageManageServicer:
+		return c.deliverManageServicer(request.Height, request.TimeMicros, message)
 	case *MessageObserveDeposit:
 		return c.deliverObserveDeposit(request.Height, message)
 	case *MessageResolveDeposit:
 		return c.deliverResolveDeposit(request.Height, message)
 	case *MessageResolveSettlement:
 		return c.deliverResolveSettlement(request.Height, message)
-	case *MessageObserveAuthorization:
-		return c.deliverObserveAuthorization(request.Height, message)
 	case *MessageObserveAuthorizations:
 		return c.deliverObserveAuthorizations(request.Height, message)
 	case *MessageQueueAuthorization:
 		return c.deliverQueueAuthorization(request.Height, message)
-	case *MessageSubmitExecution:
-		return c.deliverSubmitExecution(request.Height, message)
 	case *MessageSubmitExecutions:
 		return c.deliverSubmitExecutions(request.Height, message)
-	case *MessageFinalizeRequest:
-		return c.deliverFinalizeRequest(request.Height, message)
 	case *MessageFinalizeRequests:
 		return c.deliverFinalizeRequests(request.Height, message)
-	case *MessageSubmitQuorumSignature:
-		return c.deliverSubmitQuorumSignature(request.Height, message)
+	case *MessageGovernanceVote:
+		return c.deliverGovernanceVote(request.Height, message)
 	case *MessageObserveBridgeLock:
 		return c.deliverObserveBridgeLock(request.Height, message)
 	case *MessageObserveBridgeRelease:
@@ -347,14 +301,8 @@ func (c *Contract) DeliverTx(request *PluginDeliverRequest) *PluginDeliverRespon
 		return c.deliverObserveEpochMint(request.Height, message)
 	case *MessageBurnBridge:
 		return c.deliverBurnBridge(request.Height, message)
-	case *MessageQueueServicerStake:
-		return c.deliverQueueServicerStake(request.Height, message)
-	case *MessageWithdrawUnbonded:
-		return c.deliverWithdrawUnbonded(request.Height, message)
 	case *MessageSetProducerPayout:
 		return c.deliverSetProducerPayout(message)
-	case *MessageObserveSlashEvidence:
-		return c.deliverObserveSlashEvidence(request.Height, message)
 	default:
 		return &PluginDeliverResponse{Error: ErrInvalidMessageCast()}
 	}

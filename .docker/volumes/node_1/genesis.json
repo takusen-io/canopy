@@ -88,50 +88,45 @@
       "models": [
         {
           "model": "openai/gpt-6-luna",
-          "provider": "openrouter",
+          "provider": "local-deterministic",
           "maximumExecutionBudget": "300000",
           "active": true
         },
         {
           "model": "anthropic/claude-haiku-5.5",
-          "provider": "openrouter",
+          "provider": "local-deterministic",
           "maximumExecutionBudget": "300000",
           "active": true
         },
         {
           "model": "google/gemini-3.8-flash",
-          "provider": "openrouter",
+          "provider": "local-deterministic",
           "maximumExecutionBudget": "300000",
           "active": true
         }
       ],
       "approvedPcrs": [
         {
-          "pcr0": "xThLRTtlP/7oaihlePGeS7YsqC9q9lN630wzwmReGPclgiVHpj7MjLsCJBadEvRx",
-          "pcr1": "LoZKKOF+A5MiNm4gwBczPj475ud8HVhEiNkipFfJz3z0y2jDeGFb4Y3lXz2+Cgog",
-          "pcr2": "m6OLdyPl0xBhXy2boRmhEHZTzhKWEecQPLMslEZZamPztxBpoNJTn1qLrgUc/pxk",
+          "pcr0": "BFqTPAWxyfpJOIkk6VWVNF6KOCfoXVPjSYalzoCAyzf8ckezK3ACt9o/7jnoXTS+",
+          "pcr1": "S01bNmGz78EpIJAMgOEm5M54PFIt5sAqKlv3rzorkye4Z3bxiOS+HBxAShKdvaST",
+          "pcr2": "6ewwAoVIKf5xzf4qMoe90IaRWBzu/IgjHnHBAqTdaJsc2fmuJz09gZYbfTgbihx6",
           "active": true
         }
       ],
-      "nitroTrustRoot": "MIICBzCCAY2gAwIBAgIJAL9D9wfEkmeWMAoGCCqGSM49BAMDMFcxCzAJBgNVBAYTAlVTMRwwGgYDVQQKDBNUYWt1c2VuIERldmVsb3BtZW50MSowKAYDVQQDDCFUYWt1c2VuIExvY2FsIEF0dGVzdGF0aW9uIFJvb3QgdjEwIBcNMjYxMTE3MTU1MjQ3WhgPMjEyNjEwMjQxNTUyNDdaMFcxCzAJBgNVBAYTAlVTMRwwGgYDVQQKDBNUYWt1c2VuIERldmVsb3BtZW50MSowKAYDVQQDDCFUYWt1c2VuIExvY2FsIEF0dGVzdGF0aW9uIFJvb3QgdjEwdjAQBgcqhkjOPQIBBgUrgQQAIgNiAASSUjR9nojKF2GNulAOF+GDzn7v9MDcJ+DNSh49V1ASIMRdu9iNcOqCk1O7CSD679LgcuKp/IYevr3TwDNWtUhB4jpFUxNCp6ivNqCS02EFh+1hcxSK44vy6mzA12DJENKjIzAhMA8GA1UdEwEB/wQFMAMBAf8wDgYDVR0PAQH/BAQDAgKEMAoGCCqGSM49BAMDA2gAMGUCMADDxNHycpwT7AZ2BVxufRvDNc6UR7dPIqTaZArlcWFFlbugED+Y76DLYPLxu/JwdQIxAI2zTVhvVXswhbIDpX3UEwOTsTEfiHtIxir9CWoaiqCB2l1eRYRQIHcqRopLBjTRiA==",
-      "foundationFeeBps": 20000,
-      "servicerMarginBps": 10000,
-      "quorumNumerator": 2,
-      "quorumDenominator": 3,
+      "nitroTrustRoot": "MIICETCCAZagAwIBAgIRAPkxdWgbkK/hHUbMtOTn+FYwCgYIKoZIzj0EAwMwSTELMAkGA1UEBhMCVVMxDzANBgNVBAoMBkFtYXpvbjEMMAoGA1UECwwDQVdTMRswGQYDVQQDDBJhd3Mubml0cm8tZW5jbGF2ZXMwHhcNMTkxMDI4MTMyODA1WhcNNDkxMDI4MTQyODA1WjBJMQswCQYDVQQGEwJVUzEPMA0GA1UECgwGQW1hem9uMQwwCgYDVQQLDANBV1MxGzAZBgNVBAMMEmF3cy5uaXRyby1lbmNsYXZlczB2MBAGByqGSM49AgEGBSuBBAAiA2IABPwCVOumCMHzaHDimtqQvkY4MpJzbolL//Zy2YlES1BR5TSksfbb48C8WBoyt7F2Bw7eEtaaP+ohG2bnUs990d0JX28TcPQXCEPZ3BABIeTPYwEoCWZEh8l5YoQwTcU/9KNCMEAwDwYDVR0TAQH/BAUwAwEB/zAdBgNVHQ4EFgQUkCW1DdkFR+eWw5b6cp3PmanfS5YwDgYDVR0PAQH/BAQDAgGGMAoGCCqGSM49BAMDA2kAMGYCMQCjfy+Rocm9Xue4YnwWmNJVA44fA0P5W2OpYow9OYCVRaEevL8uO1XYru5xtMPWrfMCMQCi85sWBbJwKKXdS6BptQFuZbT73o/gBh1qUxl/nNr12UO8Yfwr6wPLb+6NIwLz3/Y=",
+      "foundationFeeBps": 500,
+      "servicerMarginBps": 250,
       "authorizationDeadlineBlocks": "360",
       "minimumServicerBond": "100000",
       "minimumValidatorBond": "1",
       "invalidReceiptSlashBps": 10000,
-      "epochBlocks": "4800",
-      "validatorHandoffNoticeSeconds": "2400",
-      "unbondingEpochs": "24",
+      "servicerUnbondingBlocks": "115200",
       "emissionPerEpoch": "1000000000",
       "treasuryAddress": "85/W5RqtiPb0zmq4gnJ5z/+5ImY=",
       "treasuryBps": 1000,
       "canonicalChainId": "84532",
       "canonicalTokenAddress": "3MbEn5U6AnQpBwU7qpTLbcmXd/o=",
       "canonicalBridgeAddress": "hnnrCDSvD5YWyHR+ucIlsP7eOdI=",
-      "validatorSetId": "1",
       "bridgeEpochMintLimit": "18446744073709551615",
       "bridgeTransferLimit": "18446744073709551615",
       "settlementIntervalBlocks": "1",

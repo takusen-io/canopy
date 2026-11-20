@@ -47,13 +47,11 @@ func (c *Contract) deliverSubmitExecutions(height uint64, message *MessageSubmit
 	authenticated := make([]authenticatedExecution, len(message.Executions))
 	var group sync.WaitGroup
 	for index, execution := range message.Executions {
-		execution.ServicerAddress = message.ServicerAddress
-		execution.PublicKey = message.PublicKey
 		index, execution := index, execution
 		group.Add(1)
 		go func() {
 			defer group.Done()
-			parsed, digest, err := authenticateReceipt(execution)
+			parsed, digest, err := parseReceiptSubmission(execution)
 			authenticated[index] = authenticatedExecution{parsed: parsed, digest: digest, err: err}
 		}()
 	}
@@ -63,40 +61,29 @@ func (c *Contract) deliverSubmitExecutions(height uint64, message *MessageSubmit
 			return &PluginDeliverResponse{Error: item.err}
 		}
 	}
-	loaded, loadErr := c.prefetchExecutionState(message.Executions, authenticated)
+	loaded, loadErr := c.prefetchExecutionState(message.ServicerAddress, authenticated)
 	if loadErr != nil {
 		return &PluginDeliverResponse{Error: loadErr}
+	}
+	for index, execution := range message.Executions {
+		item := &authenticated[index]
+		enclave := new(EnclaveKey)
+		if found, readErr := c.readExecutionStaged(nil, loaded, KeyForEnclave(item.parsed.TEEKeyID), enclave); readErr != nil {
+			return &PluginDeliverResponse{Error: readErr}
+		} else if !found || enclave.Status != "active" && enclave.Status != "draining" || !bytes.Equal(enclave.OwnerAddress, message.ServicerAddress) ||
+			len(enclave.PublicKey) != ed25519.PublicKeySize || !ed25519.Verify(enclave.PublicKey, item.digest, execution.Signature) {
+			return &PluginDeliverResponse{Error: ErrCrypto("receipt signature does not match its registered enclave key")}
+		}
 	}
 	records := map[string]proto.Message{}
 	var deletes [][]byte
 	for index, execution := range message.Executions {
 		item := authenticated[index]
-		if response := c.stageAuthenticatedExecution(height, execution, item.parsed, item.digest, records, loaded, &deletes); response.Error != nil {
+		if response := c.stageAuthenticatedExecution(height, message.ServicerAddress, execution, item.parsed, item.digest, records, loaded, &deletes); response.Error != nil {
 			return response
 		}
 	}
 	return &PluginDeliverResponse{Error: c.writeChanges(records, deletes)}
-}
-
-func (c *Contract) deliverSubmitExecution(height uint64, message *MessageSubmitExecution) *PluginDeliverResponse {
-	records := map[string]proto.Message{}
-	var deletes [][]byte
-	if response := c.stageSubmitExecution(height, message, records, &deletes); response.Error != nil {
-		return response
-	}
-	return &PluginDeliverResponse{Error: c.writeChanges(records, deletes)}
-}
-
-// stageSubmitExecution validates one receipt against committed and earlier
-// cohort state, then stages its mutations. A transaction cohort is written
-// once after every member validates, preserving atomic rollback while avoiding
-// one plugin/FSM state-write round trip per receipt.
-func (c *Contract) stageSubmitExecution(height uint64, message *MessageSubmitExecution, records map[string]proto.Message, deletes *[][]byte) *PluginDeliverResponse {
-	parsed, digest, err := authenticateReceipt(message)
-	if err != nil {
-		return &PluginDeliverResponse{Error: err}
-	}
-	return c.stageAuthenticatedExecution(height, message, parsed, digest, records, nil, deletes)
 }
 
 type authenticatedExecution struct {
@@ -105,19 +92,18 @@ type authenticatedExecution struct {
 	err    *PluginError
 }
 
-func (c *Contract) stageAuthenticatedExecution(height uint64, message *MessageSubmitExecution, parsed *receipt, digest []byte, records, loaded map[string]proto.Message, deletes *[][]byte) *PluginDeliverResponse {
-	keyDigest := sha256.Sum256(message.PublicKey)
-	expectedTEEKeyID := "ed25519:" + hex.EncodeToString(keyDigest[:])
+func (c *Contract) stageAuthenticatedExecution(height uint64, servicerAddress []byte, message *ExecutionSubmission, parsed *receipt, digest []byte, records, loaded map[string]proto.Message, deletes *[][]byte) *PluginDeliverResponse {
+	expectedTEEKeyID := parsed.TEEKeyID
 	servicer := new(Servicer)
-	if found, readErr := c.readExecutionStaged(records, loaded, KeyForServicer(message.ServicerAddress), servicer); readErr != nil {
+	if found, readErr := c.readExecutionStaged(records, loaded, KeyForServicer(servicerAddress), servicer); readErr != nil {
 		return &PluginDeliverResponse{Error: readErr}
-	} else if !found || !servicer.Active || servicer.TeeKeyId != expectedTEEKeyID {
-		return &PluginDeliverResponse{Error: ErrUnauthorized("servicer or receipt TEE key is not active")}
+	} else if !found || !bytes.Equal(servicer.OwnerAddress, servicerAddress) {
+		return &PluginDeliverResponse{Error: ErrUnauthorized("receipt signer is not a registered servicer")}
 	}
 	enclave := new(EnclaveKey)
 	if found, readErr := c.readExecutionStaged(records, loaded, KeyForEnclave(expectedTEEKeyID), enclave); readErr != nil {
 		return &PluginDeliverResponse{Error: readErr}
-	} else if !found || !enclave.Active || !bytes.Equal(enclave.PublicKey, message.PublicKey) || !bytes.Equal(enclave.OwnerAddress, message.ServicerAddress) {
+	} else if !found || enclave.Status != "active" && enclave.Status != "draining" || !bytes.Equal(enclave.OwnerAddress, servicerAddress) {
 		return &PluginDeliverResponse{Error: ErrUnauthorized("receipt key is not the registered enclave key")}
 	}
 	invalid := func(reason *PluginError) *PluginDeliverResponse {
@@ -125,14 +111,14 @@ func (c *Contract) stageAuthenticatedExecution(height uint64, message *MessageSu
 			return &PluginDeliverResponse{Error: ErrState("servicer failure counter overflow")}
 		}
 		servicer.FailureCount++
-		records[string(KeyForServicer(message.ServicerAddress))] = servicer
-		if slashErr := c.queueInvalidReceiptSlash(height, digest, servicer, records); slashErr != nil {
+		records[string(KeyForServicer(servicerAddress))] = servicer
+		if slashErr := c.applyInvalidReceiptSlash(height, digest, servicer, records, deletes); slashErr != nil {
 			return &PluginDeliverResponse{Error: slashErr}
 		}
 		_ = reason
 		return &PluginDeliverResponse{}
 	}
-	if semanticErr := validateReceipt(parsed, message, expectedTEEKeyID); semanticErr != nil {
+	if semanticErr := validateReceipt(parsed, expectedTEEKeyID); semanticErr != nil {
 		return invalid(semanticErr)
 	}
 	existing := new(ExecutionRecord)
@@ -140,7 +126,7 @@ func (c *Contract) stageAuthenticatedExecution(height uint64, message *MessageSu
 		return &PluginDeliverResponse{Error: readErr}
 	} else if found {
 		if bytes.Equal(existing.ReceiptDigest, digest) && bytes.Equal(existing.ReceiptSignature, message.Signature) &&
-			existing.ArchiveId == message.ArchiveId && bytes.Equal(existing.ServicerAddress, message.ServicerAddress) {
+			existing.ArchiveId == parsed.ArchiveID && bytes.Equal(existing.ServicerAddress, servicerAddress) {
 			return &PluginDeliverResponse{}
 		}
 		return &PluginDeliverResponse{Error: ErrConflict("execution identifier has already been committed")}
@@ -172,7 +158,7 @@ func (c *Contract) stageAuthenticatedExecution(height uint64, message *MessageSu
 		}
 	}
 	assignment := findAssignment(request, parsed.Model)
-	if assignment == nil || assignment.Completed || !bytes.Equal(assignment.ServicerAddress, message.ServicerAddress) {
+	if assignment == nil || assignment.Completed || !bytes.Equal(assignment.ServicerAddress, servicerAddress) {
 		return invalid(ErrUnauthorized("execution was not submitted by the assigned servicer"))
 	}
 	previousAssignments := activeAssignmentOwners(request)
@@ -240,7 +226,7 @@ func (c *Contract) stageAuthenticatedExecution(height uint64, message *MessageSu
 	execution := &ExecutionRecord{
 		ExecutionId: parsed.ExecutionID, RequestId: parsed.RequestID, Model: parsed.Model,
 		Provider:        parsed.Provider,
-		ServicerAddress: append([]byte(nil), message.ServicerAddress...), Status: parsed.Status, Output: parsed.Output,
+		ServicerAddress: append([]byte(nil), servicerAddress...), Status: parsed.Status, Output: parsed.Output,
 		OutputHash: outputHash, Cost: chargedCost, TeeKeyId: parsed.TEEKeyID,
 		ReceiptDigest: digest, ReceiptSignature: append([]byte(nil), message.Signature...), ArchiveId: parsed.ArchiveID, CommittedHeight: height,
 		ProviderCost: providerCost, ServicerMargin: servicerMargin, FoundationFee: foundationFee,
@@ -308,14 +294,14 @@ func (c *Contract) readExecutionStaged(records, loaded map[string]proto.Message,
 	return c.read(key, destination)
 }
 
-func (c *Contract) prefetchExecutionState(messages []*MessageSubmitExecution, authenticated []authenticatedExecution) (map[string]proto.Message, *PluginError) {
+func (c *Contract) prefetchExecutionState(servicerAddress []byte, authenticated []authenticatedExecution) (map[string]proto.Message, *PluginError) {
 	type target struct {
 		key  []byte
 		kind byte
 	}
-	loaded := make(map[string]proto.Message, len(messages)*3+2)
-	targets := make(map[uint64]target, len(messages)*3+2)
-	keys := make([]*PluginKeyRead, 0, len(messages)*3+2)
+	loaded := make(map[string]proto.Message, len(authenticated)*3+2)
+	targets := make(map[uint64]target, len(authenticated)*3+2)
+	keys := make([]*PluginKeyRead, 0, len(authenticated)*3+2)
 	var queryID uint64
 	add := func(key []byte, kind byte) {
 		encoded := string(key)
@@ -327,11 +313,10 @@ func (c *Contract) prefetchExecutionState(messages []*MessageSubmitExecution, au
 		keys = append(keys, &PluginKeyRead{QueryId: queryID, Key: key})
 		targets[queryID] = target{key: key, kind: kind}
 	}
-	for index, message := range messages {
+	add(KeyForServicer(servicerAddress), 1)
+	for index := range authenticated {
 		parsed := authenticated[index].parsed
-		keyDigest := sha256.Sum256(message.PublicKey)
-		add(KeyForServicer(message.ServicerAddress), 1)
-		add(KeyForEnclave("ed25519:"+hex.EncodeToString(keyDigest[:])), 2)
+		add(KeyForEnclave(parsed.TEEKeyID), 2)
 		add(KeyForExecution(parsed.ExecutionID), 3)
 		add(KeyForRequest(parsed.RequestID), 4)
 		// The signed receipt already commits the settlement domain. Prefetch the
@@ -384,51 +369,32 @@ func (c *Contract) prefetchExecutionState(messages []*MessageSubmitExecution, au
 	return loaded, nil
 }
 
-func (c *Contract) queueInvalidReceiptSlash(height uint64, receiptDigest []byte, servicer *Servicer, records map[string]proto.Message) *PluginError {
+func (c *Contract) applyInvalidReceiptSlash(height uint64, receiptDigest []byte, servicer *Servicer, records map[string]proto.Message, deletes *[][]byte) *PluginError {
 	evidenceID := hashFields([]byte("takusen:invalid-receipt"), receiptDigest)
-	if found, err := c.readStaged(records, KeyForSlashEvidence(evidenceID), new(SlashEvidence)); err != nil {
-		return err
-	} else if found {
-		return ErrConflict("invalid receipt slash evidence is already committed")
-	}
 	params, err := c.currentProtocolParams()
 	if err != nil {
 		return err
 	}
-	clock, err := c.currentEpochClock(params)
-	if err != nil {
-		return err
-	}
-	slashable, slashableErr := c.slashableServicerBond(servicer.OwnerAddress, servicer, records, clock.CurrentEpoch)
-	if slashableErr != nil {
-		return slashableErr
-	}
-	penalty, valid := mulDiv64(slashable, uint64(params.InvalidReceiptSlashBps), 10_000)
-	if !valid {
-		return ErrState("invalid receipt slash calculation overflow")
-	}
-	if params.InvalidReceiptSlashBps != 0 && penalty == 0 {
-		penalty = 1
-	}
-	records[string(KeyForSlashEvidence(evidenceID))] = &SlashEvidence{
-		EvidenceId: evidenceID, TargetAddress: append([]byte(nil), servicer.OwnerAddress...),
-		Reason: "invalid_receipt", Penalty: penalty, ObservedHeight: height,
-		EffectiveEpoch: clock.CurrentEpoch, Status: "queued",
-	}
-	records[string(KeyForPendingSlash(clock.CurrentEpoch, evidenceID))] = &ReplayMarker{Id: append([]byte(nil), evidenceID...)}
-	return nil
+	return c.applyInvalidReceiptPenalty(height, evidenceID, servicer.OwnerAddress, params, records, deletes)
 }
 
-func authenticateReceipt(message *MessageSubmitExecution) (*receipt, []byte, *PluginError) {
+func authenticateReceipt(message *ExecutionSubmission, publicKey []byte) (*receipt, []byte, *PluginError) {
+	parsed, digest, parseErr := parseReceiptSubmission(message)
+	if parseErr != nil {
+		return nil, nil, parseErr
+	}
+	if !ed25519.Verify(publicKey, digest, message.Signature) {
+		return nil, nil, ErrCrypto("receipt signature mismatch")
+	}
+	return parsed, digest, nil
+}
+
+func parseReceiptSubmission(message *ExecutionSubmission) (*receipt, []byte, *PluginError) {
 	parsed, parseErr := parseCanonicalReceipt(message.ReceiptJson)
 	if parseErr != nil {
 		return nil, nil, parseErr
 	}
 	digest := sha256.Sum256(message.ReceiptJson)
-	if !ed25519.Verify(message.PublicKey, digest[:], message.Signature) {
-		return nil, nil, ErrCrypto("receipt signature mismatch")
-	}
-	message.ArchiveId = parsed.ArchiveID
 	return parsed, digest[:], nil
 }
 
@@ -478,19 +444,19 @@ func parseCanonicalReceipt(encoded []byte) (*receipt, *PluginError) {
 	return parsed, nil
 }
 
-func verifyReceipt(message *MessageSubmitExecution) (*receipt, []byte, *PluginError) {
-	parsed, digest, err := authenticateReceipt(message)
+func verifyReceipt(message *ExecutionSubmission, publicKey []byte) (*receipt, []byte, *PluginError) {
+	parsed, digest, err := authenticateReceipt(message, publicKey)
 	if err != nil {
 		return nil, nil, err
 	}
-	keyDigest := sha256.Sum256(message.PublicKey)
-	if semanticErr := validateReceipt(parsed, message, "ed25519:"+hex.EncodeToString(keyDigest[:])); semanticErr != nil {
+	keyDigest := sha256.Sum256(publicKey)
+	if semanticErr := validateReceipt(parsed, "ed25519:"+hex.EncodeToString(keyDigest[:])); semanticErr != nil {
 		return nil, nil, semanticErr
 	}
 	return parsed, digest, nil
 }
 
-func validateReceipt(parsed *receipt, message *MessageSubmitExecution, expectedTEEKeyID string) *PluginError {
+func validateReceipt(parsed *receipt, expectedTEEKeyID string) *PluginError {
 	if parsed.Domain != "takusen:execution-receipt" || parsed.ExecutionID == "" || len(parsed.ExecutionID) > 128 || parsed.RequestID == "" || parsed.Model == "" || parsed.Provider == "" ||
 		parsed.CostMicros < 0 || parsed.MaxProviderCostMicros <= 0 || parsed.PromptTokens < 0 || parsed.CompletionTokens < 0 || parsed.StartedAtMS <= 0 || parsed.CompletedAtMS < parsed.StartedAtMS {
 		return ErrInvalidTransaction("receipt fields are invalid")

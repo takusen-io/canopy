@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/fxamacker/cbor/v2"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
 )
 
@@ -168,6 +169,61 @@ func TestRegisterServicerAtomicallyValidatesEvidenceBondsAndActivates(t *testing
 	eligible, err := contract.eligibleServicers("model")
 	if err != nil || len(eligible) != 1 || !bytes.Equal(selectServicer([]byte("input"), []byte("anchor"), "model", eligible).OwnerAddress, owner) {
 		t.Fatalf("registered enclave did not become assignable: eligible=%d err=%v", len(eligible), err)
+	}
+	if response := contract.deliverRegisterServicer(11, blockMicros, fixture.message); response.Error == nil {
+		t.Fatal("initial registration accepted an existing servicer owner")
+	}
+}
+
+func TestManageServicerAtomicallyRotatesEnclave(t *testing.T) {
+	contract, store, owner, _ := newMemoryContract(t)
+	initial := newNitroFixture(t, nitroFixtureTime, owner)
+	params := protocolParamsForNitroFixture(initial)
+	store.put(t, KeyForProtocolParams(), params)
+	store.put(t, KeyForAccount(owner), &Account{Address: owner, Amount: params.MinimumServicerBond})
+	blockMicros := uint64(nitroFixtureTime.Add(time.Minute).UnixMicro())
+	if response := contract.deliverRegisterServicer(10, blockMicros, initial.message); response.Error != nil {
+		t.Fatal(response.Error)
+	}
+
+	replacement := newNitroFixture(t, nitroFixtureTime.Add(time.Minute), owner)
+	params = protocolParamsForNitroFixture(replacement)
+	store.put(t, KeyForProtocolParams(), params)
+	manage := &MessageManageServicer{
+		OwnerAddress: owner, ExpectedRevision: 1,
+		Rotation: &EnclaveRotation{
+			TeeKeyId: replacement.message.TeeKeyId, PublicKey: replacement.message.PublicKey,
+			Nonce: replacement.message.Nonce, UserData: replacement.message.UserData,
+			ProofSignature: replacement.message.ProofSignature, AttestationDocument: replacement.message.AttestationDocument,
+		},
+	}
+	malformed := proto.Clone(manage).(*MessageManageServicer)
+	malformed.Rotation.AttestationDocument = append([]byte(nil), manage.Rotation.AttestationDocument...)
+	malformed.Rotation.AttestationDocument[len(malformed.Rotation.AttestationDocument)-1] ^= 1
+	if response := contract.deliverManageServicer(11, uint64(nitroFixtureTime.Add(2*time.Minute).UnixMicro()), malformed); response.Error == nil {
+		t.Fatal("malformed replacement attestation was accepted")
+	}
+	oldKey := new(EnclaveKey)
+	if found, err := contract.read(KeyForEnclave(initial.message.TeeKeyId), oldKey); err != nil || !found || oldKey.Status != "active" {
+		t.Fatalf("failed rotation changed the old enclave: found=%v key=%+v err=%v", found, oldKey, err)
+	}
+	if found, err := contract.read(KeyForEnclave(replacement.message.TeeKeyId), new(EnclaveKey)); err != nil || found {
+		t.Fatalf("failed rotation committed the replacement enclave: found=%v err=%v", found, err)
+	}
+
+	if response := contract.deliverManageServicer(11, uint64(nitroFixtureTime.Add(2*time.Minute).UnixMicro()), manage); response.Error != nil {
+		t.Fatal(response.Error)
+	}
+	newKey := new(EnclaveKey)
+	servicer := new(Servicer)
+	if found, err := contract.read(KeyForEnclave(initial.message.TeeKeyId), oldKey); err != nil || !found || oldKey.Status != "draining" {
+		t.Fatalf("rotation did not retire the old enclave: found=%v key=%+v err=%v", found, oldKey, err)
+	}
+	if found, err := contract.read(KeyForEnclave(replacement.message.TeeKeyId), newKey); err != nil || !found || newKey.Status != "active" {
+		t.Fatalf("rotation did not register the replacement enclave: found=%v key=%+v err=%v", found, newKey, err)
+	}
+	if found, err := contract.read(KeyForServicer(owner), servicer); err != nil || !found || !servicer.Active || servicer.TeeKeyId != replacement.message.TeeKeyId {
+		t.Fatalf("rotation did not atomically switch the servicer: found=%v servicer=%+v err=%v", found, servicer, err)
 	}
 }
 

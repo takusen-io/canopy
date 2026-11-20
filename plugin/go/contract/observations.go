@@ -9,25 +9,16 @@ import (
 )
 
 const (
-	// Observation kind 1 was the removed validator-fan-out enclave registration
-	// path. It is intentionally never reused.
-	observationAuthorization byte = 2
-	observationSettlement    byte = 3
-	// Observation kind 4 was the removed reassignment path and is never reused.
-	observationRevocation        byte = 5
-	observationDeposit           byte = 6
-	observationValidatorRotation byte = 7
-	observationBridgeLock        byte = 8
-	observationSlashEvidence     byte = 9
-	observationBridgeRelease     byte = 10
-	observationDepositResolve    byte = 11
-	observationSettlementReorg   byte = 12
-	observationEpochMint         byte = 13
+	observationAuthorization byte = iota + 1
+	observationSettlement
+	observationDeposit
+	observationValidatorRotation
+	observationBridgeLock
+	observationBridgeRelease
+	observationDepositResolve
+	observationSettlementReorg
+	observationEpochMint
 )
-
-func revocationSubject(message *MessageRevokeEnclave) []byte {
-	return hashFields([]byte("takusen:enclave-revocation"), []byte(message.TeeKeyId))
-}
 
 func depositSubject(message *MessageObserveDeposit) []byte {
 	return hashFields(
@@ -54,7 +45,7 @@ func boolByte(value bool) byte {
 	return 0
 }
 
-func authorizationSubject(message *MessageObserveAuthorization) []byte {
+func authorizationSubject(message *Authorization) []byte {
 	return hashFields(
 		[]byte("takusen:signed-authorization"), []byte(message.RequestId), message.InputHash,
 		message.SettlementDomainId,
@@ -67,16 +58,14 @@ func authorizationSubject(message *MessageObserveAuthorization) []byte {
 	)
 }
 
-func settlementSubject(message *MessageFinalizeRequest) []byte {
-	// This historical domain label is consensus data; keep it even though the
-	// subject now binds one atomic settlement transaction.
+func settlementSubject(message *RequestFinalization) []byte {
 	return hashFields(
 		[]byte("takusen:settlement-finalization"), message.SettlementDomainId, []byte(message.RequestId),
 		message.SettlementTxHash, uint64Bytes(message.ReservedBudget), uint64Bytes(message.RequestSpent), stringListBytes(message.ExecutionIds), boolBytes(message.FinalizesRequest),
 	)
 }
 
-func settlementBatchSubject(messages []*MessageFinalizeRequest) []byte {
+func settlementBatchSubject(messages []*RequestFinalization) []byte {
 	fields := make([][]byte, 1, len(messages)+1)
 	fields[0] = []byte("takusen:settlement-finalization-batch")
 	for _, message := range messages {
@@ -97,13 +86,6 @@ func boolBytes(value bool) []byte {
 		return []byte{1}
 	}
 	return []byte{0}
-}
-
-func assignmentExpirationSubject(message *MessageExpireAssignment) []byte {
-	return hashFields(
-		[]byte("takusen:assignment-expiration:v5"), message.SettlementDomainId, []byte(message.RequestId),
-		[]byte(message.Model), []byte(message.ExecutionId), uint64Bytes(message.DeadlineHeight),
-	)
 }
 
 func (c *Contract) observe(kind byte, subject, claim, observer []byte, height uint64) (*Observation, bool, *PluginError) {

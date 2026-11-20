@@ -10,16 +10,17 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+const emergencyDomainAbandonmentDelayEpochs uint64 = 168
+
 const (
 	// Leave capacity for validator-local finalized-EVM observations even when
 	// Native authorizations are continuously backlogged.
 	maxNativeAuxiliaryCandidates = 64
-	timeoutCandidatePageSize     = uint64(512)
 )
 
 var nativeCandidateCategoryLimits = map[string]int{
 	"priority": 32, "settlement": 64, "reward": 3, "bridge": 3,
-	"abandonment": 1, "lifecycle": 2, "timeout": 3,
+	"abandonment": 1, "lifecycle": 2,
 }
 
 type certifiedEVMObservation struct {
@@ -162,7 +163,7 @@ func (c *Contract) nativeAuxiliaryCandidates(height uint64, params *ProtocolPara
 		if !valid || clock.CurrentEpoch < deactivationEpoch || clock.CurrentEpoch-deactivationEpoch < emergencyDomainAbandonmentDelayEpochs {
 			continue
 		}
-		message := &MessageSubmitQuorumSignature{
+		message := &EVMControlEvidence{
 			ProofKind: "settlement-domain-abandonment", ValidatorSetId: clock.ValidatorSetId,
 			SettlementDomainId: append([]byte(nil), domain.Id...), HandoffGeneration: append([]byte(nil), intent.DeactivationGeneration...),
 			LifecycleIntentId: append([]byte(nil), intent.Id...), Epoch: deactivationEpoch, ControlBlockNumber: clock.CurrentEpoch,
@@ -171,7 +172,6 @@ func (c *Contract) nativeAuxiliaryCandidates(height uint64, params *ProtocolPara
 			[]byte("takusen:settlement-domain-abandonment"), domain.Id, uint64Bytes(clock.ValidatorSetId),
 			intent.DeactivationGeneration, intent.Id, uint64Bytes(deactivationEpoch), uint64Bytes(clock.CurrentEpoch),
 		)
-		message.Message = append([]byte(nil), message.Digest...)
 		message.ProofId = quorumProofID(message.ProofKind, message.ValidatorSetId, message.Digest)
 		payload, marshalErr := Marshal(message)
 		if marshalErr != nil {
@@ -202,10 +202,10 @@ func (c *Contract) nativeAuxiliaryCandidates(height uint64, params *ProtocolPara
 			!bytes.Equal(readiness.HandoffGeneration, intent.DeactivationGeneration) || !bytes.Equal(readiness.LifecycleIntentId, intent.Id) {
 			continue
 		}
-		message := &MessageSubmitQuorumSignature{
+		message := &EVMControlEvidence{
 			ProofKind: authorizationKind, ValidatorSetId: clock.ValidatorSetId, Digest: append([]byte(nil), readiness.Digest...),
-			Message: append([]byte(nil), readiness.Digest...), SettlementDomainId: append([]byte(nil), domain.Id...),
-			RotationNonce: readiness.RotationNonce, HandoffGeneration: append([]byte(nil), intent.DeactivationGeneration...),
+			SettlementDomainId: append([]byte(nil), domain.Id...),
+			RotationNonce:      readiness.RotationNonce, HandoffGeneration: append([]byte(nil), intent.DeactivationGeneration...),
 			HandoffTimestamp: readiness.HandoffTimestamp, ControlBlockNumber: readiness.ControlBlockNumber,
 			ControlBlockHash: append([]byte(nil), readiness.ControlBlockHash...), LifecycleIntentId: append([]byte(nil), intent.Id...),
 		}
@@ -218,74 +218,7 @@ func (c *Contract) nativeAuxiliaryCandidates(height uint64, params *ProtocolPara
 		appendCandidate("lifecycle", &AuxiliaryCandidate{Kind: authorizationKind, Key: key, Digest: append([]byte(nil), message.Digest...), Payload: payload})
 	}
 
-	// Timeout discovery is bounded per block. The same earliest expired facts
-	// remain candidates until certified, after which their request state changes
-	// and the next bounded page can progress.
-	cursor := new(ReplayMarker)
-	if found, readErr := c.read(KeyForTimeoutCandidateCursorCurrent(), cursor); readErr != nil {
-		return nil, readErr
-	} else if !found {
-		cursor.Id = nil
-	}
-	requests, err := c.rangeReadPage(RequestPrefix(), cursor.Id, timeoutCandidatePageSize)
-	if err != nil {
-		return nil, err
-	}
-	for _, entry := range requests {
-		if len(result) == maxNativeAuxiliaryCandidates {
-			break
-		}
-		request := new(RequestRecord)
-		if Unmarshal(entry.Value, request) != nil || request.Status != "authorized" {
-			continue
-		}
-		if request.DeadlineHeight == 0 || height <= request.DeadlineHeight {
-			continue
-		}
-		for _, assignment := range request.Assignments {
-			if len(result) == maxNativeAuxiliaryCandidates {
-				break
-			}
-			if assignment == nil || assignment.Completed || assignment.ExecutionId == "" {
-				continue
-			}
-			message := &MessageExpireAssignment{
-				RequestId: request.RequestId, Model: assignment.Model, ExecutionId: assignment.ExecutionId,
-				SettlementDomainId: append([]byte(nil), request.SettlementDomainId...), DeadlineHeight: request.DeadlineHeight,
-			}
-			payload, marshalErr := Marshal(message)
-			if marshalErr != nil {
-				return nil, marshalErr
-			}
-			key := hashFields(request.SettlementDomainId, []byte(request.RequestId), []byte(assignment.Model), []byte(assignment.ExecutionId))
-			appendCandidate("timeout", &AuxiliaryCandidate{Kind: "native-assignment-expiration", Key: key, Digest: assignmentExpirationSubject(message), Payload: payload})
-		}
-	}
 	return result, nil
-}
-
-// advanceTimeoutCandidateCursor persists a deterministic continuation across
-// request pages. Two markers let BeginBlock prepare the next cursor while
-// EndBlock scans the current page, so no request is skipped at wraparound.
-func (c *Contract) advanceTimeoutCandidateCursor(records map[string]proto.Message) *PluginError {
-	next := new(ReplayMarker)
-	if found, err := c.read(KeyForTimeoutCandidateCursorNext(), next); err != nil {
-		return err
-	} else if !found {
-		next.Id = nil
-	}
-	current := &ReplayMarker{Id: append([]byte(nil), next.Id...)}
-	page, err := c.rangeReadPage(RequestPrefix(), current.Id, timeoutCandidatePageSize)
-	if err != nil {
-		return err
-	}
-	following := &ReplayMarker{}
-	if uint64(len(page)) == timeoutCandidatePageSize {
-		following.Id = append([]byte(nil), page[len(page)-1].Key...)
-	}
-	records[string(KeyForTimeoutCandidateCursorCurrent())] = current
-	records[string(KeyForTimeoutCandidateCursorNext())] = following
-	return nil
 }
 
 // advanceSettlementCandidateCursor keeps bounded settlement discovery moving
@@ -330,11 +263,19 @@ func auxiliaryProofRecord(height uint64, candidate *AuxiliaryCandidate, certific
 	}
 }
 
-func (c *Contract) applyNativeAuxiliaryCertificate(height uint64, candidate *AuxiliaryCandidate, certificate *ConsensusCertificate, records map[string]proto.Message) bool {
+func (c *Contract) applyNativeAuxiliaryCertificate(height uint64, candidate *AuxiliaryCandidate, certificate *ConsensusCertificate, records map[string]proto.Message, deletes *[][]byte) bool {
 	if strings.HasPrefix(candidate.Kind, "evm-observation/") {
 		return c.applyEVMObservationCertificate(height, candidate, certificate, records)
 	}
 	switch candidate.Kind {
+	case "enclave-revocation":
+		message := new(EnclaveRevocation)
+		if Unmarshal(candidate.Payload, message) != nil || checkEnclaveRevocation(message) != nil ||
+			!bytes.Equal(candidate.Key, enclaveRevocationKey(message)) ||
+			!bytes.Equal(candidate.Digest, enclaveRevocationDigest(message)) {
+			return false
+		}
+		return c.applyEnclaveRevocation(message, records, deletes)
 	case "epoch-rewards":
 		authorization := new(EpochAuthorization)
 		if json.Unmarshal(candidate.Payload, authorization) != nil || authorization.Status != "authorized" ||
@@ -354,27 +295,8 @@ func (c *Contract) applyNativeAuxiliaryCertificate(height uint64, candidate *Aux
 			len(batch.Requests) == 0 || len(batch.Requests) > maxSettlementRequestsPerCertificate || batch.Digest != "0x"+hex.EncodeToString(candidate.Digest) {
 			return false
 		}
-	case "native-assignment-expiration":
-		message := new(MessageExpireAssignment)
-		if Unmarshal(candidate.Payload, message) != nil {
-			return false
-		}
-		request := new(RequestRecord)
-		if found, err := c.read(KeyForRequest(message.RequestId), request); err != nil || !found {
-			return false
-		}
-		assignment := findAssignment(request, message.Model)
-		if assignment == nil || assignment.Completed || assignment.ExecutionId != message.ExecutionId ||
-			request.DeadlineHeight != message.DeadlineHeight || !bytes.Equal(request.SettlementDomainId, message.SettlementDomainId) ||
-			!bytes.Equal(candidate.Digest, assignmentExpirationSubject(message)) {
-			return false
-		}
-		if response := c.deliverExpireAssignmentWithCertificate(height, message); response.Error != nil {
-			return false
-		}
-		return true
 	case "settlement-domain-abandonment":
-		message := new(MessageSubmitQuorumSignature)
+		message := new(EVMControlEvidence)
 		if Unmarshal(candidate.Payload, message) != nil || message.ProofKind != candidate.Kind ||
 			!bytes.Equal(candidate.Key, message.SettlementDomainId) || !bytes.Equal(candidate.Digest, message.Digest) ||
 			message.ValidatorSetId != certificate.ValidatorSetId {
@@ -385,7 +307,7 @@ func (c *Contract) applyNativeAuxiliaryCertificate(height uint64, candidate *Aux
 		}
 		return true
 	case "settlement-domain-retirement-action", "settlement-domain-retirement-cancellation":
-		message := new(MessageSubmitQuorumSignature)
+		message := new(EVMControlEvidence)
 		if Unmarshal(candidate.Payload, message) != nil || message.ProofKind != candidate.Kind ||
 			message.ValidatorSetId != certificate.ValidatorSetId || !bytes.Equal(candidate.Digest, message.Digest) ||
 			!bytes.Equal(candidate.Key, hashFields(message.SettlementDomainId, uint64Bytes(message.RotationNonce), message.HandoffGeneration, message.LifecycleIntentId)) {
@@ -444,7 +366,7 @@ func (c *Contract) applyNativeAuxiliaryCertificate(height uint64, candidate *Aux
 	return true
 }
 
-func (c *Contract) persistCertifiedNativeAbandonment(height uint64, message *MessageSubmitQuorumSignature, certificate *ConsensusCertificate, records map[string]proto.Message) bool {
+func (c *Contract) persistCertifiedNativeAbandonment(height uint64, message *EVMControlEvidence, certificate *ConsensusCertificate, records map[string]proto.Message) bool {
 	params, err := c.currentProtocolParams()
 	if err != nil {
 		return false
@@ -478,7 +400,7 @@ func (c *Contract) persistCertifiedNativeAbandonment(height uint64, message *Mes
 	return true
 }
 
-func candidateDigest(message *MessageSubmitQuorumSignature) []byte { return message.Digest }
+func candidateDigest(message *EVMControlEvidence) []byte { return message.Digest }
 
 func (c *Contract) applyEVMObservationCertificate(height uint64, candidate *AuxiliaryCandidate, certificate *ConsensusCertificate, records map[string]proto.Message) bool {
 	kind := strings.TrimPrefix(candidate.Kind, "evm-observation/")
@@ -497,14 +419,14 @@ func (c *Contract) applyEVMObservationCertificate(height uint64, candidate *Auxi
 	}
 	switch kind {
 	case "authorization":
-		message := new(MessageObserveAuthorization)
-		if Unmarshal(observation.Message, message) != nil || len(message.ObserverAddress) != 0 || message.DirectEoa ||
+		message := new(Authorization)
+		if Unmarshal(observation.Message, message) != nil || message.DirectEoa ||
 			!bytes.Equal(message.SettlementDomainId, observation.SettlementDomainID) ||
 			message.AuthorizationChainBlockNumber != observation.BlockNumber || !bytes.Equal(message.AuthorizationChainBlockHash, observation.BlockHash) {
 			return false
 		}
 		return apply(authorizationSubject(message), []byte(message.RequestId), func() *PluginDeliverResponse {
-			return c.deliverObserveAuthorizationCertified(height, message, true)
+			return c.applyAuthorizationItem(height, message, true)
 		})
 	case "deposit":
 		message := new(MessageObserveDeposit)
@@ -550,7 +472,7 @@ func (c *Contract) applyEVMObservationCertificate(height uint64, candidate *Auxi
 	case "validator-set-rotation-queued", "validator-set-rotation-caught-up", "validator-set-rotation-forward", "validator-set-rotation-cancelled", "validator-set-rotation-absent",
 		"settlement-domain-authority", "settlement-domain-retirement-readiness", "settlement-domain-retirement-cancellation-readiness",
 		"settlement-domain-retirement-cancelled", "settlement-domain-retired":
-		message := new(MessageSubmitQuorumSignature)
+		message := new(EVMControlEvidence)
 		if Unmarshal(observation.Message, message) != nil || message.ProofKind != kind ||
 			!bytes.Equal(message.SettlementDomainId, observation.SettlementDomainID) ||
 			(kind != "settlement-domain-retired" && kind != "settlement-domain-retirement-cancelled" && message.ValidatorSetId != certificate.ValidatorSetId) {
@@ -592,7 +514,7 @@ func (c *Contract) finalizationsForSettlementReference(reference *MessageFinaliz
 		len(batch.Requests) == 0 || len(batch.Requests) > maxSettlementRequestsPerCertificate {
 		return nil, false
 	}
-	requests := make([]*MessageFinalizeRequest, len(batch.Requests))
+	requests := make([]*RequestFinalization, len(batch.Requests))
 	for index, settled := range batch.Requests {
 		domain, decodeErr := decodeHash(settled.SettlementDomain)
 		if decodeErr != nil || !bytes.Equal(domain, reference.SettlementDomainId) || settled.RequestID == "" ||
@@ -614,7 +536,7 @@ func (c *Contract) finalizationsForSettlementReference(reference *MessageFinaliz
 			}
 			executionIDs[executionIndex] = executions[executionIndex].ExecutionID
 		}
-		requests[index] = &MessageFinalizeRequest{
+		requests[index] = &RequestFinalization{
 			SettlementDomainId: append([]byte(nil), reference.SettlementDomainId...), RequestId: settled.RequestID,
 			SettlementTxHash: append([]byte(nil), reference.SettlementTxHash...), ReservedBudget: settled.ReservedBudget,
 			RequestSpent: settled.RequestSpent, ExecutionIds: executionIDs, FinalizesRequest: settled.FinalizesRequest,
@@ -623,7 +545,7 @@ func (c *Contract) finalizationsForSettlementReference(reference *MessageFinaliz
 	return &MessageFinalizeRequests{Requests: requests}, true
 }
 
-func (c *Contract) persistCertifiedEVMControlEvidence(height uint64, message *MessageSubmitQuorumSignature, certificate *ConsensusCertificate, records map[string]proto.Message) bool {
+func (c *Contract) persistCertifiedEVMControlEvidence(height uint64, message *EVMControlEvidence, certificate *ConsensusCertificate, records map[string]proto.Message) bool {
 	if message.ProofKind == "validator-set-rotation-queued" || message.ProofKind == "validator-set-rotation-caught-up" || message.ProofKind == "validator-set-rotation-forward" || message.ProofKind == "validator-set-rotation-cancelled" || message.ProofKind == "validator-set-rotation-absent" {
 		clock, err := c.currentEpochClockFromState()
 		if err != nil || !clock.ValidatorHandoffPrepared || !handoffIncludesDomain(clock, message.SettlementDomainId) ||

@@ -114,7 +114,7 @@ func (c *Contract) deliverBurnBridge(height uint64, message *MessageBurnBridge) 
 	account := new(Account)
 	if found, readErr := c.read(KeyForAccount(message.OwnerAddress), account); readErr != nil {
 		return &PluginDeliverResponse{Error: readErr}
-	} else if !found || account.Amount < message.Amount {
+	} else if !found || accountSpendableAtHeight(account, height) < message.Amount {
 		return &PluginDeliverResponse{Error: ErrInsufficientFunds()}
 	}
 	state := new(BridgeState)

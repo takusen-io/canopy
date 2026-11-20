@@ -790,16 +790,18 @@ func spendableAccountView(sm *fsm.StateMachine, account *fsm.Account) *AccountVi
 	vested := sm.AccountVestedAmount(account)
 	locked := sm.AccountLockedAmount(account)
 	return &AccountView{
-		Address:            account.Address,
-		Amount:             spendable,
-		Nonce:              account.Nonce,
-		TotalAmount:        total,
-		VestedAmount:       vested,
-		LockedAmount:       locked,
-		VestingAmount:      account.VestingAmount,
-		VestingStartHeight: account.VestingStartHeight,
-		VestingCliffHeight: account.VestingCliffHeight,
-		VestingEndHeight:   account.VestingEndHeight,
+		Address:                account.Address,
+		Amount:                 spendable,
+		Nonce:                  account.Nonce,
+		TotalAmount:            total,
+		VestedAmount:           vested,
+		LockedAmount:           locked,
+		VestingAmount:          account.VestingAmount,
+		VestingStartHeight:     account.VestingStartHeight,
+		VestingCliffHeight:     account.VestingCliffHeight,
+		VestingEndHeight:       account.VestingEndHeight,
+		UnbondingAmount:        account.UnbondingAmount,
+		UnbondingReleaseHeight: account.UnbondingReleaseHeight,
 	}
 }
 

@@ -118,8 +118,7 @@ func (s *StateMachine) AccountVestedAmount(account *Account) uint64 {
 	return vested
 }
 
-// AccountLockedAmount() returns the still-locked portion of the account's vesting tranche
-func (s *StateMachine) AccountLockedAmount(account *Account) uint64 {
+func (s *StateMachine) accountVestingLockedAmount(account *Account) uint64 {
 	if account.VestingAmount == 0 {
 		return 0
 	}
@@ -131,6 +130,26 @@ func (s *StateMachine) AccountLockedAmount(account *Account) uint64 {
 	}
 	// exit with vesting_amount - vested
 	return account.VestingAmount - vested
+}
+
+// AccountLockedAmount() returns every currently locked account tranche. The
+// cliff tranche becomes spendable by height alone; no state-moving maturity
+// transaction is required.
+func (s *StateMachine) AccountLockedAmount(account *Account) uint64 {
+	if account == nil {
+		return 0
+	}
+	locked := s.accountVestingLockedAmount(account)
+	if account.UnbondingAmount != 0 && s.Height() < account.UnbondingReleaseHeight {
+		if locked > math.MaxUint64-account.UnbondingAmount {
+			return account.Amount
+		}
+		locked += account.UnbondingAmount
+	}
+	if locked > account.Amount {
+		return account.Amount
+	}
+	return locked
 }
 
 // AccountSpendableAmount() returns how much of the account balance may be withdrawn at the current height
@@ -158,6 +177,10 @@ func (s *StateMachine) SetAccount(account *Account) lib.ErrorI {
 	}()
 	// state cleanup for fully vested accounts
 	s.clearAccountVestingIfFullyVested(account)
+	if account.UnbondingAmount != 0 && s.Height() >= account.UnbondingReleaseHeight {
+		account.UnbondingAmount = 0
+		account.UnbondingReleaseHeight = 0
+	}
 	// add to cache
 	s.cache.accounts[lib.MemHash(account.Address)] = account
 	// convert bytes to the address object
@@ -240,7 +263,7 @@ func (s *StateMachine) ValidateAccountAddWithVesting(msg *MessageSend) lib.Error
 		return err
 	}
 	// if account has active vesting - the vesting terms must match *exactly* to enable another send
-	if acc.VestingAmount != 0 && s.AccountLockedAmount(acc) != 0 {
+	if acc.VestingAmount != 0 && s.accountVestingLockedAmount(acc) != 0 {
 		if acc.VestingStartHeight != msg.VestingStartHeight ||
 			acc.VestingCliffHeight != msg.VestingCliffHeight ||
 			acc.VestingEndHeight != msg.VestingEndHeight {
@@ -266,7 +289,7 @@ func (s *StateMachine) AccountAddWithVesting(msg *MessageSend) lib.ErrorI {
 	}
 	// update amount
 	acc.Amount += msg.Amount
-	if acc.VestingAmount == 0 || s.AccountLockedAmount(acc) == 0 {
+	if acc.VestingAmount == 0 || s.accountVestingLockedAmount(acc) == 0 {
 		acc.VestingAmount = msg.Amount
 		acc.VestingStartHeight = msg.VestingStartHeight
 		acc.VestingCliffHeight = msg.VestingCliffHeight
@@ -358,7 +381,7 @@ func (s *StateMachine) clearAccountVestingIfFullyVested(account *Account) {
 	if account == nil || account.VestingAmount == 0 {
 		return
 	}
-	if s.AccountLockedAmount(account) != 0 {
+	if s.accountVestingLockedAmount(account) != 0 {
 		return
 	}
 	account.VestingAmount = 0

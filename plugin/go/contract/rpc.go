@@ -63,7 +63,6 @@ func (p *Plugin) StartRPCServer(ctx context.Context) {
 	mux.HandleFunc("GET /v1/takusen/validator-rotations/{old}/{new}/queues-ready", p.rotationQueuesReadyHandler())
 	mux.HandleFunc("GET /v1/takusen/validator-handoffs/current/{domain}", p.validatorHandoffManifestHandler(false))
 	mux.HandleFunc("GET /v1/takusen/validator-handoffs/cancellation/{domain}", p.validatorHandoffManifestHandler(true))
-	mux.HandleFunc("GET /v1/takusen/stake-changes/{id}", p.hexRecordHandler(20, KeyForStakeChange, func() proto.Message { return new(StakeChange) }))
 	mux.HandleFunc("GET /v1/takusen/slashes/{id}", p.hexRecordHandler(32, KeyForSlashEvidence, func() proto.Message { return new(SlashEvidence) }))
 	mux.HandleFunc("GET /v1/takusen/producer-payouts/{id}", p.hexRecordHandler(20, KeyForProducerPayout, func() proto.Message { return new(ProducerPayout) }))
 	mux.HandleFunc("GET /v1/takusen/epochs/{id}", p.uintRecordHandler(KeyForEpochAuthorization, func() proto.Message { return new(EpochAuthorization) }))
@@ -81,8 +80,6 @@ func (p *Plugin) StartRPCServer(ctx context.Context) {
 	mux.HandleFunc("GET /v1/takusen/deposits", p.listHandler(DepositPrefix(), func() proto.Message { return new(DepositRecord) }))
 	mux.HandleFunc("GET /v1/takusen/credits", p.listHandler(CreditPrefix(), func() proto.Message { return new(CreditAccount) }))
 	mux.HandleFunc("GET /v1/takusen/reservations", p.listHandler(ReservationPrefix(), func() proto.Message { return new(ReservationRecord) }))
-	mux.HandleFunc("GET /v1/takusen/stake-changes", p.listHandler(StakeChangePrefix(), func() proto.Message { return new(StakeChange) }))
-	mux.HandleFunc("GET /v1/takusen/unbondings", p.listHandler(UnbondingPrefix(), func() proto.Message { return new(UnbondingRecord) }))
 	mux.HandleFunc("GET /v1/takusen/slashes", p.listHandler(SlashEvidencePrefix(), func() proto.Message { return new(SlashEvidence) }))
 	mux.HandleFunc("GET /v1/takusen/producer-payouts", p.listHandler(ProducerPayoutPrefix(), func() proto.Message { return new(ProducerPayout) }))
 	mux.HandleFunc("GET /v1/takusen/epochs", p.listHandler(EpochAuthorizationPrefix(), func() proto.Message { return new(EpochAuthorization) }))
@@ -1161,8 +1158,6 @@ func recordHasStatus(record proto.Message, wanted string) bool {
 	case *RequestRecord:
 		return record.Status == wanted
 	case *ReservationRecord:
-		return record.Status == wanted
-	case *SlashEvidence:
 		return record.Status == wanted
 	case *EpochAuthorization:
 		return record.Status == wanted

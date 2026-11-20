@@ -78,7 +78,7 @@ func (c *Contract) consumeAuxiliaryCertificates(height uint64, certificates []*A
 			SignerBitmap: append([]byte(nil), signature.Bitmap...), AggregateSignature: append([]byte(nil), signature.Signature...),
 			AggregateSignatureEip2537: eipSignature, SignedWeight: signed, TotalWeight: snapshot.totalStake, CompletedHeight: height,
 		}
-		if !c.applyNativeAuxiliaryCertificate(height, candidate, record, records) {
+		if !c.applyNativeAuxiliaryCertificate(height, candidate, record, records, &deletes) {
 			continue
 		}
 		certificateRecords, certificateDeletes := settlementCertificateIndex(candidate)

@@ -18,7 +18,7 @@ func TestQueueAuthorizationPublishesIntentWithoutValidatorApproval(t *testing.T)
 	params.AuthorizationDeadlineBlocks = 360
 	store.put(t, KeyForProtocolParams(), params)
 	relayer := bytes.Repeat([]byte{0x91}, 20)
-	authorization := &MessageObserveAuthorization{
+	authorization := &Authorization{
 		SettlementDomainId: params.SettlementDomains[0].Id, RequestId: "erc1271-request",
 		InputHash: bytes.Repeat([]byte{2}, 32), RequestArchiveId: "sha256:" + strings.Repeat("02", 32),
 		Requester: bytes.Repeat([]byte{3}, 20), ReservedBudget: 10, OutputType: "boolean",
@@ -38,8 +38,8 @@ func TestQueueAuthorizationPublishesIntentWithoutValidatorApproval(t *testing.T)
 	if found, err := contract.read(KeyForPendingAuthorization(authorization.RequestId), pending); err != nil || !found {
 		t.Fatalf("pending authorization missing: found=%v err=%v", found, err)
 	}
-	decoded := new(MessageObserveAuthorization)
-	if proto.Unmarshal(pending.Authorization, decoded) != nil || decoded.RequestId != authorization.RequestId || len(decoded.ObserverAddress) != 0 {
+	decoded := new(Authorization)
+	if proto.Unmarshal(pending.Authorization, decoded) != nil || decoded.RequestId != authorization.RequestId {
 		t.Fatalf("pending authorization = %+v", decoded)
 	}
 }
@@ -53,7 +53,7 @@ func TestDirectEOAAuthorizationMatchesEIP712(t *testing.T) {
 	domainConfig.EscrowAddress = bytes.Repeat([]byte{9}, 20)
 	domainConfig.Id = keccak(abiUint64(domainConfig.ChainId), abiAddress(domainConfig.TokenAddress), abiAddress(domainConfig.EscrowAddress), abiAddress(domainConfig.VerifierAddress))
 	params := &ProtocolParams{SettlementDomains: []*SettlementDomain{domainConfig}}
-	message := &MessageObserveAuthorization{SettlementDomainId: domainConfig.Id,
+	message := &Authorization{SettlementDomainId: domainConfig.Id,
 		RequestId: "request", InputHash: bytes.Repeat([]byte{3}, 32), Requester: requester,
 		ReservedBudget: 300_000, AuthorizationDeadline: 1_800_000_000,
 	}
@@ -84,9 +84,9 @@ func TestDirectEOAAuthorizationMatchesEIP712(t *testing.T) {
 
 func TestAuthorizationBatchValidation(t *testing.T) {
 	observer := bytes.Repeat([]byte{1}, 20)
-	authorization := func(requestID string) *MessageObserveAuthorization {
-		message := &MessageObserveAuthorization{SettlementDomainId: testSettlementDomainID(),
-			ObserverAddress: observer, RequestId: requestID, InputHash: bytes.Repeat([]byte{2}, 32),
+	authorization := func(requestID string) *Authorization {
+		message := &Authorization{SettlementDomainId: testSettlementDomainID(),
+			RequestId: requestID, InputHash: bytes.Repeat([]byte{2}, 32), DirectEoa: true,
 			RequestArchiveId: "sha256:0202020202020202020202020202020202020202020202020202020202020202",
 			Requester:        bytes.Repeat([]byte{3}, 20), ReservedBudget: 1, OutputType: "boolean",
 			OutputMinimum: 0, OutputMaximum: 1,
@@ -96,7 +96,7 @@ func TestAuthorizationBatchValidation(t *testing.T) {
 		message.SchemaHash = requestOutputSchemaHash(message)
 		return message
 	}
-	message := &MessageObserveAuthorizations{ObserverAddress: observer, Authorizations: []*MessageObserveAuthorization{authorization("one"), authorization("two")}}
+	message := &MessageObserveAuthorizations{ObserverAddress: observer, Authorizations: []*Authorization{authorization("one"), authorization("two")}}
 	if signer, err := checkObserveAuthorizations(message); err != nil || !bytes.Equal(signer, observer) {
 		t.Fatalf("valid batch rejected: signer=%x err=%v", signer, err)
 	}
@@ -105,21 +105,21 @@ func TestAuthorizationBatchValidation(t *testing.T) {
 		t.Fatal("duplicate request was accepted")
 	}
 	message.Authorizations[1] = authorization("two")
-	message.Authorizations[1].ObserverAddress = bytes.Repeat([]byte{4}, 20)
+	message.Authorizations[1].DirectEoa = false
 	if _, err := checkObserveAuthorizations(message); err == nil {
-		t.Fatal("mismatched observer was accepted")
+		t.Fatal("ERC-1271 authorization was accepted in the direct EOA batch")
 	}
 }
 
 func TestVerifyEOARequestAuthorizationsPreservesInputOrder(t *testing.T) {
 	params := defaultProtocolParams()
-	first := &MessageObserveAuthorization{SettlementDomainId: testSettlementDomainID(),
+	first := &Authorization{SettlementDomainId: testSettlementDomainID(),
 		Requester: bytes.Repeat([]byte{1}, 20), AuthorizationDeadline: 360,
 		AuthorizationSignature: make([]byte, 65),
 	}
 	first.AuthorizationSignature[64] = 9
-	second := &MessageObserveAuthorization{SettlementDomainId: testSettlementDomainID(), Requester: bytes.Repeat([]byte{2}, 20), AuthorizationDeadline: 360}
-	err := verifyEOARequestAuthorizations([]*MessageObserveAuthorization{first, second}, params)
+	second := &Authorization{SettlementDomainId: testSettlementDomainID(), Requester: bytes.Repeat([]byte{2}, 20), AuthorizationDeadline: 360}
+	err := verifyEOARequestAuthorizations([]*Authorization{first, second}, params)
 	if err == nil || err.Msg != "invalid EOA recovery identifier" {
 		t.Fatalf("first input error = %#v", err)
 	}

@@ -150,28 +150,30 @@ func (x *Transaction) GetNonce() uint64 {
 	return 0
 }
 
-type MessageRevokeEnclave struct {
-	state           protoimpl.MessageState `protogen:"open.v1"`
-	ObserverAddress []byte                 `protobuf:"bytes,1,opt,name=observer_address,json=observerAddress,proto3" json:"observer_address,omitempty"`
-	TeeKeyId        string                 `protobuf:"bytes,2,opt,name=tee_key_id,json=teeKeyId,proto3" json:"tee_key_id,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+// EnclaveRevocation is an emergency control candidate approved through
+// validator vote extensions. It is not a fee-paying transaction.
+type EnclaveRevocation struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	TeeKeyId      string                 `protobuf:"bytes,1,opt,name=tee_key_id,json=teeKeyId,proto3" json:"tee_key_id,omitempty"`
+	IncidentId    []byte                 `protobuf:"bytes,2,opt,name=incident_id,json=incidentId,proto3" json:"incident_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
-func (x *MessageRevokeEnclave) Reset() {
-	*x = MessageRevokeEnclave{}
+func (x *EnclaveRevocation) Reset() {
+	*x = EnclaveRevocation{}
 	mi := &file_tx_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *MessageRevokeEnclave) String() string {
+func (x *EnclaveRevocation) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*MessageRevokeEnclave) ProtoMessage() {}
+func (*EnclaveRevocation) ProtoMessage() {}
 
-func (x *MessageRevokeEnclave) ProtoReflect() protoreflect.Message {
+func (x *EnclaveRevocation) ProtoReflect() protoreflect.Message {
 	mi := &file_tx_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -183,25 +185,26 @@ func (x *MessageRevokeEnclave) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use MessageRevokeEnclave.ProtoReflect.Descriptor instead.
-func (*MessageRevokeEnclave) Descriptor() ([]byte, []int) {
+// Deprecated: Use EnclaveRevocation.ProtoReflect.Descriptor instead.
+func (*EnclaveRevocation) Descriptor() ([]byte, []int) {
 	return file_tx_proto_rawDescGZIP(), []int{1}
 }
 
-func (x *MessageRevokeEnclave) GetObserverAddress() []byte {
-	if x != nil {
-		return x.ObserverAddress
-	}
-	return nil
-}
-
-func (x *MessageRevokeEnclave) GetTeeKeyId() string {
+func (x *EnclaveRevocation) GetTeeKeyId() string {
 	if x != nil {
 		return x.TeeKeyId
 	}
 	return ""
 }
 
+func (x *EnclaveRevocation) GetIncidentId() []byte {
+	if x != nil {
+		return x.IncidentId
+	}
+	return nil
+}
+
+// MessageRegisterServicer is the single initial-registration operation.
 type MessageRegisterServicer struct {
 	state               protoimpl.MessageState `protogen:"open.v1"`
 	OwnerAddress        []byte                 `protobuf:"bytes,1,opt,name=owner_address,json=ownerAddress,proto3" json:"owner_address,omitempty"`
@@ -318,32 +321,29 @@ func (x *MessageRegisterServicer) GetAttestationDocument() []byte {
 	return nil
 }
 
-type MessageUpdateServicer struct {
+type ServicerConfigurationUpdate struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
-	OwnerAddress     []byte                 `protobuf:"bytes,1,opt,name=owner_address,json=ownerAddress,proto3" json:"owner_address,omitempty"`
-	EvmPayoutAddress []byte                 `protobuf:"bytes,2,opt,name=evm_payout_address,json=evmPayoutAddress,proto3" json:"evm_payout_address,omitempty"`
-	TeeKeyId         string                 `protobuf:"bytes,3,opt,name=tee_key_id,json=teeKeyId,proto3" json:"tee_key_id,omitempty"`
-	Models           []string               `protobuf:"bytes,4,rep,name=models,proto3" json:"models,omitempty"`
-	AdditionalBond   uint64                 `protobuf:"varint,5,opt,name=additional_bond,json=additionalBond,proto3" json:"additional_bond,omitempty"`
-	Active           bool                   `protobuf:"varint,6,opt,name=active,proto3" json:"active,omitempty"`
+	EvmPayoutAddress []byte                 `protobuf:"bytes,1,opt,name=evm_payout_address,json=evmPayoutAddress,proto3" json:"evm_payout_address,omitempty"`
+	Models           []string               `protobuf:"bytes,2,rep,name=models,proto3" json:"models,omitempty"`
+	Active           bool                   `protobuf:"varint,3,opt,name=active,proto3" json:"active,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
 
-func (x *MessageUpdateServicer) Reset() {
-	*x = MessageUpdateServicer{}
+func (x *ServicerConfigurationUpdate) Reset() {
+	*x = ServicerConfigurationUpdate{}
 	mi := &file_tx_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *MessageUpdateServicer) String() string {
+func (x *ServicerConfigurationUpdate) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*MessageUpdateServicer) ProtoMessage() {}
+func (*ServicerConfigurationUpdate) ProtoMessage() {}
 
-func (x *MessageUpdateServicer) ProtoReflect() protoreflect.Message {
+func (x *ServicerConfigurationUpdate) ProtoReflect() protoreflect.Message {
 	mi := &file_tx_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -355,51 +355,247 @@ func (x *MessageUpdateServicer) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use MessageUpdateServicer.ProtoReflect.Descriptor instead.
-func (*MessageUpdateServicer) Descriptor() ([]byte, []int) {
+// Deprecated: Use ServicerConfigurationUpdate.ProtoReflect.Descriptor instead.
+func (*ServicerConfigurationUpdate) Descriptor() ([]byte, []int) {
 	return file_tx_proto_rawDescGZIP(), []int{3}
 }
 
-func (x *MessageUpdateServicer) GetOwnerAddress() []byte {
-	if x != nil {
-		return x.OwnerAddress
-	}
-	return nil
-}
-
-func (x *MessageUpdateServicer) GetEvmPayoutAddress() []byte {
+func (x *ServicerConfigurationUpdate) GetEvmPayoutAddress() []byte {
 	if x != nil {
 		return x.EvmPayoutAddress
 	}
 	return nil
 }
 
-func (x *MessageUpdateServicer) GetTeeKeyId() string {
-	if x != nil {
-		return x.TeeKeyId
-	}
-	return ""
-}
-
-func (x *MessageUpdateServicer) GetModels() []string {
+func (x *ServicerConfigurationUpdate) GetModels() []string {
 	if x != nil {
 		return x.Models
 	}
 	return nil
 }
 
-func (x *MessageUpdateServicer) GetAdditionalBond() uint64 {
-	if x != nil {
-		return x.AdditionalBond
-	}
-	return 0
-}
-
-func (x *MessageUpdateServicer) GetActive() bool {
+func (x *ServicerConfigurationUpdate) GetActive() bool {
 	if x != nil {
 		return x.Active
 	}
 	return false
+}
+
+type ServicerBondUpdate struct {
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	TargetBond uint64                 `protobuf:"varint,1,opt,name=target_bond,json=targetBond,proto3" json:"target_bond,omitempty"`
+	// max_debit bounds the amount that may be removed from the owner's liquid
+	// account if the target is above the current bond.
+	MaxDebit      uint64 `protobuf:"varint,2,opt,name=max_debit,json=maxDebit,proto3" json:"max_debit,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ServicerBondUpdate) Reset() {
+	*x = ServicerBondUpdate{}
+	mi := &file_tx_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ServicerBondUpdate) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ServicerBondUpdate) ProtoMessage() {}
+
+func (x *ServicerBondUpdate) ProtoReflect() protoreflect.Message {
+	mi := &file_tx_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ServicerBondUpdate.ProtoReflect.Descriptor instead.
+func (*ServicerBondUpdate) Descriptor() ([]byte, []int) {
+	return file_tx_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *ServicerBondUpdate) GetTargetBond() uint64 {
+	if x != nil {
+		return x.TargetBond
+	}
+	return 0
+}
+
+func (x *ServicerBondUpdate) GetMaxDebit() uint64 {
+	if x != nil {
+		return x.MaxDebit
+	}
+	return 0
+}
+
+type EnclaveRotation struct {
+	state               protoimpl.MessageState `protogen:"open.v1"`
+	TeeKeyId            string                 `protobuf:"bytes,1,opt,name=tee_key_id,json=teeKeyId,proto3" json:"tee_key_id,omitempty"`
+	PublicKey           []byte                 `protobuf:"bytes,2,opt,name=public_key,json=publicKey,proto3" json:"public_key,omitempty"`
+	Nonce               []byte                 `protobuf:"bytes,3,opt,name=nonce,proto3" json:"nonce,omitempty"`
+	UserData            []byte                 `protobuf:"bytes,4,opt,name=user_data,json=userData,proto3" json:"user_data,omitempty"`
+	ProofSignature      []byte                 `protobuf:"bytes,5,opt,name=proof_signature,json=proofSignature,proto3" json:"proof_signature,omitempty"`
+	AttestationDocument []byte                 `protobuf:"bytes,6,opt,name=attestation_document,json=attestationDocument,proto3" json:"attestation_document,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
+}
+
+func (x *EnclaveRotation) Reset() {
+	*x = EnclaveRotation{}
+	mi := &file_tx_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *EnclaveRotation) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*EnclaveRotation) ProtoMessage() {}
+
+func (x *EnclaveRotation) ProtoReflect() protoreflect.Message {
+	mi := &file_tx_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use EnclaveRotation.ProtoReflect.Descriptor instead.
+func (*EnclaveRotation) Descriptor() ([]byte, []int) {
+	return file_tx_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *EnclaveRotation) GetTeeKeyId() string {
+	if x != nil {
+		return x.TeeKeyId
+	}
+	return ""
+}
+
+func (x *EnclaveRotation) GetPublicKey() []byte {
+	if x != nil {
+		return x.PublicKey
+	}
+	return nil
+}
+
+func (x *EnclaveRotation) GetNonce() []byte {
+	if x != nil {
+		return x.Nonce
+	}
+	return nil
+}
+
+func (x *EnclaveRotation) GetUserData() []byte {
+	if x != nil {
+		return x.UserData
+	}
+	return nil
+}
+
+func (x *EnclaveRotation) GetProofSignature() []byte {
+	if x != nil {
+		return x.ProofSignature
+	}
+	return nil
+}
+
+func (x *EnclaveRotation) GetAttestationDocument() []byte {
+	if x != nil {
+		return x.AttestationDocument
+	}
+	return nil
+}
+
+// MessageManageServicer is a sparse post-registration update. Any combination
+// of configuration, bond, and rotation may be applied atomically without
+// retransmitting unchanged state. expected_revision rejects stale updates.
+type MessageManageServicer struct {
+	state            protoimpl.MessageState       `protogen:"open.v1"`
+	OwnerAddress     []byte                       `protobuf:"bytes,1,opt,name=owner_address,json=ownerAddress,proto3" json:"owner_address,omitempty"`
+	ExpectedRevision uint64                       `protobuf:"varint,2,opt,name=expected_revision,json=expectedRevision,proto3" json:"expected_revision,omitempty"`
+	Configuration    *ServicerConfigurationUpdate `protobuf:"bytes,3,opt,name=configuration,proto3" json:"configuration,omitempty"`
+	Bond             *ServicerBondUpdate          `protobuf:"bytes,4,opt,name=bond,proto3" json:"bond,omitempty"`
+	Rotation         *EnclaveRotation             `protobuf:"bytes,5,opt,name=rotation,proto3" json:"rotation,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *MessageManageServicer) Reset() {
+	*x = MessageManageServicer{}
+	mi := &file_tx_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MessageManageServicer) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MessageManageServicer) ProtoMessage() {}
+
+func (x *MessageManageServicer) ProtoReflect() protoreflect.Message {
+	mi := &file_tx_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MessageManageServicer.ProtoReflect.Descriptor instead.
+func (*MessageManageServicer) Descriptor() ([]byte, []int) {
+	return file_tx_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *MessageManageServicer) GetOwnerAddress() []byte {
+	if x != nil {
+		return x.OwnerAddress
+	}
+	return nil
+}
+
+func (x *MessageManageServicer) GetExpectedRevision() uint64 {
+	if x != nil {
+		return x.ExpectedRevision
+	}
+	return 0
+}
+
+func (x *MessageManageServicer) GetConfiguration() *ServicerConfigurationUpdate {
+	if x != nil {
+		return x.Configuration
+	}
+	return nil
+}
+
+func (x *MessageManageServicer) GetBond() *ServicerBondUpdate {
+	if x != nil {
+		return x.Bond
+	}
+	return nil
+}
+
+func (x *MessageManageServicer) GetRotation() *EnclaveRotation {
+	if x != nil {
+		return x.Rotation
+	}
+	return nil
 }
 
 type MessageObserveDeposit struct {
@@ -419,7 +615,7 @@ type MessageObserveDeposit struct {
 
 func (x *MessageObserveDeposit) Reset() {
 	*x = MessageObserveDeposit{}
-	mi := &file_tx_proto_msgTypes[4]
+	mi := &file_tx_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -431,7 +627,7 @@ func (x *MessageObserveDeposit) String() string {
 func (*MessageObserveDeposit) ProtoMessage() {}
 
 func (x *MessageObserveDeposit) ProtoReflect() protoreflect.Message {
-	mi := &file_tx_proto_msgTypes[4]
+	mi := &file_tx_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -444,7 +640,7 @@ func (x *MessageObserveDeposit) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MessageObserveDeposit.ProtoReflect.Descriptor instead.
 func (*MessageObserveDeposit) Descriptor() ([]byte, []int) {
-	return file_tx_proto_rawDescGZIP(), []int{4}
+	return file_tx_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *MessageObserveDeposit) GetObserverAddress() []byte {
@@ -510,7 +706,7 @@ type MessageResolveDeposit struct {
 
 func (x *MessageResolveDeposit) Reset() {
 	*x = MessageResolveDeposit{}
-	mi := &file_tx_proto_msgTypes[5]
+	mi := &file_tx_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -522,7 +718,7 @@ func (x *MessageResolveDeposit) String() string {
 func (*MessageResolveDeposit) ProtoMessage() {}
 
 func (x *MessageResolveDeposit) ProtoReflect() protoreflect.Message {
-	mi := &file_tx_proto_msgTypes[5]
+	mi := &file_tx_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -535,7 +731,7 @@ func (x *MessageResolveDeposit) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MessageResolveDeposit.ProtoReflect.Descriptor instead.
 func (*MessageResolveDeposit) Descriptor() ([]byte, []int) {
-	return file_tx_proto_rawDescGZIP(), []int{5}
+	return file_tx_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *MessageResolveDeposit) GetObserverAddress() []byte {
@@ -582,7 +778,7 @@ type MessageResolveSettlement struct {
 
 func (x *MessageResolveSettlement) Reset() {
 	*x = MessageResolveSettlement{}
-	mi := &file_tx_proto_msgTypes[6]
+	mi := &file_tx_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -594,7 +790,7 @@ func (x *MessageResolveSettlement) String() string {
 func (*MessageResolveSettlement) ProtoMessage() {}
 
 func (x *MessageResolveSettlement) ProtoReflect() protoreflect.Message {
-	mi := &file_tx_proto_msgTypes[6]
+	mi := &file_tx_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -607,7 +803,7 @@ func (x *MessageResolveSettlement) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MessageResolveSettlement.ProtoReflect.Descriptor instead.
 func (*MessageResolveSettlement) Descriptor() ([]byte, []int) {
-	return file_tx_proto_rawDescGZIP(), []int{6}
+	return file_tx_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *MessageResolveSettlement) GetObserverAddress() []byte {
@@ -652,55 +848,54 @@ func (x *MessageResolveSettlement) GetFinalizesRequest() bool {
 	return false
 }
 
-type MessageObserveAuthorization struct {
-	state           protoimpl.MessageState `protogen:"open.v1"`
-	ObserverAddress []byte                 `protobuf:"bytes,1,opt,name=observer_address,json=observerAddress,proto3" json:"observer_address,omitempty"`
-	RequestId       string                 `protobuf:"bytes,2,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
-	InputHash       []byte                 `protobuf:"bytes,3,opt,name=input_hash,json=inputHash,proto3" json:"input_hash,omitempty"`
-	Requester       []byte                 `protobuf:"bytes,4,opt,name=requester,proto3" json:"requester,omitempty"`
-	ReservedBudget  uint64                 `protobuf:"varint,5,opt,name=reserved_budget,json=reservedBudget,proto3" json:"reserved_budget,omitempty"`
-	OutputType      string                 `protobuf:"bytes,6,opt,name=output_type,json=outputType,proto3" json:"output_type,omitempty"`
-	Models          []string               `protobuf:"bytes,7,rep,name=models,proto3" json:"models,omitempty"`
+type Authorization struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	RequestId      string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	InputHash      []byte                 `protobuf:"bytes,2,opt,name=input_hash,json=inputHash,proto3" json:"input_hash,omitempty"`
+	Requester      []byte                 `protobuf:"bytes,3,opt,name=requester,proto3" json:"requester,omitempty"`
+	ReservedBudget uint64                 `protobuf:"varint,4,opt,name=reserved_budget,json=reservedBudget,proto3" json:"reserved_budget,omitempty"`
+	OutputType     string                 `protobuf:"bytes,5,opt,name=output_type,json=outputType,proto3" json:"output_type,omitempty"`
+	Models         []string               `protobuf:"bytes,6,rep,name=models,proto3" json:"models,omitempty"`
 	// Display-only agreement observation threshold.
-	ExecutionQuorum        uint32 `protobuf:"varint,8,opt,name=execution_quorum,json=executionQuorum,proto3" json:"execution_quorum,omitempty"`
-	DeadlineHeight         uint64 `protobuf:"varint,10,opt,name=deadline_height,json=deadlineHeight,proto3" json:"deadline_height,omitempty"`
-	AuthorizationSignature []byte `protobuf:"bytes,11,opt,name=authorization_signature,json=authorizationSignature,proto3" json:"authorization_signature,omitempty"`
-	AuthorizationDeadline  uint64 `protobuf:"varint,12,opt,name=authorization_deadline,json=authorizationDeadline,proto3" json:"authorization_deadline,omitempty"`
+	ExecutionQuorum        uint32 `protobuf:"varint,7,opt,name=execution_quorum,json=executionQuorum,proto3" json:"execution_quorum,omitempty"`
+	DeadlineHeight         uint64 `protobuf:"varint,8,opt,name=deadline_height,json=deadlineHeight,proto3" json:"deadline_height,omitempty"`
+	AuthorizationSignature []byte `protobuf:"bytes,9,opt,name=authorization_signature,json=authorizationSignature,proto3" json:"authorization_signature,omitempty"`
+	AuthorizationDeadline  uint64 `protobuf:"varint,10,opt,name=authorization_deadline,json=authorizationDeadline,proto3" json:"authorization_deadline,omitempty"`
 	// direct_eoa lets the native state machine verify an ordinary EOA's EIP-712
 	// signature itself. Contract-wallet signatures retain validator observation.
-	DirectEoa bool `protobuf:"varint,13,opt,name=direct_eoa,json=directEoa,proto3" json:"direct_eoa,omitempty"`
+	DirectEoa bool `protobuf:"varint,11,opt,name=direct_eoa,json=directEoa,proto3" json:"direct_eoa,omitempty"`
 	// Content address of the replicated full request input. Admission is
 	// fail-closed unless this artifact was published first.
-	RequestArchiveId string `protobuf:"bytes,14,opt,name=request_archive_id,json=requestArchiveId,proto3" json:"request_archive_id,omitempty"`
+	RequestArchiveId string `protobuf:"bytes,12,opt,name=request_archive_id,json=requestArchiveId,proto3" json:"request_archive_id,omitempty"`
 	// ERC-1271 authorization is evaluated at this settlement chain's canonical
 	// safe header.
 	// EOA authorization is state-independent and leaves both fields empty.
-	AuthorizationChainBlockNumber uint64   `protobuf:"varint,15,opt,name=authorization_chain_block_number,json=authorizationChainBlockNumber,proto3" json:"authorization_chain_block_number,omitempty"`
-	AuthorizationChainBlockHash   []byte   `protobuf:"bytes,16,opt,name=authorization_chain_block_hash,json=authorizationChainBlockHash,proto3" json:"authorization_chain_block_hash,omitempty"`
-	SettlementDomainId            []byte   `protobuf:"bytes,17,opt,name=settlement_domain_id,json=settlementDomainId,proto3" json:"settlement_domain_id,omitempty"`
-	OutputMinimum                 int64    `protobuf:"varint,18,opt,name=output_minimum,json=outputMinimum,proto3" json:"output_minimum,omitempty"`
-	OutputMaximum                 int64    `protobuf:"varint,19,opt,name=output_maximum,json=outputMaximum,proto3" json:"output_maximum,omitempty"`
-	OutputChoices                 []string `protobuf:"bytes,20,rep,name=output_choices,json=outputChoices,proto3" json:"output_choices,omitempty"`
-	SchemaHash                    []byte   `protobuf:"bytes,21,opt,name=schema_hash,json=schemaHash,proto3" json:"schema_hash,omitempty"`
+	AuthorizationChainBlockNumber uint64   `protobuf:"varint,13,opt,name=authorization_chain_block_number,json=authorizationChainBlockNumber,proto3" json:"authorization_chain_block_number,omitempty"`
+	AuthorizationChainBlockHash   []byte   `protobuf:"bytes,14,opt,name=authorization_chain_block_hash,json=authorizationChainBlockHash,proto3" json:"authorization_chain_block_hash,omitempty"`
+	SettlementDomainId            []byte   `protobuf:"bytes,15,opt,name=settlement_domain_id,json=settlementDomainId,proto3" json:"settlement_domain_id,omitempty"`
+	OutputMinimum                 int64    `protobuf:"varint,16,opt,name=output_minimum,json=outputMinimum,proto3" json:"output_minimum,omitempty"`
+	OutputMaximum                 int64    `protobuf:"varint,17,opt,name=output_maximum,json=outputMaximum,proto3" json:"output_maximum,omitempty"`
+	OutputChoices                 []string `protobuf:"bytes,18,rep,name=output_choices,json=outputChoices,proto3" json:"output_choices,omitempty"`
+	SchemaHash                    []byte   `protobuf:"bytes,19,opt,name=schema_hash,json=schemaHash,proto3" json:"schema_hash,omitempty"`
 	unknownFields                 protoimpl.UnknownFields
 	sizeCache                     protoimpl.SizeCache
 }
 
-func (x *MessageObserveAuthorization) Reset() {
-	*x = MessageObserveAuthorization{}
-	mi := &file_tx_proto_msgTypes[7]
+func (x *Authorization) Reset() {
+	*x = Authorization{}
+	mi := &file_tx_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *MessageObserveAuthorization) String() string {
+func (x *Authorization) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*MessageObserveAuthorization) ProtoMessage() {}
+func (*Authorization) ProtoMessage() {}
 
-func (x *MessageObserveAuthorization) ProtoReflect() protoreflect.Message {
-	mi := &file_tx_proto_msgTypes[7]
+func (x *Authorization) ProtoReflect() protoreflect.Message {
+	mi := &file_tx_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -711,145 +906,138 @@ func (x *MessageObserveAuthorization) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use MessageObserveAuthorization.ProtoReflect.Descriptor instead.
-func (*MessageObserveAuthorization) Descriptor() ([]byte, []int) {
-	return file_tx_proto_rawDescGZIP(), []int{7}
+// Deprecated: Use Authorization.ProtoReflect.Descriptor instead.
+func (*Authorization) Descriptor() ([]byte, []int) {
+	return file_tx_proto_rawDescGZIP(), []int{10}
 }
 
-func (x *MessageObserveAuthorization) GetObserverAddress() []byte {
-	if x != nil {
-		return x.ObserverAddress
-	}
-	return nil
-}
-
-func (x *MessageObserveAuthorization) GetRequestId() string {
+func (x *Authorization) GetRequestId() string {
 	if x != nil {
 		return x.RequestId
 	}
 	return ""
 }
 
-func (x *MessageObserveAuthorization) GetInputHash() []byte {
+func (x *Authorization) GetInputHash() []byte {
 	if x != nil {
 		return x.InputHash
 	}
 	return nil
 }
 
-func (x *MessageObserveAuthorization) GetRequester() []byte {
+func (x *Authorization) GetRequester() []byte {
 	if x != nil {
 		return x.Requester
 	}
 	return nil
 }
 
-func (x *MessageObserveAuthorization) GetReservedBudget() uint64 {
+func (x *Authorization) GetReservedBudget() uint64 {
 	if x != nil {
 		return x.ReservedBudget
 	}
 	return 0
 }
 
-func (x *MessageObserveAuthorization) GetOutputType() string {
+func (x *Authorization) GetOutputType() string {
 	if x != nil {
 		return x.OutputType
 	}
 	return ""
 }
 
-func (x *MessageObserveAuthorization) GetModels() []string {
+func (x *Authorization) GetModels() []string {
 	if x != nil {
 		return x.Models
 	}
 	return nil
 }
 
-func (x *MessageObserveAuthorization) GetExecutionQuorum() uint32 {
+func (x *Authorization) GetExecutionQuorum() uint32 {
 	if x != nil {
 		return x.ExecutionQuorum
 	}
 	return 0
 }
 
-func (x *MessageObserveAuthorization) GetDeadlineHeight() uint64 {
+func (x *Authorization) GetDeadlineHeight() uint64 {
 	if x != nil {
 		return x.DeadlineHeight
 	}
 	return 0
 }
 
-func (x *MessageObserveAuthorization) GetAuthorizationSignature() []byte {
+func (x *Authorization) GetAuthorizationSignature() []byte {
 	if x != nil {
 		return x.AuthorizationSignature
 	}
 	return nil
 }
 
-func (x *MessageObserveAuthorization) GetAuthorizationDeadline() uint64 {
+func (x *Authorization) GetAuthorizationDeadline() uint64 {
 	if x != nil {
 		return x.AuthorizationDeadline
 	}
 	return 0
 }
 
-func (x *MessageObserveAuthorization) GetDirectEoa() bool {
+func (x *Authorization) GetDirectEoa() bool {
 	if x != nil {
 		return x.DirectEoa
 	}
 	return false
 }
 
-func (x *MessageObserveAuthorization) GetRequestArchiveId() string {
+func (x *Authorization) GetRequestArchiveId() string {
 	if x != nil {
 		return x.RequestArchiveId
 	}
 	return ""
 }
 
-func (x *MessageObserveAuthorization) GetAuthorizationChainBlockNumber() uint64 {
+func (x *Authorization) GetAuthorizationChainBlockNumber() uint64 {
 	if x != nil {
 		return x.AuthorizationChainBlockNumber
 	}
 	return 0
 }
 
-func (x *MessageObserveAuthorization) GetAuthorizationChainBlockHash() []byte {
+func (x *Authorization) GetAuthorizationChainBlockHash() []byte {
 	if x != nil {
 		return x.AuthorizationChainBlockHash
 	}
 	return nil
 }
 
-func (x *MessageObserveAuthorization) GetSettlementDomainId() []byte {
+func (x *Authorization) GetSettlementDomainId() []byte {
 	if x != nil {
 		return x.SettlementDomainId
 	}
 	return nil
 }
 
-func (x *MessageObserveAuthorization) GetOutputMinimum() int64 {
+func (x *Authorization) GetOutputMinimum() int64 {
 	if x != nil {
 		return x.OutputMinimum
 	}
 	return 0
 }
 
-func (x *MessageObserveAuthorization) GetOutputMaximum() int64 {
+func (x *Authorization) GetOutputMaximum() int64 {
 	if x != nil {
 		return x.OutputMaximum
 	}
 	return 0
 }
 
-func (x *MessageObserveAuthorization) GetOutputChoices() []string {
+func (x *Authorization) GetOutputChoices() []string {
 	if x != nil {
 		return x.OutputChoices
 	}
 	return nil
 }
 
-func (x *MessageObserveAuthorization) GetSchemaHash() []byte {
+func (x *Authorization) GetSchemaHash() []byte {
 	if x != nil {
 		return x.SchemaHash
 	}
@@ -857,19 +1045,19 @@ func (x *MessageObserveAuthorization) GetSchemaHash() []byte {
 }
 
 // MessageObserveAuthorizations admits a short cohort of independently signed
-// requester authorizations in one Canopy transaction. Every item retains the
-// same native EIP-712 validation as the single-request path.
+// requester authorizations in one Canopy transaction. Every item receives the
+// same native EIP-712 validation, including a one-item cohort.
 type MessageObserveAuthorizations struct {
-	state           protoimpl.MessageState         `protogen:"open.v1"`
-	ObserverAddress []byte                         `protobuf:"bytes,1,opt,name=observer_address,json=observerAddress,proto3" json:"observer_address,omitempty"`
-	Authorizations  []*MessageObserveAuthorization `protobuf:"bytes,2,rep,name=authorizations,proto3" json:"authorizations,omitempty"`
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	ObserverAddress []byte                 `protobuf:"bytes,1,opt,name=observer_address,json=observerAddress,proto3" json:"observer_address,omitempty"`
+	Authorizations  []*Authorization       `protobuf:"bytes,2,rep,name=authorizations,proto3" json:"authorizations,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
 
 func (x *MessageObserveAuthorizations) Reset() {
 	*x = MessageObserveAuthorizations{}
-	mi := &file_tx_proto_msgTypes[8]
+	mi := &file_tx_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -881,7 +1069,7 @@ func (x *MessageObserveAuthorizations) String() string {
 func (*MessageObserveAuthorizations) ProtoMessage() {}
 
 func (x *MessageObserveAuthorizations) ProtoReflect() protoreflect.Message {
-	mi := &file_tx_proto_msgTypes[8]
+	mi := &file_tx_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -894,7 +1082,7 @@ func (x *MessageObserveAuthorizations) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MessageObserveAuthorizations.ProtoReflect.Descriptor instead.
 func (*MessageObserveAuthorizations) Descriptor() ([]byte, []int) {
-	return file_tx_proto_rawDescGZIP(), []int{8}
+	return file_tx_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *MessageObserveAuthorizations) GetObserverAddress() []byte {
@@ -904,7 +1092,7 @@ func (x *MessageObserveAuthorizations) GetObserverAddress() []byte {
 	return nil
 }
 
-func (x *MessageObserveAuthorizations) GetAuthorizations() []*MessageObserveAuthorization {
+func (x *MessageObserveAuthorizations) GetAuthorizations() []*Authorization {
 	if x != nil {
 		return x.Authorizations
 	}
@@ -917,16 +1105,16 @@ func (x *MessageObserveAuthorizations) GetAuthorizations() []*MessageObserveAuth
 // contract wallet at the pinned finalized block and certify it through
 // consensus vote extensions.
 type MessageQueueAuthorization struct {
-	state          protoimpl.MessageState       `protogen:"open.v1"`
-	RelayerAddress []byte                       `protobuf:"bytes,1,opt,name=relayer_address,json=relayerAddress,proto3" json:"relayer_address,omitempty"`
-	Authorization  *MessageObserveAuthorization `protobuf:"bytes,2,opt,name=authorization,proto3" json:"authorization,omitempty"`
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	RelayerAddress []byte                 `protobuf:"bytes,1,opt,name=relayer_address,json=relayerAddress,proto3" json:"relayer_address,omitempty"`
+	Authorization  *Authorization         `protobuf:"bytes,2,opt,name=authorization,proto3" json:"authorization,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
 
 func (x *MessageQueueAuthorization) Reset() {
 	*x = MessageQueueAuthorization{}
-	mi := &file_tx_proto_msgTypes[9]
+	mi := &file_tx_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -938,7 +1126,7 @@ func (x *MessageQueueAuthorization) String() string {
 func (*MessageQueueAuthorization) ProtoMessage() {}
 
 func (x *MessageQueueAuthorization) ProtoReflect() protoreflect.Message {
-	mi := &file_tx_proto_msgTypes[9]
+	mi := &file_tx_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -951,7 +1139,7 @@ func (x *MessageQueueAuthorization) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MessageQueueAuthorization.ProtoReflect.Descriptor instead.
 func (*MessageQueueAuthorization) Descriptor() ([]byte, []int) {
-	return file_tx_proto_rawDescGZIP(), []int{9}
+	return file_tx_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *MessageQueueAuthorization) GetRelayerAddress() []byte {
@@ -961,39 +1149,36 @@ func (x *MessageQueueAuthorization) GetRelayerAddress() []byte {
 	return nil
 }
 
-func (x *MessageQueueAuthorization) GetAuthorization() *MessageObserveAuthorization {
+func (x *MessageQueueAuthorization) GetAuthorization() *Authorization {
 	if x != nil {
 		return x.Authorization
 	}
 	return nil
 }
 
-type MessageSubmitExecution struct {
-	state           protoimpl.MessageState `protogen:"open.v1"`
-	ServicerAddress []byte                 `protobuf:"bytes,1,opt,name=servicer_address,json=servicerAddress,proto3" json:"servicer_address,omitempty"`
-	ReceiptJson     []byte                 `protobuf:"bytes,2,opt,name=receipt_json,json=receiptJson,proto3" json:"receipt_json,omitempty"`
-	PublicKey       []byte                 `protobuf:"bytes,3,opt,name=public_key,json=publicKey,proto3" json:"public_key,omitempty"`
-	Signature       []byte                 `protobuf:"bytes,4,opt,name=signature,proto3" json:"signature,omitempty"`
-	ArchiveId       string                 `protobuf:"bytes,5,opt,name=archive_id,json=archiveId,proto3" json:"archive_id,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+type ExecutionSubmission struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ReceiptJson   []byte                 `protobuf:"bytes,1,opt,name=receipt_json,json=receiptJson,proto3" json:"receipt_json,omitempty"`
+	Signature     []byte                 `protobuf:"bytes,2,opt,name=signature,proto3" json:"signature,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
-func (x *MessageSubmitExecution) Reset() {
-	*x = MessageSubmitExecution{}
-	mi := &file_tx_proto_msgTypes[10]
+func (x *ExecutionSubmission) Reset() {
+	*x = ExecutionSubmission{}
+	mi := &file_tx_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *MessageSubmitExecution) String() string {
+func (x *ExecutionSubmission) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*MessageSubmitExecution) ProtoMessage() {}
+func (*ExecutionSubmission) ProtoMessage() {}
 
-func (x *MessageSubmitExecution) ProtoReflect() protoreflect.Message {
-	mi := &file_tx_proto_msgTypes[10]
+func (x *ExecutionSubmission) ProtoReflect() protoreflect.Message {
+	mi := &file_tx_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1004,61 +1189,39 @@ func (x *MessageSubmitExecution) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use MessageSubmitExecution.ProtoReflect.Descriptor instead.
-func (*MessageSubmitExecution) Descriptor() ([]byte, []int) {
-	return file_tx_proto_rawDescGZIP(), []int{10}
+// Deprecated: Use ExecutionSubmission.ProtoReflect.Descriptor instead.
+func (*ExecutionSubmission) Descriptor() ([]byte, []int) {
+	return file_tx_proto_rawDescGZIP(), []int{13}
 }
 
-func (x *MessageSubmitExecution) GetServicerAddress() []byte {
-	if x != nil {
-		return x.ServicerAddress
-	}
-	return nil
-}
-
-func (x *MessageSubmitExecution) GetReceiptJson() []byte {
+func (x *ExecutionSubmission) GetReceiptJson() []byte {
 	if x != nil {
 		return x.ReceiptJson
 	}
 	return nil
 }
 
-func (x *MessageSubmitExecution) GetPublicKey() []byte {
-	if x != nil {
-		return x.PublicKey
-	}
-	return nil
-}
-
-func (x *MessageSubmitExecution) GetSignature() []byte {
+func (x *ExecutionSubmission) GetSignature() []byte {
 	if x != nil {
 		return x.Signature
 	}
 	return nil
 }
 
-func (x *MessageSubmitExecution) GetArchiveId() string {
-	if x != nil {
-		return x.ArchiveId
-	}
-	return ""
-}
-
 type MessageSubmitExecutions struct {
-	state           protoimpl.MessageState    `protogen:"open.v1"`
-	ServicerAddress []byte                    `protobuf:"bytes,1,opt,name=servicer_address,json=servicerAddress,proto3" json:"servicer_address,omitempty"`
-	Executions      []*MessageSubmitExecution `protobuf:"bytes,2,rep,name=executions,proto3" json:"executions,omitempty"`
-	PublicKey       []byte                    `protobuf:"bytes,3,opt,name=public_key,json=publicKey,proto3" json:"public_key,omitempty"`
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	ServicerAddress []byte                 `protobuf:"bytes,1,opt,name=servicer_address,json=servicerAddress,proto3" json:"servicer_address,omitempty"`
+	Executions      []*ExecutionSubmission `protobuf:"bytes,2,rep,name=executions,proto3" json:"executions,omitempty"`
 	// Gzip-compressed protobuf MessageSubmitExecutions containing only the
 	// executions field. The outer signer identity remains uncompressed.
-	CompressedExecutions []byte `protobuf:"bytes,4,opt,name=compressed_executions,json=compressedExecutions,proto3" json:"compressed_executions,omitempty"`
+	CompressedExecutions []byte `protobuf:"bytes,3,opt,name=compressed_executions,json=compressedExecutions,proto3" json:"compressed_executions,omitempty"`
 	unknownFields        protoimpl.UnknownFields
 	sizeCache            protoimpl.SizeCache
 }
 
 func (x *MessageSubmitExecutions) Reset() {
 	*x = MessageSubmitExecutions{}
-	mi := &file_tx_proto_msgTypes[11]
+	mi := &file_tx_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1070,7 +1233,7 @@ func (x *MessageSubmitExecutions) String() string {
 func (*MessageSubmitExecutions) ProtoMessage() {}
 
 func (x *MessageSubmitExecutions) ProtoReflect() protoreflect.Message {
-	mi := &file_tx_proto_msgTypes[11]
+	mi := &file_tx_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1083,7 +1246,7 @@ func (x *MessageSubmitExecutions) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MessageSubmitExecutions.ProtoReflect.Descriptor instead.
 func (*MessageSubmitExecutions) Descriptor() ([]byte, []int) {
-	return file_tx_proto_rawDescGZIP(), []int{11}
+	return file_tx_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *MessageSubmitExecutions) GetServicerAddress() []byte {
@@ -1093,16 +1256,9 @@ func (x *MessageSubmitExecutions) GetServicerAddress() []byte {
 	return nil
 }
 
-func (x *MessageSubmitExecutions) GetExecutions() []*MessageSubmitExecution {
+func (x *MessageSubmitExecutions) GetExecutions() []*ExecutionSubmission {
 	if x != nil {
 		return x.Executions
-	}
-	return nil
-}
-
-func (x *MessageSubmitExecutions) GetPublicKey() []byte {
-	if x != nil {
-		return x.PublicKey
 	}
 	return nil
 }
@@ -1114,32 +1270,34 @@ func (x *MessageSubmitExecutions) GetCompressedExecutions() []byte {
 	return nil
 }
 
-type MessageExpireAssignment struct {
+type RequestFinalization struct {
 	state              protoimpl.MessageState `protogen:"open.v1"`
-	RequestId          string                 `protobuf:"bytes,2,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
-	Model              string                 `protobuf:"bytes,3,opt,name=model,proto3" json:"model,omitempty"`
-	ExecutionId        string                 `protobuf:"bytes,4,opt,name=execution_id,json=executionId,proto3" json:"execution_id,omitempty"`
-	SettlementDomainId []byte                 `protobuf:"bytes,5,opt,name=settlement_domain_id,json=settlementDomainId,proto3" json:"settlement_domain_id,omitempty"`
-	DeadlineHeight     uint64                 `protobuf:"varint,6,opt,name=deadline_height,json=deadlineHeight,proto3" json:"deadline_height,omitempty"`
+	RequestId          string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	SettlementTxHash   []byte                 `protobuf:"bytes,2,opt,name=settlement_tx_hash,json=settlementTxHash,proto3" json:"settlement_tx_hash,omitempty"`
+	ReservedBudget     uint64                 `protobuf:"varint,3,opt,name=reserved_budget,json=reservedBudget,proto3" json:"reserved_budget,omitempty"`
+	ExecutionIds       []string               `protobuf:"bytes,4,rep,name=execution_ids,json=executionIds,proto3" json:"execution_ids,omitempty"`
+	FinalizesRequest   bool                   `protobuf:"varint,5,opt,name=finalizes_request,json=finalizesRequest,proto3" json:"finalizes_request,omitempty"`
+	RequestSpent       uint64                 `protobuf:"varint,6,opt,name=request_spent,json=requestSpent,proto3" json:"request_spent,omitempty"`
+	SettlementDomainId []byte                 `protobuf:"bytes,7,opt,name=settlement_domain_id,json=settlementDomainId,proto3" json:"settlement_domain_id,omitempty"`
 	unknownFields      protoimpl.UnknownFields
 	sizeCache          protoimpl.SizeCache
 }
 
-func (x *MessageExpireAssignment) Reset() {
-	*x = MessageExpireAssignment{}
-	mi := &file_tx_proto_msgTypes[12]
+func (x *RequestFinalization) Reset() {
+	*x = RequestFinalization{}
+	mi := &file_tx_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *MessageExpireAssignment) String() string {
+func (x *RequestFinalization) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*MessageExpireAssignment) ProtoMessage() {}
+func (*RequestFinalization) ProtoMessage() {}
 
-func (x *MessageExpireAssignment) ProtoReflect() protoreflect.Message {
-	mi := &file_tx_proto_msgTypes[12]
+func (x *RequestFinalization) ProtoReflect() protoreflect.Message {
+	mi := &file_tx_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1150,164 +1308,54 @@ func (x *MessageExpireAssignment) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use MessageExpireAssignment.ProtoReflect.Descriptor instead.
-func (*MessageExpireAssignment) Descriptor() ([]byte, []int) {
-	return file_tx_proto_rawDescGZIP(), []int{12}
+// Deprecated: Use RequestFinalization.ProtoReflect.Descriptor instead.
+func (*RequestFinalization) Descriptor() ([]byte, []int) {
+	return file_tx_proto_rawDescGZIP(), []int{15}
 }
 
-func (x *MessageExpireAssignment) GetRequestId() string {
+func (x *RequestFinalization) GetRequestId() string {
 	if x != nil {
 		return x.RequestId
 	}
 	return ""
 }
 
-func (x *MessageExpireAssignment) GetModel() string {
-	if x != nil {
-		return x.Model
-	}
-	return ""
-}
-
-func (x *MessageExpireAssignment) GetExecutionId() string {
-	if x != nil {
-		return x.ExecutionId
-	}
-	return ""
-}
-
-func (x *MessageExpireAssignment) GetSettlementDomainId() []byte {
-	if x != nil {
-		return x.SettlementDomainId
-	}
-	return nil
-}
-
-func (x *MessageExpireAssignment) GetDeadlineHeight() uint64 {
-	if x != nil {
-		return x.DeadlineHeight
-	}
-	return 0
-}
-
-type MessageFinalizeRequest struct {
-	state              protoimpl.MessageState `protogen:"open.v1"`
-	ObserverAddress    []byte                 `protobuf:"bytes,1,opt,name=observer_address,json=observerAddress,proto3" json:"observer_address,omitempty"`
-	RequestId          string                 `protobuf:"bytes,2,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
-	SettlementTxHash   []byte                 `protobuf:"bytes,3,opt,name=settlement_tx_hash,json=settlementTxHash,proto3" json:"settlement_tx_hash,omitempty"`
-	ReservedBudget     uint64                 `protobuf:"varint,5,opt,name=reserved_budget,json=reservedBudget,proto3" json:"reserved_budget,omitempty"`
-	ValidatorSetId     uint64                 `protobuf:"varint,6,opt,name=validator_set_id,json=validatorSetId,proto3" json:"validator_set_id,omitempty"`
-	SignerBitmap       []byte                 `protobuf:"bytes,7,opt,name=signer_bitmap,json=signerBitmap,proto3" json:"signer_bitmap,omitempty"`
-	AggregateSignature []byte                 `protobuf:"bytes,8,opt,name=aggregate_signature,json=aggregateSignature,proto3" json:"aggregate_signature,omitempty"`
-	ExecutionIds       []string               `protobuf:"bytes,9,rep,name=execution_ids,json=executionIds,proto3" json:"execution_ids,omitempty"`
-	FinalizesRequest   bool                   `protobuf:"varint,10,opt,name=finalizes_request,json=finalizesRequest,proto3" json:"finalizes_request,omitempty"`
-	RequestSpent       uint64                 `protobuf:"varint,11,opt,name=request_spent,json=requestSpent,proto3" json:"request_spent,omitempty"`
-	SettlementDomainId []byte                 `protobuf:"bytes,12,opt,name=settlement_domain_id,json=settlementDomainId,proto3" json:"settlement_domain_id,omitempty"`
-	unknownFields      protoimpl.UnknownFields
-	sizeCache          protoimpl.SizeCache
-}
-
-func (x *MessageFinalizeRequest) Reset() {
-	*x = MessageFinalizeRequest{}
-	mi := &file_tx_proto_msgTypes[13]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *MessageFinalizeRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*MessageFinalizeRequest) ProtoMessage() {}
-
-func (x *MessageFinalizeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_tx_proto_msgTypes[13]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use MessageFinalizeRequest.ProtoReflect.Descriptor instead.
-func (*MessageFinalizeRequest) Descriptor() ([]byte, []int) {
-	return file_tx_proto_rawDescGZIP(), []int{13}
-}
-
-func (x *MessageFinalizeRequest) GetObserverAddress() []byte {
-	if x != nil {
-		return x.ObserverAddress
-	}
-	return nil
-}
-
-func (x *MessageFinalizeRequest) GetRequestId() string {
-	if x != nil {
-		return x.RequestId
-	}
-	return ""
-}
-
-func (x *MessageFinalizeRequest) GetSettlementTxHash() []byte {
+func (x *RequestFinalization) GetSettlementTxHash() []byte {
 	if x != nil {
 		return x.SettlementTxHash
 	}
 	return nil
 }
 
-func (x *MessageFinalizeRequest) GetReservedBudget() uint64 {
+func (x *RequestFinalization) GetReservedBudget() uint64 {
 	if x != nil {
 		return x.ReservedBudget
 	}
 	return 0
 }
 
-func (x *MessageFinalizeRequest) GetValidatorSetId() uint64 {
-	if x != nil {
-		return x.ValidatorSetId
-	}
-	return 0
-}
-
-func (x *MessageFinalizeRequest) GetSignerBitmap() []byte {
-	if x != nil {
-		return x.SignerBitmap
-	}
-	return nil
-}
-
-func (x *MessageFinalizeRequest) GetAggregateSignature() []byte {
-	if x != nil {
-		return x.AggregateSignature
-	}
-	return nil
-}
-
-func (x *MessageFinalizeRequest) GetExecutionIds() []string {
+func (x *RequestFinalization) GetExecutionIds() []string {
 	if x != nil {
 		return x.ExecutionIds
 	}
 	return nil
 }
 
-func (x *MessageFinalizeRequest) GetFinalizesRequest() bool {
+func (x *RequestFinalization) GetFinalizesRequest() bool {
 	if x != nil {
 		return x.FinalizesRequest
 	}
 	return false
 }
 
-func (x *MessageFinalizeRequest) GetRequestSpent() uint64 {
+func (x *RequestFinalization) GetRequestSpent() uint64 {
 	if x != nil {
 		return x.RequestSpent
 	}
 	return 0
 }
 
-func (x *MessageFinalizeRequest) GetSettlementDomainId() []byte {
+func (x *RequestFinalization) GetSettlementDomainId() []byte {
 	if x != nil {
 		return x.SettlementDomainId
 	}
@@ -1315,19 +1363,19 @@ func (x *MessageFinalizeRequest) GetSettlementDomainId() []byte {
 }
 
 type MessageFinalizeRequests struct {
-	state              protoimpl.MessageState    `protogen:"open.v1"`
-	ObserverAddress    []byte                    `protobuf:"bytes,1,opt,name=observer_address,json=observerAddress,proto3" json:"observer_address,omitempty"`
-	Requests           []*MessageFinalizeRequest `protobuf:"bytes,2,rep,name=requests,proto3" json:"requests,omitempty"`
-	ValidatorSetId     uint64                    `protobuf:"varint,3,opt,name=validator_set_id,json=validatorSetId,proto3" json:"validator_set_id,omitempty"`
-	SignerBitmap       []byte                    `protobuf:"bytes,4,opt,name=signer_bitmap,json=signerBitmap,proto3" json:"signer_bitmap,omitempty"`
-	AggregateSignature []byte                    `protobuf:"bytes,5,opt,name=aggregate_signature,json=aggregateSignature,proto3" json:"aggregate_signature,omitempty"`
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	ObserverAddress    []byte                 `protobuf:"bytes,1,opt,name=observer_address,json=observerAddress,proto3" json:"observer_address,omitempty"`
+	Requests           []*RequestFinalization `protobuf:"bytes,2,rep,name=requests,proto3" json:"requests,omitempty"`
+	ValidatorSetId     uint64                 `protobuf:"varint,3,opt,name=validator_set_id,json=validatorSetId,proto3" json:"validator_set_id,omitempty"`
+	SignerBitmap       []byte                 `protobuf:"bytes,4,opt,name=signer_bitmap,json=signerBitmap,proto3" json:"signer_bitmap,omitempty"`
+	AggregateSignature []byte                 `protobuf:"bytes,5,opt,name=aggregate_signature,json=aggregateSignature,proto3" json:"aggregate_signature,omitempty"`
 	unknownFields      protoimpl.UnknownFields
 	sizeCache          protoimpl.SizeCache
 }
 
 func (x *MessageFinalizeRequests) Reset() {
 	*x = MessageFinalizeRequests{}
-	mi := &file_tx_proto_msgTypes[14]
+	mi := &file_tx_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1339,7 +1387,7 @@ func (x *MessageFinalizeRequests) String() string {
 func (*MessageFinalizeRequests) ProtoMessage() {}
 
 func (x *MessageFinalizeRequests) ProtoReflect() protoreflect.Message {
-	mi := &file_tx_proto_msgTypes[14]
+	mi := &file_tx_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1352,7 +1400,7 @@ func (x *MessageFinalizeRequests) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MessageFinalizeRequests.ProtoReflect.Descriptor instead.
 func (*MessageFinalizeRequests) Descriptor() ([]byte, []int) {
-	return file_tx_proto_rawDescGZIP(), []int{14}
+	return file_tx_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *MessageFinalizeRequests) GetObserverAddress() []byte {
@@ -1362,7 +1410,7 @@ func (x *MessageFinalizeRequests) GetObserverAddress() []byte {
 	return nil
 }
 
-func (x *MessageFinalizeRequests) GetRequests() []*MessageFinalizeRequest {
+func (x *MessageFinalizeRequests) GetRequests() []*RequestFinalization {
 	if x != nil {
 		return x.Requests
 	}
@@ -1406,7 +1454,7 @@ type MessageFinalizeSettlementBatch struct {
 
 func (x *MessageFinalizeSettlementBatch) Reset() {
 	*x = MessageFinalizeSettlementBatch{}
-	mi := &file_tx_proto_msgTypes[15]
+	mi := &file_tx_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1418,7 +1466,7 @@ func (x *MessageFinalizeSettlementBatch) String() string {
 func (*MessageFinalizeSettlementBatch) ProtoMessage() {}
 
 func (x *MessageFinalizeSettlementBatch) ProtoReflect() protoreflect.Message {
-	mi := &file_tx_proto_msgTypes[15]
+	mi := &file_tx_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1431,7 +1479,7 @@ func (x *MessageFinalizeSettlementBatch) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MessageFinalizeSettlementBatch.ProtoReflect.Descriptor instead.
 func (*MessageFinalizeSettlementBatch) Descriptor() ([]byte, []int) {
-	return file_tx_proto_rawDescGZIP(), []int{15}
+	return file_tx_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *MessageFinalizeSettlementBatch) GetSettlementDomainId() []byte {
@@ -1462,60 +1510,42 @@ func (x *MessageFinalizeSettlementBatch) GetSettlementCertificateDigest() []byte
 	return nil
 }
 
-// MessageSubmitQuorumSignature lets an active validator attest to the exact
-// digest an EVM contract will verify. The outer Canopy transaction authenticates the
-// observer; signature is a second BDN/BLS signature over message (normally the
-// 32-byte EVM digest) so shares can be aggregated and exported to the target chain.
-type MessageSubmitQuorumSignature struct {
-	state                   protoimpl.MessageState    `protogen:"open.v1"`
-	ObserverAddress         []byte                    `protobuf:"bytes,1,opt,name=observer_address,json=observerAddress,proto3" json:"observer_address,omitempty"`
-	ProofKind               string                    `protobuf:"bytes,2,opt,name=proof_kind,json=proofKind,proto3" json:"proof_kind,omitempty"`
-	ProofId                 []byte                    `protobuf:"bytes,3,opt,name=proof_id,json=proofId,proto3" json:"proof_id,omitempty"`
-	Digest                  []byte                    `protobuf:"bytes,4,opt,name=digest,proto3" json:"digest,omitempty"`
-	Message                 []byte                    `protobuf:"bytes,5,opt,name=message,proto3" json:"message,omitempty"`
-	ValidatorSetId          uint64                    `protobuf:"varint,6,opt,name=validator_set_id,json=validatorSetId,proto3" json:"validator_set_id,omitempty"`
-	Signature               []byte                    `protobuf:"bytes,7,opt,name=signature,proto3" json:"signature,omitempty"`
-	ValidatorKeys           [][]byte                  `protobuf:"bytes,8,rep,name=validator_keys,json=validatorKeys,proto3" json:"validator_keys,omitempty"`
-	ValidatorWeights        []uint64                  `protobuf:"varint,9,rep,packed,name=validator_weights,json=validatorWeights,proto3" json:"validator_weights,omitempty"`
-	NewValidatorSetId       uint64                    `protobuf:"varint,10,opt,name=new_validator_set_id,json=newValidatorSetId,proto3" json:"new_validator_set_id,omitempty"`
-	RequestId               string                    `protobuf:"bytes,12,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
-	SettlementTxHash        []byte                    `protobuf:"bytes,13,opt,name=settlement_tx_hash,json=settlementTxHash,proto3" json:"settlement_tx_hash,omitempty"`
-	ReservedBudget          uint64                    `protobuf:"varint,14,opt,name=reserved_budget,json=reservedBudget,proto3" json:"reserved_budget,omitempty"`
-	ExecutionIds            []string                  `protobuf:"bytes,15,rep,name=execution_ids,json=executionIds,proto3" json:"execution_ids,omitempty"`
-	FinalizesRequest        bool                      `protobuf:"varint,16,opt,name=finalizes_request,json=finalizesRequest,proto3" json:"finalizes_request,omitempty"`
-	RequestSpent            uint64                    `protobuf:"varint,17,opt,name=request_spent,json=requestSpent,proto3" json:"request_spent,omitempty"`
-	BatchNonce              uint64                    `protobuf:"varint,18,opt,name=batch_nonce,json=batchNonce,proto3" json:"batch_nonce,omitempty"`
-	SettlementPayload       []byte                    `protobuf:"bytes,19,opt,name=settlement_payload,json=settlementPayload,proto3" json:"settlement_payload,omitempty"`
-	Finalizations           []*MessageFinalizeRequest `protobuf:"bytes,20,rep,name=finalizations,proto3" json:"finalizations,omitempty"`
-	SettlementDomainId      []byte                    `protobuf:"bytes,21,opt,name=settlement_domain_id,json=settlementDomainId,proto3" json:"settlement_domain_id,omitempty"`
-	RotationNonce           uint64                    `protobuf:"varint,22,opt,name=rotation_nonce,json=rotationNonce,proto3" json:"rotation_nonce,omitempty"`
-	Epoch                   uint64                    `protobuf:"varint,23,opt,name=epoch,proto3" json:"epoch,omitempty"`
-	BurnId                  []byte                    `protobuf:"bytes,24,opt,name=burn_id,json=burnId,proto3" json:"burn_id,omitempty"`
-	HandoffGeneration       []byte                    `protobuf:"bytes,25,opt,name=handoff_generation,json=handoffGeneration,proto3" json:"handoff_generation,omitempty"`
-	HandoffTimestamp        uint64                    `protobuf:"varint,26,opt,name=handoff_timestamp,json=handoffTimestamp,proto3" json:"handoff_timestamp,omitempty"`
-	ControlBlockNumber      uint64                    `protobuf:"varint,27,opt,name=control_block_number,json=controlBlockNumber,proto3" json:"control_block_number,omitempty"`
-	ControlBlockHash        []byte                    `protobuf:"bytes,28,opt,name=control_block_hash,json=controlBlockHash,proto3" json:"control_block_hash,omitempty"`
-	LifecycleIntentId       []byte                    `protobuf:"bytes,29,opt,name=lifecycle_intent_id,json=lifecycleIntentId,proto3" json:"lifecycle_intent_id,omitempty"`
-	OutgoingAuthorityCutoff uint64                    `protobuf:"varint,30,opt,name=outgoing_authority_cutoff,json=outgoingAuthorityCutoff,proto3" json:"outgoing_authority_cutoff,omitempty"`
-	unknownFields           protoimpl.UnknownFields
-	sizeCache               protoimpl.SizeCache
+// EVMControlEvidence is a typed automatic-vote candidate for settlement-domain
+// lifecycle and validator-set control facts observed on EVM chains.
+type EVMControlEvidence struct {
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	ProofKind          string                 `protobuf:"bytes,1,opt,name=proof_kind,json=proofKind,proto3" json:"proof_kind,omitempty"`
+	ProofId            []byte                 `protobuf:"bytes,2,opt,name=proof_id,json=proofId,proto3" json:"proof_id,omitempty"`
+	Digest             []byte                 `protobuf:"bytes,3,opt,name=digest,proto3" json:"digest,omitempty"`
+	ValidatorSetId     uint64                 `protobuf:"varint,4,opt,name=validator_set_id,json=validatorSetId,proto3" json:"validator_set_id,omitempty"`
+	NewValidatorSetId  uint64                 `protobuf:"varint,5,opt,name=new_validator_set_id,json=newValidatorSetId,proto3" json:"new_validator_set_id,omitempty"`
+	SettlementDomainId []byte                 `protobuf:"bytes,6,opt,name=settlement_domain_id,json=settlementDomainId,proto3" json:"settlement_domain_id,omitempty"`
+	RotationNonce      uint64                 `protobuf:"varint,7,opt,name=rotation_nonce,json=rotationNonce,proto3" json:"rotation_nonce,omitempty"`
+	Epoch              uint64                 `protobuf:"varint,8,opt,name=epoch,proto3" json:"epoch,omitempty"`
+	HandoffGeneration  []byte                 `protobuf:"bytes,9,opt,name=handoff_generation,json=handoffGeneration,proto3" json:"handoff_generation,omitempty"`
+	HandoffTimestamp   uint64                 `protobuf:"varint,10,opt,name=handoff_timestamp,json=handoffTimestamp,proto3" json:"handoff_timestamp,omitempty"`
+	ControlBlockNumber uint64                 `protobuf:"varint,11,opt,name=control_block_number,json=controlBlockNumber,proto3" json:"control_block_number,omitempty"`
+	ControlBlockHash   []byte                 `protobuf:"bytes,12,opt,name=control_block_hash,json=controlBlockHash,proto3" json:"control_block_hash,omitempty"`
+	LifecycleIntentId  []byte                 `protobuf:"bytes,13,opt,name=lifecycle_intent_id,json=lifecycleIntentId,proto3" json:"lifecycle_intent_id,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
-func (x *MessageSubmitQuorumSignature) Reset() {
-	*x = MessageSubmitQuorumSignature{}
-	mi := &file_tx_proto_msgTypes[16]
+func (x *EVMControlEvidence) Reset() {
+	*x = EVMControlEvidence{}
+	mi := &file_tx_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *MessageSubmitQuorumSignature) String() string {
+func (x *EVMControlEvidence) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*MessageSubmitQuorumSignature) ProtoMessage() {}
+func (*EVMControlEvidence) ProtoMessage() {}
 
-func (x *MessageSubmitQuorumSignature) ProtoReflect() protoreflect.Message {
-	mi := &file_tx_proto_msgTypes[16]
+func (x *EVMControlEvidence) ProtoReflect() protoreflect.Message {
+	mi := &file_tx_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1526,212 +1556,179 @@ func (x *MessageSubmitQuorumSignature) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use MessageSubmitQuorumSignature.ProtoReflect.Descriptor instead.
-func (*MessageSubmitQuorumSignature) Descriptor() ([]byte, []int) {
-	return file_tx_proto_rawDescGZIP(), []int{16}
+// Deprecated: Use EVMControlEvidence.ProtoReflect.Descriptor instead.
+func (*EVMControlEvidence) Descriptor() ([]byte, []int) {
+	return file_tx_proto_rawDescGZIP(), []int{18}
 }
 
-func (x *MessageSubmitQuorumSignature) GetObserverAddress() []byte {
-	if x != nil {
-		return x.ObserverAddress
-	}
-	return nil
-}
-
-func (x *MessageSubmitQuorumSignature) GetProofKind() string {
+func (x *EVMControlEvidence) GetProofKind() string {
 	if x != nil {
 		return x.ProofKind
 	}
 	return ""
 }
 
-func (x *MessageSubmitQuorumSignature) GetProofId() []byte {
+func (x *EVMControlEvidence) GetProofId() []byte {
 	if x != nil {
 		return x.ProofId
 	}
 	return nil
 }
 
-func (x *MessageSubmitQuorumSignature) GetDigest() []byte {
+func (x *EVMControlEvidence) GetDigest() []byte {
 	if x != nil {
 		return x.Digest
 	}
 	return nil
 }
 
-func (x *MessageSubmitQuorumSignature) GetMessage() []byte {
-	if x != nil {
-		return x.Message
-	}
-	return nil
-}
-
-func (x *MessageSubmitQuorumSignature) GetValidatorSetId() uint64 {
+func (x *EVMControlEvidence) GetValidatorSetId() uint64 {
 	if x != nil {
 		return x.ValidatorSetId
 	}
 	return 0
 }
 
-func (x *MessageSubmitQuorumSignature) GetSignature() []byte {
-	if x != nil {
-		return x.Signature
-	}
-	return nil
-}
-
-func (x *MessageSubmitQuorumSignature) GetValidatorKeys() [][]byte {
-	if x != nil {
-		return x.ValidatorKeys
-	}
-	return nil
-}
-
-func (x *MessageSubmitQuorumSignature) GetValidatorWeights() []uint64 {
-	if x != nil {
-		return x.ValidatorWeights
-	}
-	return nil
-}
-
-func (x *MessageSubmitQuorumSignature) GetNewValidatorSetId() uint64 {
+func (x *EVMControlEvidence) GetNewValidatorSetId() uint64 {
 	if x != nil {
 		return x.NewValidatorSetId
 	}
 	return 0
 }
 
-func (x *MessageSubmitQuorumSignature) GetRequestId() string {
-	if x != nil {
-		return x.RequestId
-	}
-	return ""
-}
-
-func (x *MessageSubmitQuorumSignature) GetSettlementTxHash() []byte {
-	if x != nil {
-		return x.SettlementTxHash
-	}
-	return nil
-}
-
-func (x *MessageSubmitQuorumSignature) GetReservedBudget() uint64 {
-	if x != nil {
-		return x.ReservedBudget
-	}
-	return 0
-}
-
-func (x *MessageSubmitQuorumSignature) GetExecutionIds() []string {
-	if x != nil {
-		return x.ExecutionIds
-	}
-	return nil
-}
-
-func (x *MessageSubmitQuorumSignature) GetFinalizesRequest() bool {
-	if x != nil {
-		return x.FinalizesRequest
-	}
-	return false
-}
-
-func (x *MessageSubmitQuorumSignature) GetRequestSpent() uint64 {
-	if x != nil {
-		return x.RequestSpent
-	}
-	return 0
-}
-
-func (x *MessageSubmitQuorumSignature) GetBatchNonce() uint64 {
-	if x != nil {
-		return x.BatchNonce
-	}
-	return 0
-}
-
-func (x *MessageSubmitQuorumSignature) GetSettlementPayload() []byte {
-	if x != nil {
-		return x.SettlementPayload
-	}
-	return nil
-}
-
-func (x *MessageSubmitQuorumSignature) GetFinalizations() []*MessageFinalizeRequest {
-	if x != nil {
-		return x.Finalizations
-	}
-	return nil
-}
-
-func (x *MessageSubmitQuorumSignature) GetSettlementDomainId() []byte {
+func (x *EVMControlEvidence) GetSettlementDomainId() []byte {
 	if x != nil {
 		return x.SettlementDomainId
 	}
 	return nil
 }
 
-func (x *MessageSubmitQuorumSignature) GetRotationNonce() uint64 {
+func (x *EVMControlEvidence) GetRotationNonce() uint64 {
 	if x != nil {
 		return x.RotationNonce
 	}
 	return 0
 }
 
-func (x *MessageSubmitQuorumSignature) GetEpoch() uint64 {
+func (x *EVMControlEvidence) GetEpoch() uint64 {
 	if x != nil {
 		return x.Epoch
 	}
 	return 0
 }
 
-func (x *MessageSubmitQuorumSignature) GetBurnId() []byte {
-	if x != nil {
-		return x.BurnId
-	}
-	return nil
-}
-
-func (x *MessageSubmitQuorumSignature) GetHandoffGeneration() []byte {
+func (x *EVMControlEvidence) GetHandoffGeneration() []byte {
 	if x != nil {
 		return x.HandoffGeneration
 	}
 	return nil
 }
 
-func (x *MessageSubmitQuorumSignature) GetHandoffTimestamp() uint64 {
+func (x *EVMControlEvidence) GetHandoffTimestamp() uint64 {
 	if x != nil {
 		return x.HandoffTimestamp
 	}
 	return 0
 }
 
-func (x *MessageSubmitQuorumSignature) GetControlBlockNumber() uint64 {
+func (x *EVMControlEvidence) GetControlBlockNumber() uint64 {
 	if x != nil {
 		return x.ControlBlockNumber
 	}
 	return 0
 }
 
-func (x *MessageSubmitQuorumSignature) GetControlBlockHash() []byte {
+func (x *EVMControlEvidence) GetControlBlockHash() []byte {
 	if x != nil {
 		return x.ControlBlockHash
 	}
 	return nil
 }
 
-func (x *MessageSubmitQuorumSignature) GetLifecycleIntentId() []byte {
+func (x *EVMControlEvidence) GetLifecycleIntentId() []byte {
 	if x != nil {
 		return x.LifecycleIntentId
 	}
 	return nil
 }
 
-func (x *MessageSubmitQuorumSignature) GetOutgoingAuthorityCutoff() uint64 {
+// MessageGovernanceVote is the only explicit validator signature-share
+// transaction. It cannot carry settlement, bridge, reward, rotation, or
+// retirement metadata.
+type MessageGovernanceVote struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	ValidatorAddress []byte                 `protobuf:"bytes,1,opt,name=validator_address,json=validatorAddress,proto3" json:"validator_address,omitempty"`
+	ProposalId       []byte                 `protobuf:"bytes,2,opt,name=proposal_id,json=proposalId,proto3" json:"proposal_id,omitempty"`
+	Digest           []byte                 `protobuf:"bytes,3,opt,name=digest,proto3" json:"digest,omitempty"`
+	ValidatorSetId   uint64                 `protobuf:"varint,4,opt,name=validator_set_id,json=validatorSetId,proto3" json:"validator_set_id,omitempty"`
+	Signature        []byte                 `protobuf:"bytes,5,opt,name=signature,proto3" json:"signature,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *MessageGovernanceVote) Reset() {
+	*x = MessageGovernanceVote{}
+	mi := &file_tx_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MessageGovernanceVote) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MessageGovernanceVote) ProtoMessage() {}
+
+func (x *MessageGovernanceVote) ProtoReflect() protoreflect.Message {
+	mi := &file_tx_proto_msgTypes[19]
 	if x != nil {
-		return x.OutgoingAuthorityCutoff
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MessageGovernanceVote.ProtoReflect.Descriptor instead.
+func (*MessageGovernanceVote) Descriptor() ([]byte, []int) {
+	return file_tx_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *MessageGovernanceVote) GetValidatorAddress() []byte {
+	if x != nil {
+		return x.ValidatorAddress
+	}
+	return nil
+}
+
+func (x *MessageGovernanceVote) GetProposalId() []byte {
+	if x != nil {
+		return x.ProposalId
+	}
+	return nil
+}
+
+func (x *MessageGovernanceVote) GetDigest() []byte {
+	if x != nil {
+		return x.Digest
+	}
+	return nil
+}
+
+func (x *MessageGovernanceVote) GetValidatorSetId() uint64 {
+	if x != nil {
+		return x.ValidatorSetId
 	}
 	return 0
+}
+
+func (x *MessageGovernanceVote) GetSignature() []byte {
+	if x != nil {
+		return x.Signature
+	}
+	return nil
 }
 
 type MessageObserveBridgeLock struct {
@@ -1748,7 +1745,7 @@ type MessageObserveBridgeLock struct {
 
 func (x *MessageObserveBridgeLock) Reset() {
 	*x = MessageObserveBridgeLock{}
-	mi := &file_tx_proto_msgTypes[17]
+	mi := &file_tx_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1760,7 +1757,7 @@ func (x *MessageObserveBridgeLock) String() string {
 func (*MessageObserveBridgeLock) ProtoMessage() {}
 
 func (x *MessageObserveBridgeLock) ProtoReflect() protoreflect.Message {
-	mi := &file_tx_proto_msgTypes[17]
+	mi := &file_tx_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1773,7 +1770,7 @@ func (x *MessageObserveBridgeLock) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MessageObserveBridgeLock.ProtoReflect.Descriptor instead.
 func (*MessageObserveBridgeLock) Descriptor() ([]byte, []int) {
-	return file_tx_proto_rawDescGZIP(), []int{17}
+	return file_tx_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *MessageObserveBridgeLock) GetObserverAddress() []byte {
@@ -1830,7 +1827,7 @@ type MessageBurnBridge struct {
 
 func (x *MessageBurnBridge) Reset() {
 	*x = MessageBurnBridge{}
-	mi := &file_tx_proto_msgTypes[18]
+	mi := &file_tx_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1842,7 +1839,7 @@ func (x *MessageBurnBridge) String() string {
 func (*MessageBurnBridge) ProtoMessage() {}
 
 func (x *MessageBurnBridge) ProtoReflect() protoreflect.Message {
-	mi := &file_tx_proto_msgTypes[18]
+	mi := &file_tx_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1855,7 +1852,7 @@ func (x *MessageBurnBridge) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MessageBurnBridge.ProtoReflect.Descriptor instead.
 func (*MessageBurnBridge) Descriptor() ([]byte, []int) {
-	return file_tx_proto_rawDescGZIP(), []int{18}
+	return file_tx_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *MessageBurnBridge) GetOwnerAddress() []byte {
@@ -1901,7 +1898,7 @@ type MessageObserveBridgeRelease struct {
 
 func (x *MessageObserveBridgeRelease) Reset() {
 	*x = MessageObserveBridgeRelease{}
-	mi := &file_tx_proto_msgTypes[19]
+	mi := &file_tx_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1913,7 +1910,7 @@ func (x *MessageObserveBridgeRelease) String() string {
 func (*MessageObserveBridgeRelease) ProtoMessage() {}
 
 func (x *MessageObserveBridgeRelease) ProtoReflect() protoreflect.Message {
-	mi := &file_tx_proto_msgTypes[19]
+	mi := &file_tx_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1926,7 +1923,7 @@ func (x *MessageObserveBridgeRelease) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MessageObserveBridgeRelease.ProtoReflect.Descriptor instead.
 func (*MessageObserveBridgeRelease) Descriptor() ([]byte, []int) {
-	return file_tx_proto_rawDescGZIP(), []int{19}
+	return file_tx_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *MessageObserveBridgeRelease) GetObserverAddress() []byte {
@@ -1990,7 +1987,7 @@ type MessageObserveEpochMint struct {
 
 func (x *MessageObserveEpochMint) Reset() {
 	*x = MessageObserveEpochMint{}
-	mi := &file_tx_proto_msgTypes[20]
+	mi := &file_tx_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2002,7 +1999,7 @@ func (x *MessageObserveEpochMint) String() string {
 func (*MessageObserveEpochMint) ProtoMessage() {}
 
 func (x *MessageObserveEpochMint) ProtoReflect() protoreflect.Message {
-	mi := &file_tx_proto_msgTypes[20]
+	mi := &file_tx_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2015,7 +2012,7 @@ func (x *MessageObserveEpochMint) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MessageObserveEpochMint.ProtoReflect.Descriptor instead.
 func (*MessageObserveEpochMint) Descriptor() ([]byte, []int) {
-	return file_tx_proto_rawDescGZIP(), []int{20}
+	return file_tx_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *MessageObserveEpochMint) GetObserverAddress() []byte {
@@ -2046,126 +2043,6 @@ func (x *MessageObserveEpochMint) GetValidatorSetId() uint64 {
 	return 0
 }
 
-type MessageQueueServicerStake struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	OwnerAddress   []byte                 `protobuf:"bytes,1,opt,name=owner_address,json=ownerAddress,proto3" json:"owner_address,omitempty"`
-	AdditionalBond uint64                 `protobuf:"varint,2,opt,name=additional_bond,json=additionalBond,proto3" json:"additional_bond,omitempty"`
-	Exit           bool                   `protobuf:"varint,3,opt,name=exit,proto3" json:"exit,omitempty"`
-	AutoCompound   bool                   `protobuf:"varint,4,opt,name=auto_compound,json=autoCompound,proto3" json:"auto_compound,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
-}
-
-func (x *MessageQueueServicerStake) Reset() {
-	*x = MessageQueueServicerStake{}
-	mi := &file_tx_proto_msgTypes[21]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *MessageQueueServicerStake) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*MessageQueueServicerStake) ProtoMessage() {}
-
-func (x *MessageQueueServicerStake) ProtoReflect() protoreflect.Message {
-	mi := &file_tx_proto_msgTypes[21]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use MessageQueueServicerStake.ProtoReflect.Descriptor instead.
-func (*MessageQueueServicerStake) Descriptor() ([]byte, []int) {
-	return file_tx_proto_rawDescGZIP(), []int{21}
-}
-
-func (x *MessageQueueServicerStake) GetOwnerAddress() []byte {
-	if x != nil {
-		return x.OwnerAddress
-	}
-	return nil
-}
-
-func (x *MessageQueueServicerStake) GetAdditionalBond() uint64 {
-	if x != nil {
-		return x.AdditionalBond
-	}
-	return 0
-}
-
-func (x *MessageQueueServicerStake) GetExit() bool {
-	if x != nil {
-		return x.Exit
-	}
-	return false
-}
-
-func (x *MessageQueueServicerStake) GetAutoCompound() bool {
-	if x != nil {
-		return x.AutoCompound
-	}
-	return false
-}
-
-type MessageWithdrawUnbonded struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	OwnerAddress  []byte                 `protobuf:"bytes,1,opt,name=owner_address,json=ownerAddress,proto3" json:"owner_address,omitempty"`
-	Sequence      uint64                 `protobuf:"varint,2,opt,name=sequence,proto3" json:"sequence,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *MessageWithdrawUnbonded) Reset() {
-	*x = MessageWithdrawUnbonded{}
-	mi := &file_tx_proto_msgTypes[22]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *MessageWithdrawUnbonded) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*MessageWithdrawUnbonded) ProtoMessage() {}
-
-func (x *MessageWithdrawUnbonded) ProtoReflect() protoreflect.Message {
-	mi := &file_tx_proto_msgTypes[22]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use MessageWithdrawUnbonded.ProtoReflect.Descriptor instead.
-func (*MessageWithdrawUnbonded) Descriptor() ([]byte, []int) {
-	return file_tx_proto_rawDescGZIP(), []int{22}
-}
-
-func (x *MessageWithdrawUnbonded) GetOwnerAddress() []byte {
-	if x != nil {
-		return x.OwnerAddress
-	}
-	return nil
-}
-
-func (x *MessageWithdrawUnbonded) GetSequence() uint64 {
-	if x != nil {
-		return x.Sequence
-	}
-	return 0
-}
-
 type MessageSetProducerPayout struct {
 	state                 protoimpl.MessageState `protogen:"open.v1"`
 	OwnerAddress          []byte                 `protobuf:"bytes,1,opt,name=owner_address,json=ownerAddress,proto3" json:"owner_address,omitempty"`
@@ -2176,7 +2053,7 @@ type MessageSetProducerPayout struct {
 
 func (x *MessageSetProducerPayout) Reset() {
 	*x = MessageSetProducerPayout{}
-	mi := &file_tx_proto_msgTypes[23]
+	mi := &file_tx_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2188,7 +2065,7 @@ func (x *MessageSetProducerPayout) String() string {
 func (*MessageSetProducerPayout) ProtoMessage() {}
 
 func (x *MessageSetProducerPayout) ProtoReflect() protoreflect.Message {
-	mi := &file_tx_proto_msgTypes[23]
+	mi := &file_tx_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2201,7 +2078,7 @@ func (x *MessageSetProducerPayout) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MessageSetProducerPayout.ProtoReflect.Descriptor instead.
 func (*MessageSetProducerPayout) Descriptor() ([]byte, []int) {
-	return file_tx_proto_rawDescGZIP(), []int{23}
+	return file_tx_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *MessageSetProducerPayout) GetOwnerAddress() []byte {
@@ -2216,74 +2093,6 @@ func (x *MessageSetProducerPayout) GetCanonicalChainAddress() []byte {
 		return x.CanonicalChainAddress
 	}
 	return nil
-}
-
-type MessageObserveSlashEvidence struct {
-	state           protoimpl.MessageState `protogen:"open.v1"`
-	ObserverAddress []byte                 `protobuf:"bytes,1,opt,name=observer_address,json=observerAddress,proto3" json:"observer_address,omitempty"`
-	EvidenceId      []byte                 `protobuf:"bytes,2,opt,name=evidence_id,json=evidenceId,proto3" json:"evidence_id,omitempty"`
-	TargetAddress   []byte                 `protobuf:"bytes,3,opt,name=target_address,json=targetAddress,proto3" json:"target_address,omitempty"`
-	Reason          string                 `protobuf:"bytes,4,opt,name=reason,proto3" json:"reason,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
-}
-
-func (x *MessageObserveSlashEvidence) Reset() {
-	*x = MessageObserveSlashEvidence{}
-	mi := &file_tx_proto_msgTypes[24]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *MessageObserveSlashEvidence) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*MessageObserveSlashEvidence) ProtoMessage() {}
-
-func (x *MessageObserveSlashEvidence) ProtoReflect() protoreflect.Message {
-	mi := &file_tx_proto_msgTypes[24]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use MessageObserveSlashEvidence.ProtoReflect.Descriptor instead.
-func (*MessageObserveSlashEvidence) Descriptor() ([]byte, []int) {
-	return file_tx_proto_rawDescGZIP(), []int{24}
-}
-
-func (x *MessageObserveSlashEvidence) GetObserverAddress() []byte {
-	if x != nil {
-		return x.ObserverAddress
-	}
-	return nil
-}
-
-func (x *MessageObserveSlashEvidence) GetEvidenceId() []byte {
-	if x != nil {
-		return x.EvidenceId
-	}
-	return nil
-}
-
-func (x *MessageObserveSlashEvidence) GetTargetAddress() []byte {
-	if x != nil {
-		return x.TargetAddress
-	}
-	return nil
-}
-
-func (x *MessageObserveSlashEvidence) GetReason() string {
-	if x != nil {
-		return x.Reason
-	}
-	return ""
 }
 
 // FeeParams is the parameter space that defines various amounts for transaction fees
@@ -2404,11 +2213,12 @@ const file_tx_proto_rawDesc = "" +
 	"network_id\x18\b \x01(\x04R\tnetworkId\x12\x19\n" +
 	"\bchain_id\x18\t \x01(\x04R\achainId\x12\x14\n" +
 	"\x05nonce\x18\n" +
-	" \x01(\x04R\x05nonce\"_\n" +
-	"\x14MessageRevokeEnclave\x12)\n" +
-	"\x10observer_address\x18\x01 \x01(\fR\x0fobserverAddress\x12\x1c\n" +
+	" \x01(\x04R\x05nonce\"R\n" +
+	"\x11EnclaveRevocation\x12\x1c\n" +
 	"\n" +
-	"tee_key_id\x18\x02 \x01(\tR\bteeKeyId\"\xe4\x02\n" +
+	"tee_key_id\x18\x01 \x01(\tR\bteeKeyId\x12\x1f\n" +
+	"\vincident_id\x18\x02 \x01(\fR\n" +
+	"incidentId\"\xe4\x02\n" +
 	"\x17MessageRegisterServicer\x12#\n" +
 	"\rowner_address\x18\x01 \x01(\fR\fownerAddress\x12,\n" +
 	"\x12evm_payout_address\x18\x02 \x01(\fR\x10evmPayoutAddress\x12\x1c\n" +
@@ -2422,15 +2232,30 @@ const file_tx_proto_rawDesc = "" +
 	"\tuser_data\x18\b \x01(\fR\buserData\x12'\n" +
 	"\x0fproof_signature\x18\t \x01(\fR\x0eproofSignature\x121\n" +
 	"\x14attestation_document\x18\n" +
-	" \x01(\fR\x13attestationDocument\"\xe1\x01\n" +
-	"\x15MessageUpdateServicer\x12#\n" +
-	"\rowner_address\x18\x01 \x01(\fR\fownerAddress\x12,\n" +
-	"\x12evm_payout_address\x18\x02 \x01(\fR\x10evmPayoutAddress\x12\x1c\n" +
+	" \x01(\fR\x13attestationDocument\"{\n" +
+	"\x1bServicerConfigurationUpdate\x12,\n" +
+	"\x12evm_payout_address\x18\x01 \x01(\fR\x10evmPayoutAddress\x12\x16\n" +
+	"\x06models\x18\x02 \x03(\tR\x06models\x12\x16\n" +
+	"\x06active\x18\x03 \x01(\bR\x06active\"R\n" +
+	"\x12ServicerBondUpdate\x12\x1f\n" +
+	"\vtarget_bond\x18\x01 \x01(\x04R\n" +
+	"targetBond\x12\x1b\n" +
+	"\tmax_debit\x18\x02 \x01(\x04R\bmaxDebit\"\xdd\x01\n" +
+	"\x0fEnclaveRotation\x12\x1c\n" +
 	"\n" +
-	"tee_key_id\x18\x03 \x01(\tR\bteeKeyId\x12\x16\n" +
-	"\x06models\x18\x04 \x03(\tR\x06models\x12'\n" +
-	"\x0fadditional_bond\x18\x05 \x01(\x04R\x0eadditionalBond\x12\x16\n" +
-	"\x06active\x18\x06 \x01(\bR\x06active\"\xa0\x02\n" +
+	"tee_key_id\x18\x01 \x01(\tR\bteeKeyId\x12\x1d\n" +
+	"\n" +
+	"public_key\x18\x02 \x01(\fR\tpublicKey\x12\x14\n" +
+	"\x05nonce\x18\x03 \x01(\fR\x05nonce\x12\x1b\n" +
+	"\tuser_data\x18\x04 \x01(\fR\buserData\x12'\n" +
+	"\x0fproof_signature\x18\x05 \x01(\fR\x0eproofSignature\x121\n" +
+	"\x14attestation_document\x18\x06 \x01(\fR\x13attestationDocument\"\x96\x02\n" +
+	"\x15MessageManageServicer\x12#\n" +
+	"\rowner_address\x18\x01 \x01(\fR\fownerAddress\x12+\n" +
+	"\x11expected_revision\x18\x02 \x01(\x04R\x10expectedRevision\x12H\n" +
+	"\rconfiguration\x18\x03 \x01(\v2\".types.ServicerConfigurationUpdateR\rconfiguration\x12-\n" +
+	"\x04bond\x18\x04 \x01(\v2\x19.types.ServicerBondUpdateR\x04bond\x122\n" +
+	"\brotation\x18\x05 \x01(\v2\x16.types.EnclaveRotationR\brotation\"\xa0\x02\n" +
 	"\x15MessageObserveDeposit\x12)\n" +
 	"\x10observer_address\x18\x01 \x01(\fR\x0fobserverAddress\x120\n" +
 	"\x14settlement_domain_id\x18\x02 \x01(\fR\x12settlementDomainId\x12\"\n" +
@@ -2453,81 +2278,60 @@ const file_tx_proto_rawDesc = "" +
 	"request_id\x18\x03 \x01(\tR\trequestId\x12,\n" +
 	"\x12settlement_tx_hash\x18\x04 \x01(\fR\x10settlementTxHash\x12#\n" +
 	"\rexecution_ids\x18\x05 \x03(\tR\fexecutionIds\x12+\n" +
-	"\x11finalizes_request\x18\x06 \x01(\bR\x10finalizesRequest\"\xf3\x06\n" +
-	"\x1bMessageObserveAuthorization\x12)\n" +
-	"\x10observer_address\x18\x01 \x01(\fR\x0fobserverAddress\x12\x1d\n" +
+	"\x11finalizes_request\x18\x06 \x01(\bR\x10finalizesRequest\"\xb4\x06\n" +
+	"\rAuthorization\x12\x1d\n" +
 	"\n" +
-	"request_id\x18\x02 \x01(\tR\trequestId\x12\x1d\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId\x12\x1d\n" +
 	"\n" +
-	"input_hash\x18\x03 \x01(\fR\tinputHash\x12\x1c\n" +
-	"\trequester\x18\x04 \x01(\fR\trequester\x12'\n" +
-	"\x0freserved_budget\x18\x05 \x01(\x04R\x0ereservedBudget\x12\x1f\n" +
-	"\voutput_type\x18\x06 \x01(\tR\n" +
+	"input_hash\x18\x02 \x01(\fR\tinputHash\x12\x1c\n" +
+	"\trequester\x18\x03 \x01(\fR\trequester\x12'\n" +
+	"\x0freserved_budget\x18\x04 \x01(\x04R\x0ereservedBudget\x12\x1f\n" +
+	"\voutput_type\x18\x05 \x01(\tR\n" +
 	"outputType\x12\x16\n" +
-	"\x06models\x18\a \x03(\tR\x06models\x12)\n" +
-	"\x10execution_quorum\x18\b \x01(\rR\x0fexecutionQuorum\x12'\n" +
-	"\x0fdeadline_height\x18\n" +
-	" \x01(\x04R\x0edeadlineHeight\x127\n" +
-	"\x17authorization_signature\x18\v \x01(\fR\x16authorizationSignature\x125\n" +
-	"\x16authorization_deadline\x18\f \x01(\x04R\x15authorizationDeadline\x12\x1d\n" +
+	"\x06models\x18\x06 \x03(\tR\x06models\x12)\n" +
+	"\x10execution_quorum\x18\a \x01(\rR\x0fexecutionQuorum\x12'\n" +
+	"\x0fdeadline_height\x18\b \x01(\x04R\x0edeadlineHeight\x127\n" +
+	"\x17authorization_signature\x18\t \x01(\fR\x16authorizationSignature\x125\n" +
+	"\x16authorization_deadline\x18\n" +
+	" \x01(\x04R\x15authorizationDeadline\x12\x1d\n" +
 	"\n" +
-	"direct_eoa\x18\r \x01(\bR\tdirectEoa\x12,\n" +
-	"\x12request_archive_id\x18\x0e \x01(\tR\x10requestArchiveId\x12G\n" +
-	" authorization_chain_block_number\x18\x0f \x01(\x04R\x1dauthorizationChainBlockNumber\x12C\n" +
-	"\x1eauthorization_chain_block_hash\x18\x10 \x01(\fR\x1bauthorizationChainBlockHash\x120\n" +
-	"\x14settlement_domain_id\x18\x11 \x01(\fR\x12settlementDomainId\x12%\n" +
-	"\x0eoutput_minimum\x18\x12 \x01(\x03R\routputMinimum\x12%\n" +
-	"\x0eoutput_maximum\x18\x13 \x01(\x03R\routputMaximum\x12%\n" +
-	"\x0eoutput_choices\x18\x14 \x03(\tR\routputChoices\x12\x1f\n" +
-	"\vschema_hash\x18\x15 \x01(\fR\n" +
-	"schemaHashJ\x04\b\t\x10\n" +
-	"\"\x95\x01\n" +
+	"direct_eoa\x18\v \x01(\bR\tdirectEoa\x12,\n" +
+	"\x12request_archive_id\x18\f \x01(\tR\x10requestArchiveId\x12G\n" +
+	" authorization_chain_block_number\x18\r \x01(\x04R\x1dauthorizationChainBlockNumber\x12C\n" +
+	"\x1eauthorization_chain_block_hash\x18\x0e \x01(\fR\x1bauthorizationChainBlockHash\x120\n" +
+	"\x14settlement_domain_id\x18\x0f \x01(\fR\x12settlementDomainId\x12%\n" +
+	"\x0eoutput_minimum\x18\x10 \x01(\x03R\routputMinimum\x12%\n" +
+	"\x0eoutput_maximum\x18\x11 \x01(\x03R\routputMaximum\x12%\n" +
+	"\x0eoutput_choices\x18\x12 \x03(\tR\routputChoices\x12\x1f\n" +
+	"\vschema_hash\x18\x13 \x01(\fR\n" +
+	"schemaHash\"\x87\x01\n" +
 	"\x1cMessageObserveAuthorizations\x12)\n" +
-	"\x10observer_address\x18\x01 \x01(\fR\x0fobserverAddress\x12J\n" +
-	"\x0eauthorizations\x18\x02 \x03(\v2\".types.MessageObserveAuthorizationR\x0eauthorizations\"\x8e\x01\n" +
+	"\x10observer_address\x18\x01 \x01(\fR\x0fobserverAddress\x12<\n" +
+	"\x0eauthorizations\x18\x02 \x03(\v2\x14.types.AuthorizationR\x0eauthorizations\"\x80\x01\n" +
 	"\x19MessageQueueAuthorization\x12'\n" +
-	"\x0frelayer_address\x18\x01 \x01(\fR\x0erelayerAddress\x12H\n" +
-	"\rauthorization\x18\x02 \x01(\v2\".types.MessageObserveAuthorizationR\rauthorization\"\xc2\x01\n" +
-	"\x16MessageSubmitExecution\x12)\n" +
-	"\x10servicer_address\x18\x01 \x01(\fR\x0fservicerAddress\x12!\n" +
-	"\freceipt_json\x18\x02 \x01(\fR\vreceiptJson\x12\x1d\n" +
-	"\n" +
-	"public_key\x18\x03 \x01(\fR\tpublicKey\x12\x1c\n" +
-	"\tsignature\x18\x04 \x01(\fR\tsignature\x12\x1d\n" +
-	"\n" +
-	"archive_id\x18\x05 \x01(\tR\tarchiveId\"\xd7\x01\n" +
+	"\x0frelayer_address\x18\x01 \x01(\fR\x0erelayerAddress\x12:\n" +
+	"\rauthorization\x18\x02 \x01(\v2\x14.types.AuthorizationR\rauthorization\"V\n" +
+	"\x13ExecutionSubmission\x12!\n" +
+	"\freceipt_json\x18\x01 \x01(\fR\vreceiptJson\x12\x1c\n" +
+	"\tsignature\x18\x02 \x01(\fR\tsignature\"\xb5\x01\n" +
 	"\x17MessageSubmitExecutions\x12)\n" +
-	"\x10servicer_address\x18\x01 \x01(\fR\x0fservicerAddress\x12=\n" +
+	"\x10servicer_address\x18\x01 \x01(\fR\x0fservicerAddress\x12:\n" +
 	"\n" +
-	"executions\x18\x02 \x03(\v2\x1d.types.MessageSubmitExecutionR\n" +
-	"executions\x12\x1d\n" +
+	"executions\x18\x02 \x03(\v2\x1a.types.ExecutionSubmissionR\n" +
+	"executions\x123\n" +
+	"\x15compressed_executions\x18\x03 \x01(\fR\x14compressedExecutions\"\xb4\x02\n" +
+	"\x13RequestFinalization\x12\x1d\n" +
 	"\n" +
-	"public_key\x18\x03 \x01(\fR\tpublicKey\x123\n" +
-	"\x15compressed_executions\x18\x04 \x01(\fR\x14compressedExecutions\"\xcc\x01\n" +
-	"\x17MessageExpireAssignment\x12\x1d\n" +
-	"\n" +
-	"request_id\x18\x02 \x01(\tR\trequestId\x12\x14\n" +
-	"\x05model\x18\x03 \x01(\tR\x05model\x12!\n" +
-	"\fexecution_id\x18\x04 \x01(\tR\vexecutionId\x120\n" +
-	"\x14settlement_domain_id\x18\x05 \x01(\fR\x12settlementDomainId\x12'\n" +
-	"\x0fdeadline_height\x18\x06 \x01(\x04R\x0edeadlineHeight\"\xe8\x03\n" +
-	"\x16MessageFinalizeRequest\x12)\n" +
-	"\x10observer_address\x18\x01 \x01(\fR\x0fobserverAddress\x12\x1d\n" +
-	"\n" +
-	"request_id\x18\x02 \x01(\tR\trequestId\x12,\n" +
-	"\x12settlement_tx_hash\x18\x03 \x01(\fR\x10settlementTxHash\x12'\n" +
-	"\x0freserved_budget\x18\x05 \x01(\x04R\x0ereservedBudget\x12(\n" +
-	"\x10validator_set_id\x18\x06 \x01(\x04R\x0evalidatorSetId\x12#\n" +
-	"\rsigner_bitmap\x18\a \x01(\fR\fsignerBitmap\x12/\n" +
-	"\x13aggregate_signature\x18\b \x01(\fR\x12aggregateSignature\x12#\n" +
-	"\rexecution_ids\x18\t \x03(\tR\fexecutionIds\x12+\n" +
-	"\x11finalizes_request\x18\n" +
-	" \x01(\bR\x10finalizesRequest\x12#\n" +
-	"\rrequest_spent\x18\v \x01(\x04R\frequestSpent\x120\n" +
-	"\x14settlement_domain_id\x18\f \x01(\fR\x12settlementDomainIdJ\x04\b\x04\x10\x05\"\xff\x01\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId\x12,\n" +
+	"\x12settlement_tx_hash\x18\x02 \x01(\fR\x10settlementTxHash\x12'\n" +
+	"\x0freserved_budget\x18\x03 \x01(\x04R\x0ereservedBudget\x12#\n" +
+	"\rexecution_ids\x18\x04 \x03(\tR\fexecutionIds\x12+\n" +
+	"\x11finalizes_request\x18\x05 \x01(\bR\x10finalizesRequest\x12#\n" +
+	"\rrequest_spent\x18\x06 \x01(\x04R\frequestSpent\x120\n" +
+	"\x14settlement_domain_id\x18\a \x01(\fR\x12settlementDomainId\"\xfc\x01\n" +
 	"\x17MessageFinalizeRequests\x12)\n" +
-	"\x10observer_address\x18\x01 \x01(\fR\x0fobserverAddress\x129\n" +
-	"\brequests\x18\x02 \x03(\v2\x1d.types.MessageFinalizeRequestR\brequests\x12(\n" +
+	"\x10observer_address\x18\x01 \x01(\fR\x0fobserverAddress\x126\n" +
+	"\brequests\x18\x02 \x03(\v2\x1a.types.RequestFinalizationR\brequests\x12(\n" +
 	"\x10validator_set_id\x18\x03 \x01(\x04R\x0evalidatorSetId\x12#\n" +
 	"\rsigner_bitmap\x18\x04 \x01(\fR\fsignerBitmap\x12/\n" +
 	"\x13aggregate_signature\x18\x05 \x01(\fR\x12aggregateSignature\"\xe5\x01\n" +
@@ -2536,41 +2340,30 @@ const file_tx_proto_rawDesc = "" +
 	"\x12settlement_tx_hash\x18\x02 \x01(\fR\x10settlementTxHash\x12\x1f\n" +
 	"\vbatch_nonce\x18\x03 \x01(\x04R\n" +
 	"batchNonce\x12B\n" +
-	"\x1dsettlement_certificate_digest\x18\x04 \x01(\fR\x1bsettlementCertificateDigest\"\xba\t\n" +
-	"\x1cMessageSubmitQuorumSignature\x12)\n" +
-	"\x10observer_address\x18\x01 \x01(\fR\x0fobserverAddress\x12\x1d\n" +
+	"\x1dsettlement_certificate_digest\x18\x04 \x01(\fR\x1bsettlementCertificateDigest\"\x9c\x04\n" +
+	"\x12EVMControlEvidence\x12\x1d\n" +
 	"\n" +
-	"proof_kind\x18\x02 \x01(\tR\tproofKind\x12\x19\n" +
-	"\bproof_id\x18\x03 \x01(\fR\aproofId\x12\x16\n" +
-	"\x06digest\x18\x04 \x01(\fR\x06digest\x12\x18\n" +
-	"\amessage\x18\x05 \x01(\fR\amessage\x12(\n" +
-	"\x10validator_set_id\x18\x06 \x01(\x04R\x0evalidatorSetId\x12\x1c\n" +
-	"\tsignature\x18\a \x01(\fR\tsignature\x12%\n" +
-	"\x0evalidator_keys\x18\b \x03(\fR\rvalidatorKeys\x12+\n" +
-	"\x11validator_weights\x18\t \x03(\x04R\x10validatorWeights\x12/\n" +
-	"\x14new_validator_set_id\x18\n" +
-	" \x01(\x04R\x11newValidatorSetId\x12\x1d\n" +
-	"\n" +
-	"request_id\x18\f \x01(\tR\trequestId\x12,\n" +
-	"\x12settlement_tx_hash\x18\r \x01(\fR\x10settlementTxHash\x12'\n" +
-	"\x0freserved_budget\x18\x0e \x01(\x04R\x0ereservedBudget\x12#\n" +
-	"\rexecution_ids\x18\x0f \x03(\tR\fexecutionIds\x12+\n" +
-	"\x11finalizes_request\x18\x10 \x01(\bR\x10finalizesRequest\x12#\n" +
-	"\rrequest_spent\x18\x11 \x01(\x04R\frequestSpent\x12\x1f\n" +
-	"\vbatch_nonce\x18\x12 \x01(\x04R\n" +
-	"batchNonce\x12-\n" +
-	"\x12settlement_payload\x18\x13 \x01(\fR\x11settlementPayload\x12C\n" +
-	"\rfinalizations\x18\x14 \x03(\v2\x1d.types.MessageFinalizeRequestR\rfinalizations\x120\n" +
-	"\x14settlement_domain_id\x18\x15 \x01(\fR\x12settlementDomainId\x12%\n" +
-	"\x0erotation_nonce\x18\x16 \x01(\x04R\rrotationNonce\x12\x14\n" +
-	"\x05epoch\x18\x17 \x01(\x04R\x05epoch\x12\x17\n" +
-	"\aburn_id\x18\x18 \x01(\fR\x06burnId\x12-\n" +
-	"\x12handoff_generation\x18\x19 \x01(\fR\x11handoffGeneration\x12+\n" +
-	"\x11handoff_timestamp\x18\x1a \x01(\x04R\x10handoffTimestamp\x120\n" +
-	"\x14control_block_number\x18\x1b \x01(\x04R\x12controlBlockNumber\x12,\n" +
-	"\x12control_block_hash\x18\x1c \x01(\fR\x10controlBlockHash\x12.\n" +
-	"\x13lifecycle_intent_id\x18\x1d \x01(\fR\x11lifecycleIntentId\x12:\n" +
-	"\x19outgoing_authority_cutoff\x18\x1e \x01(\x04R\x17outgoingAuthorityCutoffJ\x04\b\v\x10\f\"\xfe\x01\n" +
+	"proof_kind\x18\x01 \x01(\tR\tproofKind\x12\x19\n" +
+	"\bproof_id\x18\x02 \x01(\fR\aproofId\x12\x16\n" +
+	"\x06digest\x18\x03 \x01(\fR\x06digest\x12(\n" +
+	"\x10validator_set_id\x18\x04 \x01(\x04R\x0evalidatorSetId\x12/\n" +
+	"\x14new_validator_set_id\x18\x05 \x01(\x04R\x11newValidatorSetId\x120\n" +
+	"\x14settlement_domain_id\x18\x06 \x01(\fR\x12settlementDomainId\x12%\n" +
+	"\x0erotation_nonce\x18\a \x01(\x04R\rrotationNonce\x12\x14\n" +
+	"\x05epoch\x18\b \x01(\x04R\x05epoch\x12-\n" +
+	"\x12handoff_generation\x18\t \x01(\fR\x11handoffGeneration\x12+\n" +
+	"\x11handoff_timestamp\x18\n" +
+	" \x01(\x04R\x10handoffTimestamp\x120\n" +
+	"\x14control_block_number\x18\v \x01(\x04R\x12controlBlockNumber\x12,\n" +
+	"\x12control_block_hash\x18\f \x01(\fR\x10controlBlockHash\x12.\n" +
+	"\x13lifecycle_intent_id\x18\r \x01(\fR\x11lifecycleIntentId\"\xc5\x01\n" +
+	"\x15MessageGovernanceVote\x12+\n" +
+	"\x11validator_address\x18\x01 \x01(\fR\x10validatorAddress\x12\x1f\n" +
+	"\vproposal_id\x18\x02 \x01(\fR\n" +
+	"proposalId\x12\x16\n" +
+	"\x06digest\x18\x03 \x01(\fR\x06digest\x12(\n" +
+	"\x10validator_set_id\x18\x04 \x01(\x04R\x0evalidatorSetId\x12\x1c\n" +
+	"\tsignature\x18\x05 \x01(\fR\tsignature\"\xfe\x01\n" +
 	"\x18MessageObserveBridgeLock\x12)\n" +
 	"\x10observer_address\x18\x01 \x01(\fR\x0fobserverAddress\x125\n" +
 	"\x17canonical_chain_tx_hash\x18\x02 \x01(\fR\x14canonicalChainTxHash\x12\x14\n" +
@@ -2595,24 +2388,10 @@ const file_tx_proto_rawDesc = "" +
 	"\x10observer_address\x18\x01 \x01(\fR\x0fobserverAddress\x12\x14\n" +
 	"\x05epoch\x18\x02 \x01(\x04R\x05epoch\x125\n" +
 	"\x17canonical_chain_tx_hash\x18\x03 \x01(\fR\x14canonicalChainTxHash\x12(\n" +
-	"\x10validator_set_id\x18\x04 \x01(\x04R\x0evalidatorSetId\"\xa2\x01\n" +
-	"\x19MessageQueueServicerStake\x12#\n" +
-	"\rowner_address\x18\x01 \x01(\fR\fownerAddress\x12'\n" +
-	"\x0fadditional_bond\x18\x02 \x01(\x04R\x0eadditionalBond\x12\x12\n" +
-	"\x04exit\x18\x03 \x01(\bR\x04exit\x12#\n" +
-	"\rauto_compound\x18\x04 \x01(\bR\fautoCompound\"Z\n" +
-	"\x17MessageWithdrawUnbonded\x12#\n" +
-	"\rowner_address\x18\x01 \x01(\fR\fownerAddress\x12\x1a\n" +
-	"\bsequence\x18\x02 \x01(\x04R\bsequence\"w\n" +
+	"\x10validator_set_id\x18\x04 \x01(\x04R\x0evalidatorSetId\"w\n" +
 	"\x18MessageSetProducerPayout\x12#\n" +
 	"\rowner_address\x18\x01 \x01(\fR\fownerAddress\x126\n" +
-	"\x17canonical_chain_address\x18\x02 \x01(\fR\x15canonicalChainAddress\"\xa8\x01\n" +
-	"\x1bMessageObserveSlashEvidence\x12)\n" +
-	"\x10observer_address\x18\x01 \x01(\fR\x0fobserverAddress\x12\x1f\n" +
-	"\vevidence_id\x18\x02 \x01(\fR\n" +
-	"evidenceId\x12%\n" +
-	"\x0etarget_address\x18\x03 \x01(\fR\rtargetAddress\x12\x16\n" +
-	"\x06reason\x18\x04 \x01(\tR\x06reason\"&\n" +
+	"\x17canonical_chain_address\x18\x02 \x01(\fR\x15canonicalChainAddress\"&\n" +
 	"\tFeeParams\x12\x19\n" +
 	"\bsend_fee\x18\x01 \x01(\x04R\asendFee\"H\n" +
 	"\tSignature\x12\x1d\n" +
@@ -2635,30 +2414,30 @@ func file_tx_proto_rawDescGZIP() []byte {
 var file_tx_proto_msgTypes = make([]protoimpl.MessageInfo, 27)
 var file_tx_proto_goTypes = []any{
 	(*Transaction)(nil),                    // 0: types.Transaction
-	(*MessageRevokeEnclave)(nil),           // 1: types.MessageRevokeEnclave
+	(*EnclaveRevocation)(nil),              // 1: types.EnclaveRevocation
 	(*MessageRegisterServicer)(nil),        // 2: types.MessageRegisterServicer
-	(*MessageUpdateServicer)(nil),          // 3: types.MessageUpdateServicer
-	(*MessageObserveDeposit)(nil),          // 4: types.MessageObserveDeposit
-	(*MessageResolveDeposit)(nil),          // 5: types.MessageResolveDeposit
-	(*MessageResolveSettlement)(nil),       // 6: types.MessageResolveSettlement
-	(*MessageObserveAuthorization)(nil),    // 7: types.MessageObserveAuthorization
-	(*MessageObserveAuthorizations)(nil),   // 8: types.MessageObserveAuthorizations
-	(*MessageQueueAuthorization)(nil),      // 9: types.MessageQueueAuthorization
-	(*MessageSubmitExecution)(nil),         // 10: types.MessageSubmitExecution
-	(*MessageSubmitExecutions)(nil),        // 11: types.MessageSubmitExecutions
-	(*MessageExpireAssignment)(nil),        // 12: types.MessageExpireAssignment
-	(*MessageFinalizeRequest)(nil),         // 13: types.MessageFinalizeRequest
-	(*MessageFinalizeRequests)(nil),        // 14: types.MessageFinalizeRequests
-	(*MessageFinalizeSettlementBatch)(nil), // 15: types.MessageFinalizeSettlementBatch
-	(*MessageSubmitQuorumSignature)(nil),   // 16: types.MessageSubmitQuorumSignature
-	(*MessageObserveBridgeLock)(nil),       // 17: types.MessageObserveBridgeLock
-	(*MessageBurnBridge)(nil),              // 18: types.MessageBurnBridge
-	(*MessageObserveBridgeRelease)(nil),    // 19: types.MessageObserveBridgeRelease
-	(*MessageObserveEpochMint)(nil),        // 20: types.MessageObserveEpochMint
-	(*MessageQueueServicerStake)(nil),      // 21: types.MessageQueueServicerStake
-	(*MessageWithdrawUnbonded)(nil),        // 22: types.MessageWithdrawUnbonded
-	(*MessageSetProducerPayout)(nil),       // 23: types.MessageSetProducerPayout
-	(*MessageObserveSlashEvidence)(nil),    // 24: types.MessageObserveSlashEvidence
+	(*ServicerConfigurationUpdate)(nil),    // 3: types.ServicerConfigurationUpdate
+	(*ServicerBondUpdate)(nil),             // 4: types.ServicerBondUpdate
+	(*EnclaveRotation)(nil),                // 5: types.EnclaveRotation
+	(*MessageManageServicer)(nil),          // 6: types.MessageManageServicer
+	(*MessageObserveDeposit)(nil),          // 7: types.MessageObserveDeposit
+	(*MessageResolveDeposit)(nil),          // 8: types.MessageResolveDeposit
+	(*MessageResolveSettlement)(nil),       // 9: types.MessageResolveSettlement
+	(*Authorization)(nil),                  // 10: types.Authorization
+	(*MessageObserveAuthorizations)(nil),   // 11: types.MessageObserveAuthorizations
+	(*MessageQueueAuthorization)(nil),      // 12: types.MessageQueueAuthorization
+	(*ExecutionSubmission)(nil),            // 13: types.ExecutionSubmission
+	(*MessageSubmitExecutions)(nil),        // 14: types.MessageSubmitExecutions
+	(*RequestFinalization)(nil),            // 15: types.RequestFinalization
+	(*MessageFinalizeRequests)(nil),        // 16: types.MessageFinalizeRequests
+	(*MessageFinalizeSettlementBatch)(nil), // 17: types.MessageFinalizeSettlementBatch
+	(*EVMControlEvidence)(nil),             // 18: types.EVMControlEvidence
+	(*MessageGovernanceVote)(nil),          // 19: types.MessageGovernanceVote
+	(*MessageObserveBridgeLock)(nil),       // 20: types.MessageObserveBridgeLock
+	(*MessageBurnBridge)(nil),              // 21: types.MessageBurnBridge
+	(*MessageObserveBridgeRelease)(nil),    // 22: types.MessageObserveBridgeRelease
+	(*MessageObserveEpochMint)(nil),        // 23: types.MessageObserveEpochMint
+	(*MessageSetProducerPayout)(nil),       // 24: types.MessageSetProducerPayout
 	(*FeeParams)(nil),                      // 25: types.FeeParams
 	(*Signature)(nil),                      // 26: types.Signature
 	(*anypb.Any)(nil),                      // 27: google.protobuf.Any
@@ -2666,16 +2445,18 @@ var file_tx_proto_goTypes = []any{
 var file_tx_proto_depIdxs = []int32{
 	27, // 0: types.Transaction.msg:type_name -> google.protobuf.Any
 	26, // 1: types.Transaction.signature:type_name -> types.Signature
-	7,  // 2: types.MessageObserveAuthorizations.authorizations:type_name -> types.MessageObserveAuthorization
-	7,  // 3: types.MessageQueueAuthorization.authorization:type_name -> types.MessageObserveAuthorization
-	10, // 4: types.MessageSubmitExecutions.executions:type_name -> types.MessageSubmitExecution
-	13, // 5: types.MessageFinalizeRequests.requests:type_name -> types.MessageFinalizeRequest
-	13, // 6: types.MessageSubmitQuorumSignature.finalizations:type_name -> types.MessageFinalizeRequest
-	7,  // [7:7] is the sub-list for method output_type
-	7,  // [7:7] is the sub-list for method input_type
-	7,  // [7:7] is the sub-list for extension type_name
-	7,  // [7:7] is the sub-list for extension extendee
-	0,  // [0:7] is the sub-list for field type_name
+	3,  // 2: types.MessageManageServicer.configuration:type_name -> types.ServicerConfigurationUpdate
+	4,  // 3: types.MessageManageServicer.bond:type_name -> types.ServicerBondUpdate
+	5,  // 4: types.MessageManageServicer.rotation:type_name -> types.EnclaveRotation
+	10, // 5: types.MessageObserveAuthorizations.authorizations:type_name -> types.Authorization
+	10, // 6: types.MessageQueueAuthorization.authorization:type_name -> types.Authorization
+	13, // 7: types.MessageSubmitExecutions.executions:type_name -> types.ExecutionSubmission
+	15, // 8: types.MessageFinalizeRequests.requests:type_name -> types.RequestFinalization
+	9,  // [9:9] is the sub-list for method output_type
+	9,  // [9:9] is the sub-list for method input_type
+	9,  // [9:9] is the sub-list for extension type_name
+	9,  // [9:9] is the sub-list for extension extendee
+	0,  // [0:9] is the sub-list for field type_name
 }
 
 func init() { file_tx_proto_init() }

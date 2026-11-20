@@ -6,12 +6,14 @@ import (
 	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -19,6 +21,13 @@ import (
 
 	"github.com/canopy-network/go-plugin/contract"
 	plugincrypto "github.com/canopy-network/go-plugin/crypto"
+	"github.com/decred/dcrd/dcrec/secp256k1/v4"
+	secpECDSA "github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa"
+	"github.com/drand/kyber"
+	drandbls "github.com/drand/kyber-bls12381"
+	"github.com/drand/kyber/sign"
+	"github.com/drand/kyber/sign/bdn"
+	"golang.org/x/crypto/sha3"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
 )
@@ -59,6 +68,101 @@ type testReceipt struct {
 	CompletedAtMS         int64  `json:"completedAtMs"`
 }
 
+func e2eHashFields(fields ...[]byte) []byte {
+	hasher := sha256.New()
+	var length [8]byte
+	for _, field := range fields {
+		binary.BigEndian.PutUint64(length[:], uint64(len(field)))
+		_, _ = hasher.Write(length[:])
+		_, _ = hasher.Write(field)
+	}
+	return hasher.Sum(nil)
+}
+
+func e2eUint64(value uint64) []byte {
+	encoded := make([]byte, 8)
+	binary.BigEndian.PutUint64(encoded, value)
+	return encoded
+}
+
+func e2eKeccak(fields ...[]byte) []byte {
+	hasher := sha3.NewLegacyKeccak256()
+	for _, field := range fields {
+		_, _ = hasher.Write(field)
+	}
+	return hasher.Sum(nil)
+}
+
+func e2eABIUint64(value uint64) []byte {
+	word := make([]byte, 32)
+	binary.BigEndian.PutUint64(word[24:], value)
+	return word
+}
+
+func e2eABIAddress(address []byte) []byte {
+	word := make([]byte, 32)
+	copy(word[12:], address)
+	return word
+}
+
+func e2eStringList(values []string) []byte {
+	fields := make([][]byte, len(values))
+	for index := range values {
+		fields[index] = []byte(values[index])
+	}
+	return e2eHashFields(fields...)
+}
+
+func e2eSettlementBatchSubject(messages []*contract.RequestFinalization) []byte {
+	fields := make([][]byte, 1, len(messages)+1)
+	fields[0] = []byte("takusen:settlement-finalization-batch")
+	for _, message := range messages {
+		fields = append(fields, e2eHashFields(
+			[]byte("takusen:settlement-finalization"), message.SettlementDomainId, []byte(message.RequestId),
+			message.SettlementTxHash, e2eUint64(message.ReservedBudget), e2eUint64(message.RequestSpent),
+			e2eStringList(message.ExecutionIds), []byte{1},
+		))
+	}
+	return e2eHashFields(fields...)
+}
+
+func e2eValidatorCertificate(t *testing.T, digest []byte, validators ...localSigner) ([]byte, []byte) {
+	t.Helper()
+	// The development fixture gives both validators equal stake, so consensus
+	// order is descending raw address.
+	slices.SortFunc(validators, func(left, right localSigner) int {
+		return -bytes.Compare(mustHex(t, left.address), mustHex(t, right.address))
+	})
+	suite := drandbls.NewBLS12381Suite()
+	points := make([]kyber.Point, len(validators))
+	for index, validator := range validators {
+		points[index] = suite.G1().Point().Mul(validator.key.Scalar, nil)
+	}
+	mask, err := sign.NewMask(suite, points, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scheme := bdn.NewSchemeOnG2(suite)
+	partials := make([][]byte, len(validators))
+	for index, validator := range validators {
+		if err = mask.SetBit(index, true); err != nil {
+			t.Fatal(err)
+		}
+		if partials[index], err = scheme.Sign(validator.key.Scalar, digest); err != nil {
+			t.Fatal(err)
+		}
+	}
+	aggregate, err := scheme.AggregateSignatures(partials, mask)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := aggregate.MarshalBinary()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return mask.Mask(), encoded
+}
+
 // TestTakusenConsensusE2E exercises the complete native Takusen state machine
 // against the two-node development network. It is opt-in because it requires
 // plugin/go/compose.yaml to be running.
@@ -79,6 +183,8 @@ func TestTakusenConsensusE2E(t *testing.T) {
 	settlementDomain := params.SettlementDomains[0].Id
 	validatorOne := mustSigner(t, localValidatorOneAddress, envOr("TAKUSEN_VALIDATOR_ONE_KEY", localValidatorOneKey))
 	validatorTwo := mustSigner(t, localValidatorTwoAddress, envOr("TAKUSEN_VALIDATOR_TWO_KEY", localValidatorTwoKey))
+	requesterKey := secp256k1.PrivKeyFromBytes(bytes.Repeat([]byte{7}, 32))
+	requesterAddress := e2eKeccak(requesterKey.PubKey().SerializeUncompressed()[1:])[12:]
 
 	seed := sha256.Sum256([]byte("takusen-local-e2e-enclave"))
 	enclaveKey := ed25519.NewKeyFromSeed(seed[:])
@@ -135,11 +241,11 @@ func TestTakusenConsensusE2E(t *testing.T) {
 	observeDeposit := func(address string) (*contract.MessageObserveDeposit, map[string]any) {
 		message := &contract.MessageObserveDeposit{
 			ObserverAddress: mustHex(t, address), SettlementDomainId: settlementDomain, ChainTxHash: chainDepositHash[:],
-			Requester: mustHex(t, localValidatorOneAddress), AmountMicros: 1_000_000, TokenAmount: []byte{0x0f, 0x42, 0x40},
+			Requester: requesterAddress, AmountMicros: 1_000_000, TokenAmount: []byte{0x0f, 0x42, 0x40},
 		}
 		return message, map[string]any{
 			"observerAddress": address, "settlementDomainId": hex.EncodeToString(settlementDomain), "chainTxHash": hex.EncodeToString(chainDepositHash[:]),
-			"requester": localValidatorOneAddress, "amountMicros": message.AmountMicros, "tokenAmount": hex.EncodeToString(message.TokenAmount),
+			"requester": hex.EncodeToString(requesterAddress), "amountMicros": message.AmountMicros, "tokenAmount": hex.EncodeToString(message.TokenAmount),
 		}
 	}
 	deposit, depositFields := observeDeposit(validatorOne.address)
@@ -152,23 +258,39 @@ func TestTakusenConsensusE2E(t *testing.T) {
 	})
 
 	height := currentHeight(t, ctx, rpcURL)
-	observeAuthorization := func(address string) (*contract.MessageObserveAuthorization, map[string]any) {
-		message := &contract.MessageObserveAuthorization{
-			ObserverAddress: mustHex(t, address), SettlementDomainId: settlementDomain, RequestId: requestID, InputHash: inputHash[:], Requester: mustHex(t, localValidatorOneAddress),
+	observeAuthorization := func() (*contract.Authorization, map[string]any) {
+		message := &contract.Authorization{
+			SettlementDomainId: settlementDomain, RequestId: requestID, InputHash: inputHash[:], Requester: requesterAddress,
 			ReservedBudget: 100_000, OutputType: "boolean", Models: []string{models[0]}, ExecutionQuorum: 1,
-			DeadlineHeight: height + 100, AuthorizationSignature: []byte{1}, AuthorizationDeadline: 9_007_199_254_740_991,
+			DeadlineHeight: height + 100, AuthorizationDeadline: height + 100, DirectEoa: true,
+			RequestArchiveId: "sha256:" + hex.EncodeToString(inputHash[:]), OutputMinimum: 0, OutputMaximum: 1,
 		}
+		message.SchemaHash = e2eKeccak(e2eABIUint64(1), e2eABIUint64(0), e2eABIUint64(1), make([]byte, 32))
+		domain := e2eKeccak(
+			e2eKeccak([]byte("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)")),
+			e2eKeccak([]byte("Takusen Escrow")), e2eKeccak([]byte("1")), e2eABIUint64(params.SettlementDomains[0].ChainId), e2eABIAddress(params.SettlementDomains[0].EscrowAddress),
+		)
+		requestHash := sha256.Sum256([]byte(message.RequestId))
+		structure := e2eKeccak(
+			e2eKeccak([]byte("AuthorizeRequest(bytes32 requestId,bytes32 inputHash,bytes32 settlementDomain,address requester,uint128 budget,uint64 deadline)")),
+			requestHash[:], message.InputHash, message.SettlementDomainId, e2eABIAddress(message.Requester), e2eABIUint64(message.ReservedBudget), e2eABIUint64(message.AuthorizationDeadline),
+		)
+		compact := secpECDSA.SignCompact(requesterKey, e2eKeccak([]byte{0x19, 0x01}, domain, structure), false)
+		message.AuthorizationSignature = append(append([]byte(nil), compact[1:]...), compact[0]-27)
 		return message, map[string]any{
-			"observerAddress": address, "requestId": requestID, "inputHash": hex.EncodeToString(inputHash[:]), "requester": localValidatorOneAddress,
+			"requestId": requestID, "settlementDomainId": hex.EncodeToString(settlementDomain), "inputHash": hex.EncodeToString(inputHash[:]), "requester": hex.EncodeToString(requesterAddress),
 			"reservedBudget": message.ReservedBudget, "outputType": message.OutputType, "models": message.Models,
 			"executionQuorum": message.ExecutionQuorum, "deadlineHeight": message.DeadlineHeight,
 			"authorizationSignature": hex.EncodeToString(message.AuthorizationSignature), "authorizationDeadline": message.AuthorizationDeadline,
+			"directEoa": true, "requestArchiveId": message.RequestArchiveId, "outputMinimum": message.OutputMinimum,
+			"outputMaximum": message.OutputMaximum, "schemaHash": hex.EncodeToString(message.SchemaHash),
 		}
 	}
-	message, fields := observeAuthorization(validatorOne.address)
-	submit(t, ctx, rpcURL, validatorOne, contract.MessageObserveAuthorizationName, message, fields)
-	message, fields = observeAuthorization(validatorTwo.address)
-	submit(t, ctx, rpcURL, validatorTwo, contract.MessageObserveAuthorizationName, message, fields)
+	message, fields := observeAuthorization()
+	batch := &contract.MessageObserveAuthorizations{ObserverAddress: mustHex(t, validatorOne.address), Authorizations: []*contract.Authorization{message}}
+	submit(t, ctx, rpcURL, validatorOne, contract.MessageObserveAuthorizationsName, batch, map[string]any{
+		"observerAddress": validatorOne.address, "authorizations": []any{fields},
+	})
 	requestURL := pluginURL + "/v1/takusen/requests/" + requestID
 	var committedRequest contract.RequestRecord
 	waitStatus(t, ctx, requestURL, func(body []byte) bool {
@@ -201,32 +323,44 @@ func TestTakusenConsensusE2E(t *testing.T) {
 	})
 	receiptDigest := sha256.Sum256(canonical)
 	receiptSignature := ed25519.Sign(enclaveKey, receiptDigest[:])
-	execution := &contract.MessageSubmitExecution{ServicerAddress: mustHex(t, localValidatorOneAddress), ReceiptJson: canonical, PublicKey: publicKey, Signature: receiptSignature, ArchiveId: receipt.ArchiveID}
-	executionFields := map[string]any{
-		"servicerAddress": localValidatorOneAddress, "receiptJson": hex.EncodeToString(canonical), "publicKey": hex.EncodeToString(publicKey),
-		"signature": hex.EncodeToString(receiptSignature), "archiveId": execution.ArchiveId,
+	execution := &contract.ExecutionSubmission{ReceiptJson: canonical, Signature: receiptSignature}
+	executionBatch := &contract.MessageSubmitExecutions{
+		ServicerAddress: mustHex(t, localValidatorOneAddress),
+		Executions: []*contract.ExecutionSubmission{execution},
 	}
-	submit(t, ctx, rpcURL, validatorOne, contract.MessageSubmitExecutionName, execution, executionFields)
+	executionFields := map[string]any{
+		"servicerAddress": localValidatorOneAddress,
+		"executions": []any{map[string]any{
+			"receiptJson": hex.EncodeToString(canonical), "signature": hex.EncodeToString(receiptSignature),
+		}},
+	}
+	submit(t, ctx, rpcURL, validatorOne, contract.MessageSubmitExecutionsName, executionBatch, executionFields)
 	waitStatus(t, ctx, requestURL, func(body []byte) bool {
 		var value contract.RequestRecord
 		return json.Unmarshal(body, &value) == nil && value.Status == "ready"
 	})
 
 	settlementHash := sha256.Sum256([]byte(requestID + ":settlement"))
-	observeSettlement := func(address string) (*contract.MessageFinalizeRequest, map[string]any) {
-		message := &contract.MessageFinalizeRequest{
-			ObserverAddress: mustHex(t, address), SettlementDomainId: settlementDomain, RequestId: requestID, SettlementTxHash: settlementHash[:],
+	observeSettlement := func() (*contract.RequestFinalization, map[string]any) {
+		message := &contract.RequestFinalization{
+			SettlementDomainId: settlementDomain, RequestId: requestID, SettlementTxHash: settlementHash[:],
 			ReservedBudget: 100_000, RequestSpent: uint64(receipt.CostMicros), ExecutionIds: []string{executionID}, FinalizesRequest: true,
 		}
 		return message, map[string]any{
-			"observerAddress": address, "settlementDomainId": hex.EncodeToString(settlementDomain), "requestId": requestID, "settlementTxHash": hex.EncodeToString(settlementHash[:]),
+			"settlementDomainId": hex.EncodeToString(settlementDomain), "requestId": requestID, "settlementTxHash": hex.EncodeToString(settlementHash[:]),
 			"reservedBudget": message.ReservedBudget, "requestSpent": message.RequestSpent, "executionIds": message.ExecutionIds, "finalizesRequest": true,
 		}
 	}
-	finalize, finalizeFields := observeSettlement(validatorOne.address)
-	submit(t, ctx, rpcURL, validatorOne, contract.MessageFinalizeRequestName, finalize, finalizeFields)
-	finalize, finalizeFields = observeSettlement(validatorTwo.address)
-	submit(t, ctx, rpcURL, validatorTwo, contract.MessageFinalizeRequestName, finalize, finalizeFields)
+	finalize, finalizeFields := observeSettlement()
+	bitmap, aggregate := e2eValidatorCertificate(t, e2eSettlementBatchSubject([]*contract.RequestFinalization{finalize}), validatorOne, validatorTwo)
+	finalizationBatch := &contract.MessageFinalizeRequests{
+		ObserverAddress: mustHex(t, validatorOne.address), Requests: []*contract.RequestFinalization{finalize},
+		ValidatorSetId: params.ValidatorSetId, SignerBitmap: bitmap, AggregateSignature: aggregate,
+	}
+	submit(t, ctx, rpcURL, validatorOne, contract.MessageFinalizeRequestsName, finalizationBatch, map[string]any{
+		"observerAddress": validatorOne.address, "requests": []any{finalizeFields}, "validatorSetId": params.ValidatorSetId,
+		"signerBitmap": hex.EncodeToString(bitmap), "aggregateSignature": hex.EncodeToString(aggregate),
+	})
 	waitStatus(t, ctx, requestURL, func(body []byte) bool {
 		var value contract.RequestRecord
 		return json.Unmarshal(body, &value) == nil && value.Status == "settled" &&

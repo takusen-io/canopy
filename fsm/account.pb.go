@@ -55,9 +55,14 @@ type Account struct {
 	// vesting_end_height: the block height when the vesting amount is fully unlocked
 	VestingEndHeight uint64 `protobuf:"varint,6,opt,name=vesting_end_height,json=vestingEndHeight,proto3" json:"vestingEndHeight,omitempty"` // @gotags: json:"vestingEndHeight,omitempty"
 	// nonce: the minimum accepted sequence number for nonce-protected transactions
-	Nonce         uint64 `protobuf:"varint,7,opt,name=nonce,proto3" json:"nonce,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Nonce uint64 `protobuf:"varint,7,opt,name=nonce,proto3" json:"nonce,omitempty"`
+	// unbonding_amount: the account's single cliff-locked servicer collateral
+	// bucket. It becomes spendable by height without a second transaction.
+	UnbondingAmount uint64 `protobuf:"varint,8,opt,name=unbonding_amount,json=unbondingAmount,proto3" json:"unbondingAmount,omitempty"` // @gotags: json:"unbondingAmount,omitempty"
+	// unbonding_release_height: the first height at which that bucket is spendable.
+	UnbondingReleaseHeight uint64 `protobuf:"varint,9,opt,name=unbonding_release_height,json=unbondingReleaseHeight,proto3" json:"unbondingReleaseHeight,omitempty"` // @gotags: json:"unbondingReleaseHeight,omitempty"
+	unknownFields          protoimpl.UnknownFields
+	sizeCache              protoimpl.SizeCache
 }
 
 func (x *Account) Reset() {
@@ -135,6 +140,20 @@ func (x *Account) GetVestingEndHeight() uint64 {
 func (x *Account) GetNonce() uint64 {
 	if x != nil {
 		return x.Nonce
+	}
+	return 0
+}
+
+func (x *Account) GetUnbondingAmount() uint64 {
+	if x != nil {
+		return x.UnbondingAmount
+	}
+	return 0
+}
+
+func (x *Account) GetUnbondingReleaseHeight() uint64 {
+	if x != nil {
+		return x.UnbondingReleaseHeight
 	}
 	return 0
 }
@@ -305,7 +324,7 @@ var File_account_proto protoreflect.FileDescriptor
 
 const file_account_proto_rawDesc = "" +
 	"\n" +
-	"\raccount.proto\x12\x05types\x1a\tdex.proto\"\x8a\x02\n" +
+	"\raccount.proto\x12\x05types\x1a\tdex.proto\"\xef\x02\n" +
 	"\aAccount\x12\x18\n" +
 	"\aaddress\x18\x01 \x01(\fR\aaddress\x12\x16\n" +
 	"\x06amount\x18\x02 \x01(\x04R\x06amount\x12%\n" +
@@ -313,7 +332,9 @@ const file_account_proto_rawDesc = "" +
 	"\x14vesting_start_height\x18\x04 \x01(\x04R\x12vestingStartHeight\x120\n" +
 	"\x14vesting_cliff_height\x18\x05 \x01(\x04R\x12vestingCliffHeight\x12,\n" +
 	"\x12vesting_end_height\x18\x06 \x01(\x04R\x10vestingEndHeight\x12\x14\n" +
-	"\x05nonce\x18\a \x01(\x04R\x05nonce\"\x85\x01\n" +
+	"\x05nonce\x18\a \x01(\x04R\x05nonce\x12)\n" +
+	"\x10unbonding_amount\x18\b \x01(\x04R\x0funbondingAmount\x128\n" +
+	"\x18unbonding_release_height\x18\t \x01(\x04R\x16unbondingReleaseHeight\"\x85\x01\n" +
 	"\x04Pool\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x04R\x02id\x12\x16\n" +
 	"\x06amount\x18\x02 \x01(\x04R\x06amount\x12)\n" +

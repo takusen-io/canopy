@@ -11,8 +11,7 @@ import (
 )
 
 func (c *Contract) deliverQueueAuthorization(height uint64, message *MessageQueueAuthorization) *PluginDeliverResponse {
-	authorization := proto.Clone(message.Authorization).(*MessageObserveAuthorization)
-	authorization.ObserverAddress = nil
+	authorization := proto.Clone(message.Authorization).(*Authorization)
 	if found, err := c.read(KeyForRequest(authorization.RequestId), new(RequestRecord)); err != nil {
 		return &PluginDeliverResponse{Error: err}
 	} else if found {
@@ -60,7 +59,7 @@ func (c *Contract) expiredPendingAuthorizations(height uint64, limit uint64) ([]
 		if Unmarshal(entry.Value, pending) != nil {
 			continue
 		}
-		authorization := new(MessageObserveAuthorization)
+		authorization := new(Authorization)
 		if Unmarshal(pending.Authorization, authorization) != nil {
 			continue
 		}
@@ -75,11 +74,9 @@ func (c *Contract) expiredPendingAuthorizations(height uint64, limit uint64) ([]
 	return deletes, nil
 }
 
-func (c *Contract) deliverObserveAuthorization(height uint64, message *MessageObserveAuthorization) *PluginDeliverResponse {
-	return c.deliverObserveAuthorizationCertified(height, message, false)
-}
-
-func (c *Contract) deliverObserveAuthorizationCertified(height uint64, message *MessageObserveAuthorization, certified bool) *PluginDeliverResponse {
+// applyAuthorizationItem applies one member of the plural transaction or one
+// authorization already certified through the typed consensus-candidate path.
+func (c *Contract) applyAuthorizationItem(height uint64, message *Authorization, certified bool) *PluginDeliverResponse {
 	params, paramsErr := c.currentProtocolParams()
 	if paramsErr != nil {
 		return &PluginDeliverResponse{Error: paramsErr}
@@ -113,8 +110,6 @@ func (c *Contract) deliverObserveAuthorizationCertified(height uint64, message *
 	} else if found {
 		return &PluginDeliverResponse{Error: ErrConflict("request is already authorized")}
 	}
-	subject := authorizationSubject(message)
-	claim := hashFields([]byte("authorization"), []byte(message.RequestId))
 	reached := false
 	records := make(map[string]proto.Message)
 	if message.DirectEoa {
@@ -125,12 +120,7 @@ func (c *Contract) deliverObserveAuthorizationCertified(height uint64, message *
 	} else if certified {
 		reached = true
 	} else {
-		observation, observed, observeErr := c.observe(observationAuthorization, subject, claim, message.ObserverAddress, height)
-		if observeErr != nil {
-			return &PluginDeliverResponse{Error: observeErr}
-		}
-		reached = observed
-		records = observationRecords(observationAuthorization, subject, claim, message.ObserverAddress, observation)
+		return &PluginDeliverResponse{Error: ErrUnauthorized("ERC-1271 authorization requires a consensus certificate")}
 	}
 	if reached {
 		if found, readErr := c.read(KeyForReservation(message.SettlementDomainId, message.RequestId), new(ReservationRecord)); readErr != nil {
@@ -225,22 +215,7 @@ func (c *Contract) deliverObserveAuthorizationCertified(height uint64, message *
 }
 
 func (c *Contract) deliverObserveAuthorizations(height uint64, message *MessageObserveAuthorizations) *PluginDeliverResponse {
-	direct := len(message.Authorizations) != 0
-	for _, authorization := range message.Authorizations {
-		if authorization == nil || !authorization.DirectEoa || !bytes.Equal(authorization.ObserverAddress, message.ObserverAddress) {
-			direct = false
-			break
-		}
-	}
-	if direct {
-		return c.deliverDirectAuthorizations(height, message)
-	}
-	for _, authorization := range message.Authorizations {
-		if response := c.deliverObserveAuthorization(height, authorization); response.Error != nil {
-			return response
-		}
-	}
-	return &PluginDeliverResponse{}
+	return c.deliverDirectAuthorizations(height, message)
 }
 
 // deliverDirectAuthorizations preserves the exact single-request validation
@@ -282,7 +257,7 @@ func (c *Contract) deliverDirectAuthorizations(height uint64, message *MessageOb
 	return &PluginDeliverResponse{Error: c.write(records)}
 }
 
-func (c *Contract) stageDirectAuthorization(height uint64, message *MessageObserveAuthorization, params *ProtocolParams, anchor *BlockAnchor, eligible map[string][]*Servicer, records, loaded map[string]proto.Message) *PluginDeliverResponse {
+func (c *Contract) stageDirectAuthorization(height uint64, message *Authorization, params *ProtocolParams, anchor *BlockAnchor, eligible map[string][]*Servicer, records, loaded map[string]proto.Message) *PluginDeliverResponse {
 	if !outputSchemaEnabled(params, message.OutputType) {
 		return &PluginDeliverResponse{Error: ErrUnauthorized("request output schema is not governed")}
 	}
@@ -408,29 +383,60 @@ func assignmentMaxProviderCost(reservedBudget uint64, modelIndex, modelCount int
 	return maxProviderCost(modelBudget, marginBps, feeBps)
 }
 
-func (c *Contract) deliverExpireAssignmentWithCertificate(height uint64, message *MessageExpireAssignment) *PluginDeliverResponse {
-	request := new(RequestRecord)
-	if found, err := c.read(KeyForRequest(message.RequestId), request); err != nil {
-		return &PluginDeliverResponse{Error: err}
-	} else if !found || request.Status != "authorized" {
-		return &PluginDeliverResponse{Error: ErrNotFound("active request not found")}
+const (
+	timeoutTransitionPageSize   = uint64(512)
+	maxTimedOutRequestsPerBlock = 64
+)
+
+// stageTimedOutRequests applies the height-derived timeout directly in
+// BeginBlock. Native consensus already agrees on both the assignment and the
+// height, so a second per-assignment vote-extension certificate is redundant.
+func (c *Contract) stageTimedOutRequests(height uint64, records map[string]proto.Message, deletes *[][]byte) *PluginError {
+	cursor := new(ReplayMarker)
+	if found, err := c.read(KeyForTimeoutCandidateCursorCurrent(), cursor); err != nil {
+		return err
+	} else if !found {
+		cursor.Id = nil
 	}
-	assignment := findAssignment(request, message.Model)
-	if assignment == nil || assignment.Completed {
-		return &PluginDeliverResponse{Error: ErrConflict("model assignment is absent or already completed")}
+	page, err := c.rangeReadPage(RequestPrefix(), cursor.Id, timeoutTransitionPageSize)
+	if err != nil {
+		return err
 	}
-	if message.DeadlineHeight == 0 || request.DeadlineHeight != message.DeadlineHeight || height <= request.DeadlineHeight ||
-		message.ExecutionId != assignment.ExecutionId || !bytes.Equal(message.SettlementDomainId, request.SettlementDomainId) {
-		return &PluginDeliverResponse{Error: ErrInvalidTransaction("assignment expiration does not match the elapsed committed assignment")}
+	var lastScanned []byte
+	processed := 0
+	for _, entry := range page {
+		lastScanned = append(lastScanned[:0], entry.Key...)
+		request := new(RequestRecord)
+		if found, readErr := c.readStaged(records, entry.Key, request); readErr != nil {
+			return readErr
+		} else if !found || request.Status != "authorized" || request.DeadlineHeight == 0 || height <= request.DeadlineHeight {
+			continue
+		}
+		previousAssignments := activeAssignmentOwners(request)
+		changed := false
+		for _, assignment := range request.Assignments {
+			if assignment == nil || assignment.Completed || assignment.ExecutionId == "" {
+				continue
+			}
+			if expireErr := c.expireAssignment(height, request, assignment, records, deletes); expireErr != nil {
+				return expireErr
+			}
+			changed = true
+		}
+		if changed {
+			*deletes = append(*deletes, stageAssignmentIndexes(records, request, previousAssignments)...)
+			processed++
+			if processed == maxTimedOutRequestsPerBlock {
+				break
+			}
+		}
 	}
-	previousAssignments := activeAssignmentOwners(request)
-	records := make(map[string]proto.Message)
-	var deletes [][]byte
-	if expireErr := c.expireAssignment(height, request, assignment, records, &deletes); expireErr != nil {
-		return &PluginDeliverResponse{Error: expireErr}
+	next := &ReplayMarker{}
+	if len(lastScanned) != 0 && (len(page) == int(timeoutTransitionPageSize) || processed == maxTimedOutRequestsPerBlock) {
+		next.Id = append([]byte(nil), lastScanned...)
 	}
-	deletes = append(deletes, stageAssignmentIndexes(records, request, previousAssignments)...)
-	return &PluginDeliverResponse{Error: c.writeChanges(records, deletes)}
+	records[string(KeyForTimeoutCandidateCursorCurrent())] = next
+	return nil
 }
 
 func (c *Contract) expireAssignment(height uint64, request *RequestRecord, assignment *Assignment, records map[string]proto.Message, deletes *[][]byte) *PluginError {
@@ -447,7 +453,7 @@ func (c *Contract) expireAssignment(height uint64, request *RequestRecord, assig
 	records[string(KeyForUncertifiedSettlementIndex(request.RequestId))] = &RequestRecord{RequestId: request.RequestId}
 	*deletes = append(*deletes, KeyForCertifiedSettlementIndex(request.RequestId))
 	if allAssignmentsResolved(request) {
-		executions, err := c.collectExecutions(request, nil)
+		executions, err := c.collectExecutionsStaged(records, request, nil)
 		if err != nil {
 			return err
 		}
@@ -511,15 +517,6 @@ func (c *Contract) releaseTimedOutRequest(height uint64, request *RequestRecord,
 	return nil
 }
 
-func (c *Contract) deliverFinalizeRequest(height uint64, message *MessageFinalizeRequest) *PluginDeliverResponse {
-	records := make(map[string]proto.Message)
-	var deletes [][]byte
-	if response := c.stageFinalizeRequestCertified(height, message, false, records, nil, &deletes); response.Error != nil {
-		return response
-	}
-	return &PluginDeliverResponse{Error: c.writeChanges(records, deletes)}
-}
-
 func (c *Contract) deliverFinalizeRequests(height uint64, message *MessageFinalizeRequests) *PluginDeliverResponse {
 	if err := c.verifyValidatorCertificate(settlementBatchSubject(message.Requests), message.ValidatorSetId, message.SignerBitmap, message.AggregateSignature); err != nil {
 		return &PluginDeliverResponse{Error: err}
@@ -529,8 +526,7 @@ func (c *Contract) deliverFinalizeRequests(height uint64, message *MessageFinali
 
 // deliverFinalizeRequestsConsensus applies an EVM fact already certified by
 // the Native auxiliary-certificate path. Its aggregate signs the
-// domain/block-bound observation envelope, so it must not be reinterpreted as
-// the legacy settlement-subject certificate checked above.
+// domain/block-bound observation envelope.
 func (c *Contract) deliverFinalizeRequestsConsensus(height uint64, message *MessageFinalizeRequests) *PluginDeliverResponse {
 	loaded, loadErr := c.prefetchFinalizationState(message.Requests)
 	if loadErr != nil {
@@ -539,14 +535,14 @@ func (c *Contract) deliverFinalizeRequestsConsensus(height uint64, message *Mess
 	records := make(map[string]proto.Message, len(message.Requests)*4)
 	deletes := make([][]byte, 0, len(message.Requests))
 	for _, request := range message.Requests {
-		if response := c.stageFinalizeRequestCertified(height, request, true, records, loaded, &deletes); response.Error != nil {
+		if response := c.stageFinalization(height, request, records, loaded, &deletes); response.Error != nil {
 			return response
 		}
 	}
 	return &PluginDeliverResponse{Error: c.writeChanges(records, deletes)}
 }
 
-func (c *Contract) prefetchFinalizationState(messages []*MessageFinalizeRequest) (map[string]proto.Message, *PluginError) {
+func (c *Contract) prefetchFinalizationState(messages []*RequestFinalization) (map[string]proto.Message, *PluginError) {
 	factories := make(map[string]stateRecordFactory, len(messages)*4)
 	for _, message := range messages {
 		factories[string(KeyForRequest(message.RequestId))] = func() proto.Message { return new(RequestRecord) }
@@ -586,7 +582,7 @@ func (c *Contract) prefetchFinalizationState(messages []*MessageFinalizeRequest)
 	return loaded, nil
 }
 
-func (c *Contract) stageFinalizeRequestCertified(height uint64, message *MessageFinalizeRequest, batchCertified bool, records, loaded map[string]proto.Message, deletes *[][]byte) *PluginDeliverResponse {
+func (c *Contract) stageFinalization(height uint64, message *RequestFinalization, records, loaded map[string]proto.Message, deletes *[][]byte) *PluginDeliverResponse {
 	request := new(RequestRecord)
 	if found, err := c.readExecutionStaged(records, loaded, KeyForRequest(message.RequestId), request); err != nil {
 		return &PluginDeliverResponse{Error: err}
@@ -643,32 +639,7 @@ func (c *Contract) stageFinalizeRequestCertified(height uint64, message *Message
 			}
 		}
 	}
-	subject := settlementSubject(message)
-	claim := hashFields([]byte("settlement"), []byte(message.RequestId), stringListBytes(message.ExecutionIds), boolBytes(message.FinalizesRequest))
-	reached := false
-	if batchCertified {
-		reached = true
-	} else if message.ValidatorSetId != 0 || len(message.SignerBitmap) != 0 || len(message.AggregateSignature) != 0 {
-		if certErr := c.verifyValidatorCertificate(subject, message.ValidatorSetId, message.SignerBitmap, message.AggregateSignature); certErr != nil {
-			return &PluginDeliverResponse{Error: certErr}
-		}
-		reached = true
-	} else {
-		observation, observed, observeErr := c.observe(observationSettlement, subject, claim, message.ObserverAddress, height)
-		if observeErr != nil {
-			return &PluginDeliverResponse{Error: observeErr}
-		}
-		reached = observed
-		for key, record := range observationRecords(observationSettlement, subject, claim, message.ObserverAddress, observation) {
-			records[key] = record
-		}
-	}
-	if !reached {
-		// A minority observation is durable evidence, not a terminal settlement
-		// transition. Keep discovery live until quorum or a certificate succeeds.
-		return &PluginDeliverResponse{}
-	}
-	if reached {
+	{
 		for executionID, execution := range settling {
 			execution.Settled = true
 			execution.SettlementTxHash = append([]byte(nil), message.SettlementTxHash...)
@@ -794,7 +765,7 @@ func (c *Contract) eligibleServicers(model string) ([]*Servicer, *PluginError) {
 		enclave := new(EnclaveKey)
 		if found, readErr := c.read(KeyForEnclave(servicer.TeeKeyId), enclave); readErr != nil {
 			return nil, readErr
-		} else if !found || !enclave.Active || !bytes.Equal(enclave.OwnerAddress, servicer.OwnerAddress) {
+		} else if !found || enclave.Status != "active" || !bytes.Equal(enclave.OwnerAddress, servicer.OwnerAddress) {
 			continue
 		}
 		servicers = append(servicers, servicer)

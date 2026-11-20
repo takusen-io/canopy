@@ -53,7 +53,7 @@ func expandExecutionBatch(message *MessageSubmitExecutions) *PluginError {
 	}
 	payload := new(MessageSubmitExecutions)
 	if err = proto.Unmarshal(expanded, payload); err != nil || len(payload.Executions) == 0 ||
-		len(payload.ServicerAddress) != 0 || len(payload.PublicKey) != 0 || len(payload.CompressedExecutions) != 0 {
+		len(payload.ServicerAddress) != 0 || len(payload.CompressedExecutions) != 0 {
 		return ErrInvalidTransaction("compressed execution batch is invalid")
 	}
 	message.Executions = payload.Executions

@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -16,6 +17,20 @@ import (
 )
 
 const testRequestArchiveID = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+func TestProtocolV5ExposesOneTransactionPerTrustBoundary(t *testing.T) {
+	expected := []string{
+		MessageRegisterServicerName, MessageManageServicerName,
+		MessageObserveDepositName, MessageResolveDepositName, MessageResolveSettlementName,
+		MessageObserveAuthorizationsName, MessageQueueAuthorizationName,
+		MessageSubmitExecutionsName, MessageFinalizeRequestsName, MessageGovernanceVoteName,
+		MessageObserveBridgeLockName, MessageObserveBridgeReleaseName, MessageObserveEpochMintName,
+		MessageBurnBridgeName, MessageSetProducerPayoutName,
+	}
+	if !slices.Equal(ContractConfig.SupportedTransactions, expected) {
+		t.Fatalf("supported transactions = %q, want %q", ContractConfig.SupportedTransactions, expected)
+	}
+}
 
 func testSettlementDomainID() []byte {
 	return append([]byte(nil), defaultSettlementDomain().Id...)
@@ -108,11 +123,8 @@ func TestVerifyReceipt(t *testing.T) {
 		strconv.FormatInt(r.StartedAtMS, 10), strconv.FormatInt(r.CompletedAtMS, 10),
 	})
 	digest := sha256.Sum256(canonical)
-	message := &MessageSubmitExecution{
-		ServicerAddress: make([]byte, 20), ReceiptJson: canonical, PublicKey: publicKey,
-		Signature: ed25519.Sign(privateKey, digest[:]), ArchiveId: archiveID,
-	}
-	parsed, verifiedDigest, verifyErr := verifyReceipt(message)
+	message := &ExecutionSubmission{ReceiptJson: canonical, Signature: ed25519.Sign(privateKey, digest[:])}
+	parsed, verifiedDigest, verifyErr := verifyReceipt(message, publicKey)
 	if verifyErr != nil {
 		t.Fatal(verifyErr)
 	}
@@ -121,12 +133,12 @@ func TestVerifyReceipt(t *testing.T) {
 	}
 	message.ReceiptJson = append([]byte(nil), canonical...)
 	message.ReceiptJson[1] ^= 0x01
-	if _, _, verifyErr = verifyReceipt(message); verifyErr == nil {
+	if _, _, verifyErr = verifyReceipt(message, publicKey); verifyErr == nil {
 		t.Fatal("tampered canonical receipt was accepted")
 	}
 	message.ReceiptJson = canonical
 	message.Signature[0] ^= 0xff
-	if _, _, verifyErr = verifyReceipt(message); verifyErr == nil {
+	if _, _, verifyErr = verifyReceipt(message, publicKey); verifyErr == nil {
 		t.Fatal("tampered receipt signature was accepted")
 	}
 }
@@ -148,18 +160,13 @@ func TestMaximumProviderCostFitsAllInModelAllocation(t *testing.T) {
 	}
 }
 
-func TestObservationSubjectsExcludeObserverOnly(t *testing.T) {
-	message := &MessageObserveAuthorization{SettlementDomainId: testSettlementDomainID(),
-		ObserverAddress: make([]byte, 20), RequestId: "request", InputHash: make([]byte, 32),
+func TestAuthorizationSubjectBindsContent(t *testing.T) {
+	message := &Authorization{SettlementDomainId: testSettlementDomainID(),
+		RequestId: "request", InputHash: make([]byte, 32),
 		Requester: make([]byte, 20), ReservedBudget: 100, OutputType: "boolean", Models: []string{"model"},
 		ExecutionQuorum: 1, DeadlineHeight: 100,
 	}
 	first := authorizationSubject(message)
-	message.ObserverAddress[0] = 1
-	second := authorizationSubject(message)
-	if string(first) != string(second) {
-		t.Fatal("observer identity changed the observed authorization subject")
-	}
 	message.ReservedBudget++
 	if string(first) == string(authorizationSubject(message)) {
 		t.Fatal("authorization content did not change its subject")
@@ -202,15 +209,11 @@ func TestSafeAvailableCreditExcludesFlashblockDeposits(t *testing.T) {
 }
 
 func TestSettlementSubjectBindsTransactionAndBudget(t *testing.T) {
-	message := &MessageFinalizeRequest{SettlementDomainId: testSettlementDomainID(),
-		ObserverAddress: make([]byte, 20), RequestId: "request", SettlementTxHash: make([]byte, 32),
+	message := &RequestFinalization{SettlementDomainId: testSettlementDomainID(),
+		RequestId: "request", SettlementTxHash: make([]byte, 32),
 		ReservedBudget: 100, ExecutionIds: []string{"execution"}, FinalizesRequest: true,
 	}
 	first := settlementSubject(message)
-	message.ObserverAddress[0] = 1
-	if string(first) != string(settlementSubject(message)) {
-		t.Fatal("observer identity changed the settlement subject")
-	}
 	message.ReservedBudget++
 	if string(first) == string(settlementSubject(message)) {
 		t.Fatal("reservation budget did not change the settlement subject")
@@ -228,19 +231,19 @@ func TestSettlementSubjectBindsTransactionAndBudget(t *testing.T) {
 }
 
 func TestSettlementBatchSubjectAndValidationBindEveryMember(t *testing.T) {
-	first := &MessageFinalizeRequest{SettlementDomainId: testSettlementDomainID(), RequestId: "one", SettlementTxHash: bytes.Repeat([]byte{1}, 32), ReservedBudget: 100, RequestSpent: 40, ExecutionIds: []string{"execution-one"}, FinalizesRequest: true}
-	second := &MessageFinalizeRequest{SettlementDomainId: testSettlementDomainID(), RequestId: "two", SettlementTxHash: bytes.Repeat([]byte{2}, 32), ReservedBudget: 200, RequestSpent: 50, ExecutionIds: []string{"execution-two"}, FinalizesRequest: true}
-	digest := settlementBatchSubject([]*MessageFinalizeRequest{first, second})
-	if bytes.Equal(digest, settlementBatchSubject([]*MessageFinalizeRequest{second, first})) {
+	first := &RequestFinalization{SettlementDomainId: testSettlementDomainID(), RequestId: "one", SettlementTxHash: bytes.Repeat([]byte{1}, 32), ReservedBudget: 100, RequestSpent: 40, ExecutionIds: []string{"execution-one"}, FinalizesRequest: true}
+	second := &RequestFinalization{SettlementDomainId: testSettlementDomainID(), RequestId: "two", SettlementTxHash: bytes.Repeat([]byte{2}, 32), ReservedBudget: 200, RequestSpent: 50, ExecutionIds: []string{"execution-two"}, FinalizesRequest: true}
+	digest := settlementBatchSubject([]*RequestFinalization{first, second})
+	if bytes.Equal(digest, settlementBatchSubject([]*RequestFinalization{second, first})) {
 		t.Fatal("finalization batch order was not bound")
 	}
-	changed := proto.Clone(second).(*MessageFinalizeRequest)
+	changed := proto.Clone(second).(*RequestFinalization)
 	changed.RequestSpent++
-	if bytes.Equal(digest, settlementBatchSubject([]*MessageFinalizeRequest{first, changed})) {
+	if bytes.Equal(digest, settlementBatchSubject([]*RequestFinalization{first, changed})) {
 		t.Fatal("finalization batch member contents were not bound")
 	}
 	batch := &MessageFinalizeRequests{
-		ObserverAddress: bytes.Repeat([]byte{9}, 20), Requests: []*MessageFinalizeRequest{first, second},
+		ObserverAddress: bytes.Repeat([]byte{9}, 20), Requests: []*RequestFinalization{first, second},
 		ValidatorSetId: 1, SignerBitmap: []byte{7}, AggregateSignature: []byte{8},
 	}
 	if _, err := checkFinalizeRequests(batch); err != nil {
@@ -356,7 +359,7 @@ func TestEpochAuthorizationDigestMatchesSolidityABI(t *testing.T) {
 }
 
 func TestSettlementFinalizationDigestMatchesApplication(t *testing.T) {
-	message := &MessageFinalizeRequest{
+	message := &RequestFinalization{
 		SettlementDomainId: bytes.Repeat([]byte{0xaa}, 32), RequestId: "request-vector",
 		SettlementTxHash: bytes.Repeat([]byte{0xbb}, 32), ReservedBudget: 100_000, RequestSpent: 42_000,
 		ExecutionIds: []string{"exec-a", "exec-b"}, FinalizesRequest: true,
@@ -364,7 +367,7 @@ func TestSettlementFinalizationDigestMatchesApplication(t *testing.T) {
 	if got := hex.EncodeToString(settlementSubject(message)); got != "783d4727a509a69377adb4fb8fffb799475e6038650fa7752a640145e4855315" {
 		t.Fatalf("single finalization digest = %s", got)
 	}
-	if got := hex.EncodeToString(settlementBatchSubject([]*MessageFinalizeRequest{message})); got != "237be5d42aa947dc8e23f1c0d6fbe29a0b29004057096d80520cfd27cefefdde" {
+	if got := hex.EncodeToString(settlementBatchSubject([]*RequestFinalization{message})); got != "237be5d42aa947dc8e23f1c0d6fbe29a0b29004057096d80520cfd27cefefdde" {
 		t.Fatalf("batch finalization digest = %s", got)
 	}
 }

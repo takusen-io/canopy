@@ -6,20 +6,17 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"testing"
-
-	"google.golang.org/protobuf/proto"
 )
 
 func TestExecutionCohortPrefetchIncludesReservationsInOneStateRead(t *testing.T) {
 	contract, store, servicer, _ := newMemoryContract(t)
 	domain := testSettlementDomainID()
-	message := &MessageSubmitExecution{ServicerAddress: servicer, PublicKey: bytes.Repeat([]byte{3}, 32)}
 	authenticated := []authenticatedExecution{{parsed: &receipt{
-		ExecutionID: "execution", RequestID: "request", SettlementDomain: "0x" + hex.EncodeToString(domain),
+		ExecutionID: "execution", RequestID: "request", SettlementDomain: "0x" + hex.EncodeToString(domain), TEEKeyID: "ed25519:key",
 	}}}
 
 	before := store.stateReadCalls
-	loaded, err := contract.prefetchExecutionState([]*MessageSubmitExecution{message}, authenticated)
+	loaded, err := contract.prefetchExecutionState(servicer, authenticated)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,39 +86,5 @@ func TestSettlementCandidatesBatchStateReads(t *testing.T) {
 	batch = new(certifiedSettlementBatch)
 	if json.Unmarshal(candidates[0].Payload, batch) != nil || len(batch.Requests) != 1 || batch.Requests[0].RequestID != "request-b" {
 		t.Fatalf("in-flight certificate did not serialize its request: %s", candidates[0].Payload)
-	}
-}
-
-func TestOverlappingSettlementCertificateRepairRequeuesUnsettledSuffix(t *testing.T) {
-	contract, store, _, _ := newMemoryContract(t)
-	requestID := "overlap"
-	key := uint64Bytes(17)
-	digest := bytes.Repeat([]byte{9}, 32)
-	payload, err := json.Marshal(certifiedSettlementBatch{Requests: []certifiedSettlementRequest{{
-		RequestID: requestID,
-		Executions: []certifiedSettlementExecution{
-			{ExecutionID: "settled"},
-			{ExecutionID: "pending"},
-		},
-	}}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	store.put(t, KeyForCertifiedSettlementIndex(requestID), &ReplayMarker{Id: key})
-	store.put(t, KeyForConsensusCertificate("settlement", key, digest), &ConsensusCertificate{
-		Kind: "settlement", Key: key, Digest: digest, Payload: payload, CompletedHeight: 10,
-	})
-	store.put(t, KeyForExecution("settled"), &ExecutionRecord{ExecutionId: "settled", RequestId: requestID, Settled: true})
-	store.put(t, KeyForExecution("pending"), &ExecutionRecord{ExecutionId: "pending", RequestId: requestID})
-	records := make(map[string]proto.Message)
-	var deletes [][]byte
-	if repairErr := contract.repairOverlappingSettlementCertificates(records, &deletes); repairErr != nil {
-		t.Fatal(repairErr)
-	}
-	if pointer, ok := records[string(KeyForUncertifiedSettlementIndex(requestID))].(*RequestRecord); !ok || pointer.RequestId != requestID {
-		t.Fatalf("unsettled suffix was not requeued: %+v", pointer)
-	}
-	if len(deletes) != 1 || !bytes.Equal(deletes[0], KeyForCertifiedSettlementIndex(requestID)) {
-		t.Fatalf("stale certificate marker deletes = %x", deletes)
 	}
 }

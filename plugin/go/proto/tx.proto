@@ -30,11 +30,14 @@ message Transaction {
   // NO CONFLICT STARTING AT FIELD = 25
 }
 
-message MessageRevokeEnclave {
-  bytes observer_address = 1;
-  string tee_key_id = 2;
+// EnclaveRevocation is an emergency control candidate approved through
+// validator vote extensions. It is not a fee-paying transaction.
+message EnclaveRevocation {
+  string tee_key_id = 1;
+  bytes incident_id = 2;
 }
 
+// MessageRegisterServicer is the single initial-registration operation.
 message MessageRegisterServicer {
   bytes owner_address = 1;
   bytes evm_payout_address = 2;
@@ -48,13 +51,37 @@ message MessageRegisterServicer {
   bytes attestation_document = 10;
 }
 
-message MessageUpdateServicer {
+message ServicerConfigurationUpdate {
+  bytes evm_payout_address = 1;
+  repeated string models = 2;
+  bool active = 3;
+}
+
+message ServicerBondUpdate {
+  uint64 target_bond = 1;
+  // max_debit bounds the amount that may be removed from the owner's liquid
+  // account if the target is above the current bond.
+  uint64 max_debit = 2;
+}
+
+message EnclaveRotation {
+  string tee_key_id = 1;
+  bytes public_key = 2;
+  bytes nonce = 3;
+  bytes user_data = 4;
+  bytes proof_signature = 5;
+  bytes attestation_document = 6;
+}
+
+// MessageManageServicer is a sparse post-registration update. Any combination
+// of configuration, bond, and rotation may be applied atomically without
+// retransmitting unchanged state. expected_revision rejects stale updates.
+message MessageManageServicer {
   bytes owner_address = 1;
-  bytes evm_payout_address = 2;
-  string tee_key_id = 3;
-  repeated string models = 4;
-  uint64 additional_bond = 5;
-  bool active = 6;
+  uint64 expected_revision = 2;
+  ServicerConfigurationUpdate configuration = 3;
+  ServicerBondUpdate bond = 4;
+  EnclaveRotation rotation = 5;
 }
 
 message MessageObserveDeposit {
@@ -89,44 +116,42 @@ message MessageResolveSettlement {
   bool finalizes_request = 6;
 }
 
-message MessageObserveAuthorization {
-  reserved 9;
-  bytes observer_address = 1;
-  string request_id = 2;
-  bytes input_hash = 3;
-  bytes requester = 4;
-  uint64 reserved_budget = 5;
-  string output_type = 6;
-  repeated string models = 7;
+message Authorization {
+  string request_id = 1;
+  bytes input_hash = 2;
+  bytes requester = 3;
+  uint64 reserved_budget = 4;
+  string output_type = 5;
+  repeated string models = 6;
   // Display-only agreement observation threshold.
-  uint32 execution_quorum = 8;
-  uint64 deadline_height = 10;
-  bytes authorization_signature = 11;
-  uint64 authorization_deadline = 12;
+  uint32 execution_quorum = 7;
+  uint64 deadline_height = 8;
+  bytes authorization_signature = 9;
+  uint64 authorization_deadline = 10;
   // direct_eoa lets the native state machine verify an ordinary EOA's EIP-712
   // signature itself. Contract-wallet signatures retain validator observation.
-  bool direct_eoa = 13;
+  bool direct_eoa = 11;
   // Content address of the replicated full request input. Admission is
   // fail-closed unless this artifact was published first.
-  string request_archive_id = 14;
+  string request_archive_id = 12;
   // ERC-1271 authorization is evaluated at this settlement chain's canonical
   // safe header.
   // EOA authorization is state-independent and leaves both fields empty.
-  uint64 authorization_chain_block_number = 15;
-  bytes authorization_chain_block_hash = 16;
-  bytes settlement_domain_id = 17;
-  int64 output_minimum = 18;
-  int64 output_maximum = 19;
-  repeated string output_choices = 20;
-  bytes schema_hash = 21;
+  uint64 authorization_chain_block_number = 13;
+  bytes authorization_chain_block_hash = 14;
+  bytes settlement_domain_id = 15;
+  int64 output_minimum = 16;
+  int64 output_maximum = 17;
+  repeated string output_choices = 18;
+  bytes schema_hash = 19;
 }
 
 // MessageObserveAuthorizations admits a short cohort of independently signed
-// requester authorizations in one Canopy transaction. Every item retains the
-// same native EIP-712 validation as the single-request path.
+// requester authorizations in one Canopy transaction. Every item receives the
+// same native EIP-712 validation, including a one-item cohort.
 message MessageObserveAuthorizations {
   bytes observer_address = 1;
-  repeated MessageObserveAuthorization authorizations = 2;
+  repeated Authorization authorizations = 2;
 }
 
 // MessageQueueAuthorization publishes an ERC-1271 request intent to Native
@@ -136,52 +161,35 @@ message MessageObserveAuthorizations {
 // consensus vote extensions.
 message MessageQueueAuthorization {
   bytes relayer_address = 1;
-  MessageObserveAuthorization authorization = 2;
+  Authorization authorization = 2;
 }
 
-message MessageSubmitExecution {
-  bytes servicer_address = 1;
-  bytes receipt_json = 2;
-  bytes public_key = 3;
-  bytes signature = 4;
-  string archive_id = 5;
+message ExecutionSubmission {
+  bytes receipt_json = 1;
+  bytes signature = 2;
 }
 
 message MessageSubmitExecutions {
   bytes servicer_address = 1;
-  repeated MessageSubmitExecution executions = 2;
-  bytes public_key = 3;
+  repeated ExecutionSubmission executions = 2;
   // Gzip-compressed protobuf MessageSubmitExecutions containing only the
   // executions field. The outer signer identity remains uncompressed.
-  bytes compressed_executions = 4;
+  bytes compressed_executions = 3;
 }
 
-message MessageExpireAssignment {
-  string request_id = 2;
-  string model = 3;
-  string execution_id = 4;
-  bytes settlement_domain_id = 5;
-  uint64 deadline_height = 6;
-}
-
-message MessageFinalizeRequest {
-  reserved 4;
-  bytes observer_address = 1;
-  string request_id = 2;
-  bytes settlement_tx_hash = 3;
-  uint64 reserved_budget = 5;
-  uint64 validator_set_id = 6;
-  bytes signer_bitmap = 7;
-  bytes aggregate_signature = 8;
-  repeated string execution_ids = 9;
-  bool finalizes_request = 10;
-  uint64 request_spent = 11;
-  bytes settlement_domain_id = 12;
+message RequestFinalization {
+  string request_id = 1;
+  bytes settlement_tx_hash = 2;
+  uint64 reserved_budget = 3;
+  repeated string execution_ids = 4;
+  bool finalizes_request = 5;
+  uint64 request_spent = 6;
+  bytes settlement_domain_id = 7;
 }
 
 message MessageFinalizeRequests {
   bytes observer_address = 1;
-  repeated MessageFinalizeRequest requests = 2;
+  repeated RequestFinalization requests = 2;
   uint64 validator_set_id = 3;
   bytes signer_bitmap = 4;
   bytes aggregate_signature = 5;
@@ -198,41 +206,33 @@ message MessageFinalizeSettlementBatch {
   bytes settlement_certificate_digest = 4;
 }
 
-// MessageSubmitQuorumSignature lets an active validator attest to the exact
-// digest an EVM contract will verify. The outer Canopy transaction authenticates the
-// observer; signature is a second BDN/BLS signature over message (normally the
-// 32-byte EVM digest) so shares can be aggregated and exported to the target chain.
-message MessageSubmitQuorumSignature {
-  bytes observer_address = 1;
-  string proof_kind = 2;
-  bytes proof_id = 3;
-  bytes digest = 4;
-  bytes message = 5;
-  uint64 validator_set_id = 6;
-  bytes signature = 7;
-  repeated bytes validator_keys = 8;
-  repeated uint64 validator_weights = 9;
-  uint64 new_validator_set_id = 10;
-  reserved 11;
-  string request_id = 12;
-  bytes settlement_tx_hash = 13;
-  uint64 reserved_budget = 14;
-  repeated string execution_ids = 15;
-  bool finalizes_request = 16;
-  uint64 request_spent = 17;
-  uint64 batch_nonce = 18;
-  bytes settlement_payload = 19;
-  repeated MessageFinalizeRequest finalizations = 20;
-  bytes settlement_domain_id = 21;
-  uint64 rotation_nonce = 22;
-  uint64 epoch = 23;
-  bytes burn_id = 24;
-  bytes handoff_generation = 25;
-  uint64 handoff_timestamp = 26;
-  uint64 control_block_number = 27;
-  bytes control_block_hash = 28;
-  bytes lifecycle_intent_id = 29;
-  uint64 outgoing_authority_cutoff = 30;
+// EVMControlEvidence is a typed automatic-vote candidate for settlement-domain
+// lifecycle and validator-set control facts observed on EVM chains.
+message EVMControlEvidence {
+  string proof_kind = 1;
+  bytes proof_id = 2;
+  bytes digest = 3;
+  uint64 validator_set_id = 4;
+  uint64 new_validator_set_id = 5;
+  bytes settlement_domain_id = 6;
+  uint64 rotation_nonce = 7;
+  uint64 epoch = 8;
+  bytes handoff_generation = 9;
+  uint64 handoff_timestamp = 10;
+  uint64 control_block_number = 11;
+  bytes control_block_hash = 12;
+  bytes lifecycle_intent_id = 13;
+}
+
+// MessageGovernanceVote is the only explicit validator signature-share
+// transaction. It cannot carry settlement, bridge, reward, rotation, or
+// retirement metadata.
+message MessageGovernanceVote {
+  bytes validator_address = 1;
+  bytes proposal_id = 2;
+  bytes digest = 3;
+  uint64 validator_set_id = 4;
+  bytes signature = 5;
 }
 
 message MessageObserveBridgeLock {
@@ -268,28 +268,9 @@ message MessageObserveEpochMint {
   uint64 validator_set_id = 4;
 }
 
-message MessageQueueServicerStake {
-  bytes owner_address = 1;
-  uint64 additional_bond = 2;
-  bool exit = 3;
-  bool auto_compound = 4;
-}
-
-message MessageWithdrawUnbonded {
-  bytes owner_address = 1;
-  uint64 sequence = 2;
-}
-
 message MessageSetProducerPayout {
   bytes owner_address = 1;
   bytes canonical_chain_address = 2;
-}
-
-message MessageObserveSlashEvidence {
-  bytes observer_address = 1;
-  bytes evidence_id = 2;
-  bytes target_address = 3;
-  string reason = 4;
 }
 
 // FeeParams is the parameter space that defines various amounts for transaction fees
