@@ -31,6 +31,14 @@ func validPayoutAddress(address []byte) bool {
 func validHash(hash []byte) bool { return len(hash) == sha256.Size }
 
 func validModels(models []string) bool {
+	return validModelList(models, true)
+}
+
+func validRequestModels(models []string) bool {
+	return validModelList(models, false)
+}
+
+func validModelList(models []string, requireSorted bool) bool {
 	if len(models) == 0 || len(models) > 7 {
 		return false
 	}
@@ -44,7 +52,7 @@ func validModels(models []string) bool {
 		}
 		seen[model] = struct{}{}
 	}
-	return sort.StringsAreSorted(models)
+	return !requireSorted || sort.StringsAreSorted(models)
 }
 
 func validOutputType(outputType string) bool {
@@ -172,7 +180,7 @@ func checkResolveSettlement(message *MessageResolveSettlement) ([]byte, *PluginE
 func checkAuthorizationItem(message *Authorization) ([]byte, *PluginError) {
 	if !validHash(message.SettlementDomainId) || message.RequestId == "" || len(message.RequestId) > 128 ||
 		!validHash(message.InputHash) || !validAddress(message.Requester) || message.ReservedBudget == 0 ||
-		!validOutputType(message.OutputType) || !validModels(message.Models) || message.ExecutionQuorum == 0 ||
+		!validOutputType(message.OutputType) || !validRequestModels(message.Models) || message.ExecutionQuorum == 0 ||
 		!validRequestOutputSchema(message) ||
 		int(message.ExecutionQuorum) > len(message.Models) || message.DeadlineHeight == 0 ||
 		len(message.AuthorizationSignature) == 0 || message.AuthorizationDeadline == 0 ||

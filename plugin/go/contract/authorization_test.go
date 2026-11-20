@@ -109,6 +109,16 @@ func TestAuthorizationBatchValidation(t *testing.T) {
 	if _, err := checkObserveAuthorizations(message); err == nil {
 		t.Fatal("ERC-1271 authorization was accepted in the direct EOA batch")
 	}
+	message.Authorizations[1] = authorization("two")
+	message.Authorizations[1].Models = []string{"provider/z", "provider/a"}
+	message.Authorizations[1].ExecutionQuorum = 2
+	if _, err := checkObserveAuthorizations(message); err != nil {
+		t.Fatalf("request model order was incorrectly treated as servicer configuration: %v", err)
+	}
+	message.Authorizations[1].Models = []string{"provider/z", "provider/z"}
+	if _, err := checkObserveAuthorizations(message); err == nil {
+		t.Fatal("duplicate request models were accepted")
+	}
 }
 
 func TestVerifyEOARequestAuthorizationsPreservesInputOrder(t *testing.T) {

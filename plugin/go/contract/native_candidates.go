@@ -470,7 +470,7 @@ func (c *Contract) applyEVMObservationCertificate(height uint64, candidate *Auxi
 			(kind != "settlement-domain-retired" && kind != "settlement-domain-retirement-cancelled" && message.ValidatorSetId != certificate.ValidatorSetId) {
 			return false
 		}
-		if (kind == "validator-set-rotation-caught-up" || kind == "validator-set-rotation-forward" || kind == "settlement-domain-authority" || strings.HasPrefix(kind, "settlement-domain-retirement")) &&
+		if (kind == "validator-set-rotation-queued" || kind == "settlement-domain-authority" || strings.HasPrefix(kind, "settlement-domain-retirement")) &&
 			(message.ControlBlockNumber != observation.BlockNumber || !bytes.Equal(message.ControlBlockHash, observation.BlockHash)) {
 			return false
 		}
