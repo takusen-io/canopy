@@ -62,6 +62,16 @@ func TestUpdateParam(t *testing.T) {
 			},
 		},
 		{
+			name:   "validator committee size above Takusen ceiling rejected",
+			detail: "the core committee cannot exceed the EVM-safe Takusen roster ceiling",
+			update: paramUpdate{
+				space: "val",
+				name:  ParamMaxCommitteeSize,
+				value: &lib.UInt64Wrapper{Value: 61},
+			},
+			error: "invalid param: maxCommitteeSize",
+		},
+		{
 			name:   "consensus param updated",
 			detail: "an update to protocol version under the consensus param space",
 			update: paramUpdate{

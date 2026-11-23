@@ -219,6 +219,17 @@ message SettlementDomain {
   bool active = 12;
   string authorization_name = 13;
   string authorization_version = 14;
+  uint64 abandonment_delay_seconds = 15;
+}
+
+// SettlementDomainDeactivationSnapshot fixes the governed cooling period when
+// traffic is disabled. Later parameter changes cannot shorten an in-flight
+// abandonment delay.
+message SettlementDomainDeactivationSnapshot {
+  bytes settlement_domain_id = 1;
+  bytes generation = 2;
+  uint64 timestamp = 3;
+  uint64 abandonment_delay_seconds = 4;
 }
 
 message ModelParams {
@@ -246,7 +257,6 @@ message ProtocolParams {
   uint32 servicer_margin_bps = 5;
   uint64 authorization_deadline_blocks = 8;
   uint64 minimum_servicer_bond = 9;
-  uint64 minimum_validator_bond = 10;
   uint32 invalid_receipt_slash_bps = 11;
   uint64 servicer_unbonding_blocks = 13;
   uint64 emission_per_epoch = 14;
@@ -261,9 +271,9 @@ message ProtocolParams {
   repeated string supported_output_schemas = 24;
   repeated string default_models = 25;
   repeated SettlementDomain settlement_domains = 26;
-  // DER-encoded X.509 root that anchors Nitro attestation certificate chains.
-  // Governance replaces this atomically with the rest of the protocol params.
-  bytes nitro_trust_root = 28;
+  // DER-encoded X.509 roots that anchor Nitro attestation certificate chains.
+  // Governance may overlap old and new roots during a trust-anchor transition.
+  repeated bytes nitro_trust_roots = 28;
 }
 
 message SlashEvidence {

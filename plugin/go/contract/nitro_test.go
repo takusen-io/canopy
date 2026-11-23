@@ -131,15 +131,15 @@ func mustP384Key(t *testing.T) *ecdsa.PrivateKey {
 	return key
 }
 
-func testNitroRoot(t *testing.T) []byte {
+func testNitroRoots(t *testing.T) [][]byte {
 	t.Helper()
-	return newNitroFixture(t, nitroFixtureTime, bytes.Repeat([]byte{7}, 20)).rootDER
+	return [][]byte{newNitroFixture(t, nitroFixtureTime, bytes.Repeat([]byte{7}, 20)).rootDER}
 }
 
 func protocolParamsForNitroFixture(fixture nitroFixture) *ProtocolParams {
 	params := defaultProtocolParams()
 	params.Revision = 1
-	params.NitroTrustRoot = append([]byte(nil), fixture.rootDER...)
+	params.NitroTrustRoots = [][]byte{append([]byte(nil), fixture.rootDER...)}
 	params.ApprovedPcrs = []*PCRPolicy{{Pcr0: fixture.pcr0, Pcr1: fixture.pcr1, Pcr2: fixture.pcr2, Active: true}}
 	return params
 }
@@ -249,25 +249,25 @@ func TestRegisterServicerRejectsMalformedStaleFutureRootPCRAndBindings(t *testin
 	owner := bytes.Repeat([]byte{7}, 20)
 	valid := newNitroFixture(t, nitroFixtureTime, owner)
 	blockMicros := uint64(nitroFixtureTime.Add(time.Minute).UnixMicro())
-	if _, err := verifyNitroRegistration(valid.message, valid.rootDER, blockMicros); err != nil {
+	if _, err := verifyNitroRegistration(valid.message, [][]byte{valid.rootDER}, blockMicros); err != nil {
 		t.Fatal(err)
 	}
 	malformed := *valid.message
 	malformed.AttestationDocument = append([]byte(nil), valid.message.AttestationDocument...)
 	malformed.AttestationDocument[len(malformed.AttestationDocument)-1] ^= 1
-	if _, err := verifyNitroRegistration(&malformed, valid.rootDER, blockMicros); err == nil {
+	if _, err := verifyNitroRegistration(&malformed, [][]byte{valid.rootDER}, blockMicros); err == nil {
 		t.Fatal("malformed evidence was accepted")
 	}
 	for name, fixture := range map[string]nitroFixture{
 		"stale":  newNitroFixture(t, nitroFixtureTime.Add(-10*time.Minute), owner),
 		"future": newNitroFixture(t, nitroFixtureTime.Add(3*time.Minute), owner),
 	} {
-		if _, err := verifyNitroRegistration(fixture.message, fixture.rootDER, blockMicros); err == nil {
+		if _, err := verifyNitroRegistration(fixture.message, [][]byte{fixture.rootDER}, blockMicros); err == nil {
 			t.Fatalf("%s evidence was accepted", name)
 		}
 	}
 	wrongRoot := newNitroFixture(t, nitroFixtureTime, owner)
-	if _, err := verifyNitroRegistration(valid.message, wrongRoot.rootDER, blockMicros); err == nil {
+	if _, err := verifyNitroRegistration(valid.message, [][]byte{wrongRoot.rootDER}, blockMicros); err == nil {
 		t.Fatal("evidence chaining to a different root was accepted")
 	}
 	wrongOwner := *valid.message
@@ -289,7 +289,7 @@ func TestRegisterServicerRejectsMalformedStaleFutureRootPCRAndBindings(t *testin
 	_, _ = registrationDigest.Write([]byte{0})
 	_, _ = registrationDigest.Write(wrongKey.UserData)
 	wrongKey.ProofSignature = ed25519.Sign(otherPrivate, registrationDigest.Sum(nil))
-	if _, err := verifyNitroRegistration(&wrongKey, valid.rootDER, blockMicros); err == nil {
+	if _, err := verifyNitroRegistration(&wrongKey, [][]byte{valid.rootDER}, blockMicros); err == nil {
 		t.Fatal("attestation was accepted for a different enclave key")
 	}
 	params := protocolParamsForNitroFixture(valid)
@@ -304,6 +304,21 @@ func TestRegisterServicerRejectsMalformedStaleFutureRootPCRAndBindings(t *testin
 	oversized.AttestationDocument = make([]byte, maxNitroAttestationSize+1)
 	if _, err := checkRegisterServicer(&oversized); err == nil {
 		t.Fatal("oversized evidence was accepted")
+	}
+}
+
+func TestNitroTrustRootOverlapAcceptsEitherRoot(t *testing.T) {
+	owner := bytes.Repeat([]byte{7}, 20)
+	oldRootEvidence := newNitroFixture(t, nitroFixtureTime, owner)
+	newRootEvidence := newNitroFixture(t, nitroFixtureTime, owner)
+	trustRoots := [][]byte{oldRootEvidence.rootDER, newRootEvidence.rootDER}
+	blockMicros := uint64(nitroFixtureTime.Add(time.Minute).UnixMicro())
+
+	if _, err := verifyNitroRegistration(oldRootEvidence.message, trustRoots, blockMicros); err != nil {
+		t.Fatalf("old-root evidence was rejected during overlap: %v", err)
+	}
+	if _, err := verifyNitroRegistration(newRootEvidence.message, trustRoots, blockMicros); err != nil {
+		t.Fatalf("new-root evidence was rejected during overlap: %v", err)
 	}
 }
 

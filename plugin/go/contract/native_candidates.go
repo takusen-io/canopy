@@ -10,8 +10,6 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-const emergencyDomainAbandonmentDelaySeconds uint64 = 7 * 24 * 60 * 60
-
 const (
 	// Leave capacity for validator-local finalized-EVM observations even when
 	// Native authorizations are continuously backlogged.
@@ -140,9 +138,9 @@ func (c *Contract) nativeAuxiliaryCandidates(height uint64, params *ProtocolPara
 		appendCandidate("bridge", &AuxiliaryCandidate{Kind: "bridge-release", Key: append([]byte(nil), marker.Id...), Digest: append([]byte(nil), certificateBurn.CanonicalChainDigest...), Payload: payload})
 	}
 
-	// Emergency abandonment is an explicit governed intent plus a fixed native
-	// delay. Consensus participation certifies only that deterministic state;
-	// it is not itself a governance vote.
+	// Emergency abandonment is an explicit governed intent plus the delay
+	// snapshotted when this domain was deactivated. Consensus participation
+	// certifies only that deterministic state; it is not itself a governance vote.
 	for _, domain := range params.SettlementDomains {
 		if len(result) == maxNativeAuxiliaryCandidates || domain == nil || domain.Active || len(domain.Id) != 32 {
 			continue
@@ -153,25 +151,28 @@ func (c *Contract) nativeAuxiliaryCandidates(height uint64, params *ProtocolPara
 		} else if !found || intent.Action != "abandon" || intent.ExpiresAtTimestamp < clock.ConsensusTimeSeconds {
 			continue
 		}
-		deactivated := new(ReplayMarker)
-		if found, readErr := c.read(KeyForSettlementDomainDeactivationTimestamp(domain.Id), deactivated); readErr != nil {
+		deactivated := new(SettlementDomainDeactivationSnapshot)
+		if found, readErr := c.read(KeyForSettlementDomainDeactivation(domain.Id), deactivated); readErr != nil {
 			return nil, readErr
 		} else if !found {
 			continue
 		}
-		deactivationTimestamp, valid := settlementDomainDeactivationTimestamp(deactivated)
-		if !valid || clock.ConsensusTimeSeconds < deactivationTimestamp ||
-			clock.ConsensusTimeSeconds-deactivationTimestamp < emergencyDomainAbandonmentDelaySeconds {
+		if len(deactivated.Generation) != 32 || deactivated.Timestamp == 0 ||
+			deactivated.AbandonmentDelaySeconds < minimumDomainAbandonmentDelaySeconds ||
+			!bytes.Equal(deactivated.SettlementDomainId, domain.Id) ||
+			!bytes.Equal(deactivated.Generation, intent.DeactivationGeneration) || clock.ConsensusTimeSeconds < deactivated.Timestamp ||
+			clock.ConsensusTimeSeconds-deactivated.Timestamp < deactivated.AbandonmentDelaySeconds {
 			continue
 		}
 		message := &EVMControlEvidence{
 			ProofKind: "settlement-domain-abandonment", ValidatorSetId: clock.ValidatorSetId,
 			SettlementDomainId: append([]byte(nil), domain.Id...), HandoffGeneration: append([]byte(nil), intent.DeactivationGeneration...),
-			LifecycleIntentId: append([]byte(nil), intent.Id...), Epoch: deactivationTimestamp, ControlBlockNumber: clock.ConsensusTimeSeconds,
+			LifecycleIntentId: append([]byte(nil), intent.Id...), Epoch: deactivated.Timestamp, ControlBlockNumber: clock.ConsensusTimeSeconds,
 		}
 		message.Digest = hashFields(
 			[]byte("takusen:settlement-domain-abandonment"), domain.Id, uint64Bytes(clock.ValidatorSetId),
-			intent.DeactivationGeneration, intent.Id, uint64Bytes(deactivationTimestamp), uint64Bytes(clock.ConsensusTimeSeconds),
+			intent.DeactivationGeneration, intent.Id, uint64Bytes(deactivated.Timestamp),
+			uint64Bytes(deactivated.AbandonmentDelaySeconds), uint64Bytes(clock.ConsensusTimeSeconds),
 		)
 		message.ProofId = quorumProofID(message.ProofKind, message.ValidatorSetId, message.Digest)
 		payload, marshalErr := Marshal(message)
@@ -361,17 +362,24 @@ func (c *Contract) persistCertifiedNativeAbandonment(height uint64, message *EVM
 	clock, clockErr := c.currentEpochClock(params)
 	intent := new(SettlementDomainLifecycleIntent)
 	foundIntent, intentErr := c.read(KeyForSettlementDomainLifecycleIntent(message.SettlementDomainId), intent)
-	deactivated := new(ReplayMarker)
-	foundDeactivation, deactivationErr := c.read(KeyForSettlementDomainDeactivationTimestamp(message.SettlementDomainId), deactivated)
-	deactivationTimestamp, validTimestamp := settlementDomainDeactivationTimestamp(deactivated)
+	deactivated := new(SettlementDomainDeactivationSnapshot)
+	foundDeactivation, deactivationErr := c.read(KeyForSettlementDomainDeactivation(message.SettlementDomainId), deactivated)
 	if domainErr != nil || domain.Active || clockErr != nil || intentErr != nil || !foundIntent || deactivationErr != nil || !foundDeactivation ||
-		intent.Action != "abandon" || intent.ExpiresAtTimestamp < clock.ConsensusTimeSeconds || !validTimestamp || message.Epoch != deactivationTimestamp ||
-		clock.ConsensusTimeSeconds != message.ControlBlockNumber || clock.ConsensusTimeSeconds < deactivationTimestamp ||
-		clock.ConsensusTimeSeconds-deactivationTimestamp < emergencyDomainAbandonmentDelaySeconds ||
+		intent.Action != "abandon" || intent.ExpiresAtTimestamp < clock.ConsensusTimeSeconds ||
+		len(deactivated.Generation) != 32 || deactivated.Timestamp == 0 ||
+		deactivated.AbandonmentDelaySeconds < minimumDomainAbandonmentDelaySeconds || message.Epoch != deactivated.Timestamp ||
+		clock.ConsensusTimeSeconds != message.ControlBlockNumber || clock.ConsensusTimeSeconds < deactivated.Timestamp ||
+		clock.ConsensusTimeSeconds-deactivated.Timestamp < deactivated.AbandonmentDelaySeconds ||
+		!bytes.Equal(deactivated.SettlementDomainId, message.SettlementDomainId) ||
+		!bytes.Equal(deactivated.Generation, message.HandoffGeneration) ||
 		!bytes.Equal(intent.Id, message.LifecycleIntentId) || !bytes.Equal(intent.DeactivationGeneration, message.HandoffGeneration) {
 		return false
 	}
-	expected := hashFields([]byte("takusen:settlement-domain-abandonment"), message.SettlementDomainId, uint64Bytes(clock.ValidatorSetId), message.HandoffGeneration, message.LifecycleIntentId, uint64Bytes(deactivationTimestamp), uint64Bytes(clock.ConsensusTimeSeconds))
+	expected := hashFields(
+		[]byte("takusen:settlement-domain-abandonment"), message.SettlementDomainId, uint64Bytes(clock.ValidatorSetId),
+		message.HandoffGeneration, message.LifecycleIntentId, uint64Bytes(deactivated.Timestamp),
+		uint64Bytes(deactivated.AbandonmentDelaySeconds), uint64Bytes(clock.ConsensusTimeSeconds),
+	)
 	if !bytes.Equal(expected, candidateDigest(message)) {
 		return false
 	}

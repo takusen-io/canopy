@@ -17,6 +17,7 @@ const (
 	maxNitroAttestationSize = 16 << 10
 	maxNitroCertificateSize = 4 << 10
 	maxNitroCABundleEntries = 8
+	maxNitroTrustRoots      = 8
 	maxNitroModuleIDSize    = 256
 	nitroMaxAgeMillis       = uint64((5 * time.Minute) / time.Millisecond)
 	nitroMaxFutureMillis    = uint64(time.Minute / time.Millisecond)
@@ -41,13 +42,13 @@ type nitroRegistrationMessage interface {
 	GetAttestationDocument() []byte
 }
 
-func verifyNitroRegistration(message nitroRegistrationMessage, rootDER []byte, timeMicros uint64) (nitroDocument, *PluginError) {
-	if message == nil || timeMicros == 0 || timeMicros > math.MaxInt64 || len(rootDER) == 0 || len(rootDER) > maxNitroCertificateSize {
+func verifyNitroRegistration(message nitroRegistrationMessage, rootDERs [][]byte, timeMicros uint64) (nitroDocument, *PluginError) {
+	if message == nil || timeMicros == 0 || timeMicros > math.MaxInt64 {
 		return nitroDocument{}, ErrUnauthorized("governed Nitro verification context is invalid")
 	}
-	root, err := x509.ParseCertificate(rootDER)
-	if err != nil || !bytes.Equal(root.Raw, rootDER) || !root.IsCA || root.KeyUsage&x509.KeyUsageCertSign == 0 {
-		return nitroDocument{}, ErrUnauthorized("governed Nitro trust root is invalid")
+	roots, err := parseNitroTrustRoots(rootDERs)
+	if err != nil {
+		return nitroDocument{}, ErrUnauthorized("governed Nitro trust roots are invalid")
 	}
 	mode, err := cbor.DecOptions{
 		TagsMd: cbor.TagsAllowed, DupMapKey: cbor.DupMapKeyEnforcedAPF,
@@ -108,14 +109,12 @@ func verifyNitroRegistration(message nitroRegistrationMessage, rootDER []byte, t
 		}
 		intermediates.AddCert(certificate)
 	}
-	roots := x509.NewCertPool()
-	roots.AddCert(root)
 	attestedAt := time.UnixMilli(int64(document.TimestampMS))
 	if _, err = leaf.Verify(x509.VerifyOptions{
 		Roots: roots, Intermediates: intermediates, CurrentTime: attestedAt,
 		KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageAny},
 	}); err != nil {
-		return nitroDocument{}, ErrCrypto("Nitro certificate chain does not reach the governed root")
+		return nitroDocument{}, ErrCrypto("Nitro certificate chain does not reach a governed root")
 	}
 	publicKey, ok := leaf.PublicKey.(*ecdsa.PublicKey)
 	if !ok || publicKey.Curve.Params().BitSize != 384 {
@@ -132,6 +131,29 @@ func verifyNitroRegistration(message nitroRegistrationMessage, rootDER []byte, t
 		return nitroDocument{}, ErrCrypto("invalid Nitro COSE signature")
 	}
 	return document, nil
+}
+
+func parseNitroTrustRoots(rootDERs [][]byte) (*x509.CertPool, error) {
+	if len(rootDERs) == 0 || len(rootDERs) > maxNitroTrustRoots {
+		return nil, errors.New("Nitro trust root set exceeds protocol bounds")
+	}
+	roots := x509.NewCertPool()
+	seen := make(map[string]struct{}, len(rootDERs))
+	for _, rootDER := range rootDERs {
+		if len(rootDER) == 0 || len(rootDER) > maxNitroCertificateSize {
+			return nil, errors.New("Nitro trust root exceeds protocol bounds")
+		}
+		if _, duplicate := seen[string(rootDER)]; duplicate {
+			return nil, errors.New("duplicate Nitro trust root")
+		}
+		root, err := x509.ParseCertificate(rootDER)
+		if err != nil || !bytes.Equal(root.Raw, rootDER) || !root.IsCA || root.KeyUsage&x509.KeyUsageCertSign == 0 {
+			return nil, errors.New("Nitro trust root is not a certificate authority")
+		}
+		seen[string(rootDER)] = struct{}{}
+		roots.AddCert(root)
+	}
+	return roots, nil
 }
 
 func validateNitroDocumentBounds(document nitroDocument) error {

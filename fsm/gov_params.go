@@ -11,6 +11,8 @@ import (
 	"strings"
 )
 
+const maxCommitteeSizeLimit uint64 = 60
+
 const (
 	ParamPrefixCons = "/c/" // store key prefix for Consensus param space
 	ParamPrefixVal  = "/v/" // store key prefix for Validators param space
@@ -53,7 +55,7 @@ func DefaultParams() *Params {
 			MaxNonSign:                         3,
 			NonSignWindow:                      5,
 			MaxCommittees:                      15,
-			MaxCommitteeSize:                   100,
+			MaxCommitteeSize:                   maxCommitteeSizeLimit,
 			EarlyWithdrawalPenalty:             20,
 			DelegateUnstakingBlocks:            2,
 			MinimumOrderSize:                   1000000000,
@@ -273,7 +275,7 @@ func (x *ValidatorParams) Check() lib.ErrorI {
 	if x.MaxCommittees > 100 {
 		return ErrInvalidParam(ParamMaxCommittees)
 	}
-	if x.MaxCommitteeSize == 0 {
+	if x.MaxCommitteeSize == 0 || x.MaxCommitteeSize > maxCommitteeSizeLimit {
 		return ErrInvalidParam(ParamMaxCommitteeSize)
 	}
 	if x.DelegateUnstakingBlocks < 2 {

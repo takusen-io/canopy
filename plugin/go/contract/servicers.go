@@ -69,7 +69,7 @@ func (c *Contract) deliverRegisterServicer(height, timeMicros uint64, message *M
 	} else if found {
 		return &PluginDeliverResponse{Error: ErrConflict("enclave key is already registered")}
 	}
-	document, verifyErr := verifyNitroRegistration(message, params.NitroTrustRoot, timeMicros)
+	document, verifyErr := verifyNitroRegistration(message, params.NitroTrustRoots, timeMicros)
 	if verifyErr != nil {
 		return &PluginDeliverResponse{Error: verifyErr}
 	}
@@ -177,7 +177,7 @@ func (c *Contract) deliverManageServicer(height, timeMicros uint64, message *Mes
 		if rotation.TeeKeyId == oldKeyID {
 			return &PluginDeliverResponse{Error: ErrConflict("replacement enclave key must differ from the current key")}
 		}
-		document, verifyErr := verifyNitroRegistration(rotation, params.NitroTrustRoot, timeMicros)
+		document, verifyErr := verifyNitroRegistration(rotation, params.NitroTrustRoots, timeMicros)
 		if verifyErr != nil {
 			return &PluginDeliverResponse{Error: verifyErr}
 		}

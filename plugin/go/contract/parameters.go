@@ -2,9 +2,7 @@ package contract
 
 import (
 	"bytes"
-	"crypto/x509"
 	"encoding/base64"
-	"encoding/binary"
 	"math"
 	"strconv"
 	"strings"
@@ -17,14 +15,19 @@ const defaultNitroTrustRootBase64 = "MIICETCCAZagAwIBAgIRAPkxdWgbkK/hHUbMtOTn+FY
 
 const maxChargeBps uint32 = 100_000
 
+const (
+	minimumDomainAbandonmentDelaySeconds uint64 = 24 * 60 * 60
+	defaultDomainAbandonmentDelaySeconds uint64 = 7 * 24 * 60 * 60
+)
+
 func defaultProtocolParams() *ProtocolParams {
 	nitroRoot, _ := base64.StdEncoding.DecodeString(defaultNitroTrustRootBase64)
 	return &ProtocolParams{
-		MinimumServicerBond: 1, MinimumValidatorBond: 1, ServicerUnbondingBlocks: 86_400,
+		MinimumServicerBond: 1, ServicerUnbondingBlocks: 86_400,
 		BridgeEpochMintLimit: math.MaxUint64, BridgeTransferLimit: math.MaxUint64,
 		SupportedOutputSchemas: []string{"boolean", "score", "choice", "private_hash"},
 		SettlementDomains:      []*SettlementDomain{defaultSettlementDomain()},
-		NitroTrustRoot:         nitroRoot,
+		NitroTrustRoots:        [][]byte{nitroRoot},
 	}
 }
 
@@ -38,6 +41,7 @@ func defaultSettlementDomain() *SettlementDomain {
 		FoundationTreasuryAddress: bytes.Repeat([]byte{0x77}, 20), TokenDecimals: 6,
 		Network: "eip155:8453", DepositMechanisms: []string{"eip3009"}, FinalityPolicy: "safe", Active: true,
 		AuthorizationName: "USD Coin", AuthorizationVersion: "2",
+		AbandonmentDelaySeconds: defaultDomainAbandonmentDelaySeconds,
 	}
 }
 
@@ -59,7 +63,7 @@ func validateProtocolParams(params *ProtocolParams) *PluginError {
 		(params.ServicerMarginBps > 0 && params.ServicerMarginBps >= params.FoundationFeeBps) ||
 		params.InvalidReceiptSlashBps > 10_000 || params.TreasuryBps > 10_000 ||
 		params.ServicerUnbondingBlocks == 0 || params.ServicerUnbondingBlocks <= params.AuthorizationDeadlineBlocks ||
-		params.MinimumServicerBond == 0 || params.MinimumValidatorBond == 0 {
+		params.MinimumServicerBond == 0 {
 		return ErrInvalidTransaction("invalid governed protocol parameters")
 	}
 	if params.CanonicalChainId != 0 || len(params.CanonicalTokenAddress) != 0 || len(params.CanonicalBridgeAddress) != 0 || params.EmissionPerEpoch != 0 {
@@ -142,12 +146,8 @@ func validateProtocolParams(params *ProtocolParams) *PluginError {
 	if activePCRs == 0 {
 		return ErrInvalidTransaction("at least one active governed PCR policy is required")
 	}
-	if len(params.NitroTrustRoot) == 0 || len(params.NitroTrustRoot) > maxNitroCertificateSize {
-		return ErrInvalidTransaction("a bounded governed Nitro trust root is required")
-	}
-	root, rootErr := x509.ParseCertificate(params.NitroTrustRoot)
-	if rootErr != nil || !bytes.Equal(root.Raw, params.NitroTrustRoot) || !root.IsCA || root.KeyUsage&x509.KeyUsageCertSign == 0 {
-		return ErrInvalidTransaction("governed Nitro trust root is not a certificate authority")
+	if _, rootErr := parseNitroTrustRoots(params.NitroTrustRoots); rootErr != nil {
+		return ErrInvalidTransaction("one to eight unique governed Nitro trust roots are required")
 	}
 	return nil
 }
@@ -157,7 +157,7 @@ func validateSettlementDomain(domain *SettlementDomain) *PluginError {
 		!validAddress(domain.TokenAddress) || !validAddress(domain.EscrowAddress) ||
 		!validAddress(domain.VerifierAddress) || !validAddress(domain.FoundationTreasuryAddress) ||
 		domain.TokenDecimals < 6 || domain.TokenDecimals > 36 || domain.Network != "eip155:"+strconv.FormatUint(domain.ChainId, 10) ||
-		len(domain.DepositMechanisms) == 0 {
+		len(domain.DepositMechanisms) == 0 || domain.AbandonmentDelaySeconds < minimumDomainAbandonmentDelaySeconds {
 		return ErrInvalidTransaction("invalid governed settlement domain")
 	}
 	expected := keccak(
@@ -270,14 +270,14 @@ func (c *Contract) deliverGovernedParameter(space, key string, value []byte) *Pl
 		}
 		if !prior.Active && domain.Active {
 			activatesDomain = true
-			deactivation := new(ReplayMarker)
+			deactivation := new(SettlementDomainDeactivationSnapshot)
 			if found, readErr := c.read(KeyForSettlementDomainDeactivation(domain.Id), deactivation); readErr != nil {
 				return &PluginDeliverResponse{Error: readErr}
 			} else if found {
-				if len(deactivation.Id) != 32 {
+				if len(deactivation.Generation) != 32 {
 					return &PluginDeliverResponse{Error: ErrState("settlement domain has an invalid deactivation generation")}
 				}
-				if cancelled, cancelErr := c.read(KeyForSettlementDomainRetirementCancellation(domain.Id, deactivation.Id), new(ReplayMarker)); cancelErr != nil {
+				if cancelled, cancelErr := c.read(KeyForSettlementDomainRetirementCancellation(domain.Id, deactivation.Generation), new(ReplayMarker)); cancelErr != nil {
 					return &PluginDeliverResponse{Error: cancelErr}
 				} else if !cancelled {
 					return &PluginDeliverResponse{Error: ErrUnauthorized("settlement domain reactivation requires finalized retirement-proof cancellation")}
@@ -285,8 +285,7 @@ func (c *Contract) deliverGovernedParameter(space, key string, value []byte) *Pl
 				deletes = append(
 					deletes,
 					KeyForSettlementDomainDeactivation(domain.Id),
-					KeyForSettlementDomainDeactivationTimestamp(domain.Id),
-					KeyForSettlementDomainRetirementCancellation(domain.Id, deactivation.Id),
+					KeyForSettlementDomainRetirementCancellation(domain.Id, deactivation.Generation),
 				)
 			}
 			if found, readErr := c.read(KeyForSettlementDomainAuthority(domain.Id, clock.ValidatorSetId), new(ReplayMarker)); readErr != nil {
@@ -298,8 +297,10 @@ func (c *Contract) deliverGovernedParameter(space, key string, value []byte) *Pl
 		if prior.Active && !domain.Active {
 			deactivatesDomain = true
 			generation := settlementDomainDeactivationGeneration(domain.Id, params.Revision, clock.ConsensusTimeSeconds)
-			records[string(KeyForSettlementDomainDeactivation(domain.Id))] = &ReplayMarker{Id: generation}
-			records[string(KeyForSettlementDomainDeactivationTimestamp(domain.Id))] = &ReplayMarker{Id: uint64Bytes(clock.ConsensusTimeSeconds)}
+			records[string(KeyForSettlementDomainDeactivation(domain.Id))] = &SettlementDomainDeactivationSnapshot{
+				SettlementDomainId: append([]byte(nil), domain.Id...), Generation: generation,
+				Timestamp: clock.ConsensusTimeSeconds, AbandonmentDelaySeconds: domain.AbandonmentDelaySeconds,
+			}
 		}
 	}
 	if authorityMembershipChanged || activatesDomain {
@@ -321,7 +322,7 @@ func (c *Contract) deliverGovernedParameter(space, key string, value []byte) *Pl
 				if found, readErr := c.read(KeyForSettlementDomainRetirement(domain.Id), new(ReplayMarker)); readErr != nil {
 					return &PluginDeliverResponse{Error: readErr}
 				} else if !found {
-					if deactivated, deactivationErr := c.read(KeyForSettlementDomainDeactivation(domain.Id), new(ReplayMarker)); deactivationErr != nil {
+					if deactivated, deactivationErr := c.read(KeyForSettlementDomainDeactivation(domain.Id), new(SettlementDomainDeactivationSnapshot)); deactivationErr != nil {
 						return &PluginDeliverResponse{Error: deactivationErr}
 					} else if deactivated {
 						return &PluginDeliverResponse{Error: ErrUnauthorized("settlement-domain removal requires a finalized retirement or emergency-abandonment certificate")}
@@ -379,10 +380,10 @@ func (c *Contract) deliverGovernedSettlementDomainLifecycleIntent(value []byte) 
 		intent.ExpiresAtTimestamp-clock.ConsensusTimeSeconds > maximumLifecycleIntentSeconds {
 		return &PluginDeliverResponse{Error: ErrInvalidTransaction("lifecycle intent expiry must be within seven days")}
 	}
-	deactivation := new(ReplayMarker)
+	deactivation := new(SettlementDomainDeactivationSnapshot)
 	if found, readErr := c.read(KeyForSettlementDomainDeactivation(intent.SettlementDomainId), deactivation); readErr != nil {
 		return &PluginDeliverResponse{Error: readErr}
-	} else if !found || !bytes.Equal(deactivation.Id, intent.DeactivationGeneration) {
+	} else if !found || !bytes.Equal(deactivation.Generation, intent.DeactivationGeneration) {
 		return &PluginDeliverResponse{Error: ErrConflict("lifecycle intent does not match the current deactivation generation")}
 	}
 	prior := new(SettlementDomainLifecycleIntent)
@@ -408,13 +409,6 @@ func (c *Contract) deliverGovernedSettlementDomainLifecycleIntent(value []byte) 
 		return &PluginDeliverResponse{Error: writeErr}
 	}
 	return &PluginDeliverResponse{}
-}
-
-func settlementDomainDeactivationTimestamp(marker *ReplayMarker) (uint64, bool) {
-	if marker == nil || len(marker.Id) != 8 {
-		return 0, false
-	}
-	return binary.BigEndian.Uint64(marker.Id), true
 }
 
 func settlementDomainDeactivationGeneration(domainID []byte, revision, timestamp uint64) []byte {

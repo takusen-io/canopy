@@ -557,19 +557,24 @@ func (c *Contract) finalizeEpochRewards(epoch uint64, params *ProtocolParams, re
 		return ErrState("epoch treasury calculation overflow")
 	}
 	producerTotal := params.EmissionPerEpoch - treasury
+	producerAmounts := make([]uint64, len(ordered))
 	remaining := producerTotal
-	recipients := make([][]byte, 0, len(ordered)+1)
-	amounts := make([]uint64, 0, len(ordered)+1)
 	for index, record := range ordered {
 		amount, validAmount := mulDiv64(producerTotal, record.Blocks, totalBlocks)
 		if !validAmount {
 			return ErrState("epoch reward calculation overflow")
 		}
-		if index == len(ordered)-1 {
-			amount = remaining
-		} else {
-			remaining -= amount
-		}
+		producerAmounts[index] = amount
+		remaining -= amount
+	}
+	// Floor-division dust rotates through consensus epochs instead of always
+	// favoring one end of the address-sorted producer list.
+	remainderIndex := int(epoch % uint64(len(ordered)))
+	producerAmounts[remainderIndex] += remaining
+	recipients := make([][]byte, 0, len(ordered)+1)
+	amounts := make([]uint64, 0, len(ordered)+1)
+	for index, record := range ordered {
+		amount := producerAmounts[index]
 		payout := append([]byte(nil), record.ProducerAddress...)
 		configured := new(ProducerPayout)
 		if found, readErr := c.read(KeyForProducerPayout(record.ProducerAddress), configured); readErr != nil {

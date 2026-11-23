@@ -45,7 +45,7 @@ func TestGenesisPersistsProtocolParameters(t *testing.T) {
 	params := defaultProtocolParams()
 	params.Revision = 1
 	params.ApprovedPcrs = []*PCRPolicy{testPCRPolicy()}
-	params.NitroTrustRoot = testNitroRoot(t)
+	params.NitroTrustRoots = testNitroRoots(t)
 	encoded, err := protojson.Marshal(params)
 	if err != nil {
 		t.Fatal(err)
@@ -259,7 +259,7 @@ func TestGovernedParamsRejectUnsafeValues(t *testing.T) {
 	valid := defaultProtocolParams()
 	valid.Revision = 1
 	valid.ApprovedPcrs = []*PCRPolicy{testPCRPolicy()}
-	valid.NitroTrustRoot = testNitroRoot(t)
+	valid.NitroTrustRoots = testNitroRoots(t)
 	if err := validateProtocolParams(valid); err != nil {
 		t.Fatal(err)
 	}
@@ -274,10 +274,10 @@ func TestGovernedParamsRejectUnsafeValues(t *testing.T) {
 	if err := validateProtocolParams(excessiveMarkup); err == nil {
 		t.Fatal("accepted foundation markup above the safety ceiling")
 	}
-	missingValidatorBond := proto.Clone(valid).(*ProtocolParams)
-	missingValidatorBond.MinimumValidatorBond = 0
-	if err := validateProtocolParams(missingValidatorBond); err == nil {
-		t.Fatal("accepted a zero minimum validator bond")
+	shortAbandonmentDelay := proto.Clone(valid).(*ProtocolParams)
+	shortAbandonmentDelay.SettlementDomains[0].AbandonmentDelaySeconds = minimumDomainAbandonmentDelaySeconds - 1
+	if err := validateProtocolParams(shortAbandonmentDelay); err == nil {
+		t.Fatal("accepted a settlement-domain abandonment delay below the hard minimum")
 	}
 	missingPCRs := proto.Clone(valid).(*ProtocolParams)
 	missingPCRs.ApprovedPcrs = nil
@@ -288,6 +288,26 @@ func TestGovernedParamsRejectUnsafeValues(t *testing.T) {
 	inactivePCRs.ApprovedPcrs[0].Active = false
 	if err := validateProtocolParams(inactivePCRs); err == nil {
 		t.Fatal("accepted a governed PCR allowlist with no active policy")
+	}
+	missingRoots := proto.Clone(valid).(*ProtocolParams)
+	missingRoots.NitroTrustRoots = nil
+	if err := validateProtocolParams(missingRoots); err == nil {
+		t.Fatal("accepted an empty governed Nitro trust root set")
+	}
+	duplicateRoots := proto.Clone(valid).(*ProtocolParams)
+	duplicateRoots.NitroTrustRoots = append(duplicateRoots.NitroTrustRoots, duplicateRoots.NitroTrustRoots[0])
+	if err := validateProtocolParams(duplicateRoots); err == nil {
+		t.Fatal("accepted duplicate governed Nitro trust roots")
+	}
+	tooManyRoots := proto.Clone(valid).(*ProtocolParams)
+	tooManyRoots.NitroTrustRoots = make([][]byte, maxNitroTrustRoots+1)
+	if err := validateProtocolParams(tooManyRoots); err == nil {
+		t.Fatal("accepted too many governed Nitro trust roots")
+	}
+	malformedRoot := proto.Clone(valid).(*ProtocolParams)
+	malformedRoot.NitroTrustRoots = [][]byte{{1}}
+	if err := validateProtocolParams(malformedRoot); err == nil {
+		t.Fatal("accepted a malformed governed Nitro trust root")
 	}
 	if pcrApproved(&ProtocolParams{}, bytes.Repeat([]byte{1}, 48), bytes.Repeat([]byte{2}, 48), bytes.Repeat([]byte{3}, 48)) {
 		t.Fatal("empty consensus PCR policy approved an enclave")

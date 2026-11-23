@@ -152,11 +152,11 @@ func TestValidatorCertificateRequiresStrictTwoThirds(t *testing.T) {
 	}
 }
 
-func TestActiveValidatorsUsesImmutableEpochSnapshotAfterBondChange(t *testing.T) {
+func TestActiveValidatorsUsesImmutableEpochSnapshot(t *testing.T) {
 	contract, store, _, _ := newMemoryContract(t)
 	store.values = make(map[string][]byte)
 	params := defaultProtocolParams()
-	params.Revision, params.MinimumValidatorBond = 1, 100
+	params.Revision = 1
 	store.put(t, KeyForProtocolParams(), params)
 
 	below := &Validator{Address: bytes.Repeat([]byte{1}, 20), StakedAmount: 99, Committees: []uint64{1}}

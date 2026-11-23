@@ -68,15 +68,18 @@ func (c *Contract) producerPayoutEligible(owner []byte) (bool, *PluginError) {
 	if err != nil {
 		return false, err
 	}
-	for _, epoch := range []uint64{clock.CurrentEpoch, clock.CurrentEpoch + 1} {
+	epochs := []uint64{clock.CurrentEpoch}
+	if clock.ValidatorRosterFrozen {
+		epochs = append(epochs, clock.CurrentEpoch+1)
+	}
+	for _, epoch := range epochs {
 		if epoch == 0 {
 			continue
 		}
 		validator := new(Validator)
 		if found, readErr := c.read(KeyForEpochValidator(epoch, owner), validator); readErr != nil {
 			return false, readErr
-		} else if found && bytes.Equal(validator.Address, owner) && !validator.Delegate &&
-			validator.StakedAmount >= params.MinimumValidatorBond && containsCommittee(validator.Committees, c.Config.ChainId) {
+		} else if found && bytes.Equal(validator.Address, owner) {
 			return true, nil
 		}
 	}

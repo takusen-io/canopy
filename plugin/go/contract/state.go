@@ -179,9 +179,6 @@ func KeyForSettlementDomainAuthority(domainID []byte, validatorSetID uint64) []b
 func KeyForSettlementDomainDeactivation(domainID []byte) []byte {
 	return JoinLenPrefix(rotationProofIndexPrefix, []byte("domain-deactivated"), domainID)
 }
-func KeyForSettlementDomainDeactivationTimestamp(domainID []byte) []byte {
-	return JoinLenPrefix(rotationProofIndexPrefix, []byte("domain-deactivated-timestamp"), domainID)
-}
 func KeyForSettlementDomainRetirementCancellation(domainID, generation []byte) []byte {
 	return JoinLenPrefix(rotationProofIndexPrefix, []byte("domain-retirement-cancelled"), domainID, generation)
 }
