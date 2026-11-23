@@ -224,12 +224,13 @@ func TestTakusenConsensusE2E(t *testing.T) {
 		message := &contract.MessageRegisterServicer{
 			OwnerAddress: mustHex(t, localValidatorOneAddress), TeeKeyId: teeKeyID, PublicKey: publicKey,
 			Nonce: nonce, UserData: userData, ProofSignature: proof, AttestationDocument: attestation,
-			EvmPayoutAddress: mustHex(t, localValidatorOneAddress), Models: models, Bond: 100_000,
+			EvmPayoutAddress: mustHex(t, localValidatorOneAddress), Models: []*contract.ServicerModelPolicy{{Model: models[0], MinimumAcceptableBudget: 50_000}}, Bond: 100_000,
 		}
 		fields := map[string]any{
 			"ownerAddress": localValidatorOneAddress, "teeKeyId": teeKeyID, "publicKey": hex.EncodeToString(publicKey),
 			"nonce": hex.EncodeToString(nonce), "userData": hex.EncodeToString(userData), "proofSignature": hex.EncodeToString(proof),
-			"attestationDocument": hex.EncodeToString(attestation), "evmPayoutAddress": localValidatorOneAddress, "models": models, "bond": message.Bond,
+			"attestationDocument": hex.EncodeToString(attestation), "evmPayoutAddress": localValidatorOneAddress,
+			"models": []map[string]any{{"model": models[0], "minimumAcceptableBudget": uint64(50_000)}}, "bond": message.Bond,
 		}
 		submit(t, ctx, rpcURL, validatorOne, contract.MessageRegisterServicerName, message, fields)
 		waitStatus(t, ctx, pluginURL+"/v1/takusen/servicers", func(body []byte) bool { return containsServicer(body, localValidatorOneAddress) })
@@ -261,7 +262,7 @@ func TestTakusenConsensusE2E(t *testing.T) {
 	observeAuthorization := func() (*contract.Authorization, map[string]any) {
 		message := &contract.Authorization{
 			SettlementDomainId: settlementDomain, RequestId: requestID, InputHash: inputHash[:], Requester: requesterAddress,
-			ReservedBudget: 100_000, OutputType: "boolean", Models: []string{models[0]}, ExecutionQuorum: 1,
+			ReservedBudget: 100_000, OutputType: "boolean", Models: []*contract.ModelBudget{{Model: models[0], Budget: 100_000}}, ExecutionQuorum: 1,
 			DeadlineHeight: height + 100, AuthorizationDeadline: height + 100, DirectEoa: true,
 			RequestArchiveId: "sha256:" + hex.EncodeToString(inputHash[:]), OutputMinimum: 0, OutputMaximum: 1,
 		}
@@ -279,7 +280,8 @@ func TestTakusenConsensusE2E(t *testing.T) {
 		message.AuthorizationSignature = append(append([]byte(nil), compact[1:]...), compact[0]-27)
 		return message, map[string]any{
 			"requestId": requestID, "settlementDomainId": hex.EncodeToString(settlementDomain), "inputHash": hex.EncodeToString(inputHash[:]), "requester": hex.EncodeToString(requesterAddress),
-			"reservedBudget": message.ReservedBudget, "outputType": message.OutputType, "models": message.Models,
+			"reservedBudget": message.ReservedBudget, "outputType": message.OutputType,
+			"models":          []map[string]any{{"model": models[0], "budget": uint64(100_000)}},
 			"executionQuorum": message.ExecutionQuorum, "deadlineHeight": message.DeadlineHeight,
 			"authorizationSignature": hex.EncodeToString(message.AuthorizationSignature), "authorizationDeadline": message.AuthorizationDeadline,
 			"directEoa": true, "requestArchiveId": message.RequestArchiveId, "outputMinimum": message.OutputMinimum,

@@ -42,7 +42,7 @@ func newNitroFixture(t *testing.T, attestedAt time.Time, owner []byte) nitroFixt
 	params := defaultProtocolParams()
 	message := &MessageRegisterServicer{
 		OwnerAddress: owner, TeeKeyId: "ed25519:" + hex.EncodeToString(keyDigest[:]), PublicKey: publicKey,
-		Nonce: nonce, UserData: userData, EvmPayoutAddress: append([]byte(nil), owner...), Models: []string{"model"}, Bond: params.MinimumServicerBond,
+		Nonce: nonce, UserData: userData, EvmPayoutAddress: append([]byte(nil), owner...), Models: testServicerModels("model"), Bond: params.MinimumServicerBond,
 	}
 	registrationDigest := sha256.New()
 	_, _ = registrationDigest.Write([]byte("takusen:nitro-registration\x00"))
@@ -166,7 +166,7 @@ func TestRegisterServicerAtomicallyValidatesEvidenceBondsAndActivates(t *testing
 	if err := Unmarshal(store.values[string(KeyForServicer(owner))], servicer); err != nil || servicer.Bond != fixture.message.Bond || !servicer.Active {
 		t.Fatalf("atomic registration did not commit the bonded servicer: servicer=%+v err=%v", servicer, err)
 	}
-	eligible, err := contract.eligibleServicers("model")
+	eligible, err := contract.eligibleServicers("model", 1)
 	if err != nil || len(eligible) != 1 || !bytes.Equal(selectServicer([]byte("input"), []byte("anchor"), "model", eligible).OwnerAddress, owner) {
 		t.Fatalf("registered enclave did not become assignable: eligible=%d err=%v", len(eligible), err)
 	}

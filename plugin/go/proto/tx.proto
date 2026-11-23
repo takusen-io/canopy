@@ -3,6 +3,7 @@ package types;
 option go_package = "github.com/canopy-network/go-plugin/contract";
 
 import "google/protobuf/any.proto";
+import "account.proto";
 // Transaction represents a request or action submitted to the network like transfer assets or perform other operations
 // within the blockchain system - THIS MUST MATCH lib.Transaction EXACTLY for signing
 message Transaction {
@@ -42,7 +43,7 @@ message MessageRegisterServicer {
   bytes owner_address = 1;
   bytes evm_payout_address = 2;
   string tee_key_id = 3;
-  repeated string models = 4;
+  repeated ServicerModelPolicy models = 4;
   uint64 bond = 5;
   bytes public_key = 6;
   bytes nonce = 7;
@@ -53,7 +54,7 @@ message MessageRegisterServicer {
 
 message ServicerConfigurationUpdate {
   bytes evm_payout_address = 1;
-  repeated string models = 2;
+  repeated ServicerModelPolicy models = 2;
   bool active = 3;
 }
 
@@ -82,6 +83,13 @@ message MessageManageServicer {
   ServicerConfigurationUpdate configuration = 3;
   ServicerBondUpdate bond = 4;
   EnclaveRotation rotation = 5;
+}
+
+// MessageBeginServicerUnstake atomically disables new assignments and moves
+// the complete bond into the account's height-locked, slashable balance.
+message MessageBeginServicerUnstake {
+  bytes owner_address = 1;
+  uint64 expected_revision = 2;
 }
 
 message MessageObserveDeposit {
@@ -122,7 +130,7 @@ message Authorization {
   bytes requester = 3;
   uint64 reserved_budget = 4;
   string output_type = 5;
-  repeated string models = 6;
+  repeated ModelBudget models = 6;
   // Display-only agreement observation threshold.
   uint32 execution_quorum = 7;
   uint64 deadline_height = 8;

@@ -115,6 +115,7 @@ func (c *Contract) nativeAuxiliaryCandidates(height uint64, params *ProtocolPara
 	if err != nil {
 		return nil, err
 	}
+	batch := &BridgeReleaseBatch{ValidatorSetId: clock.ValidatorSetId}
 	for _, entry := range burns {
 		marker := new(ReplayMarker)
 		if Unmarshal(entry.Value, marker) != nil || len(marker.Id) != 32 {
@@ -123,19 +124,25 @@ func (c *Contract) nativeAuxiliaryCandidates(height uint64, params *ProtocolPara
 		burn := new(BridgeBurn)
 		if found, readErr := c.read(KeyForBridgeBurn(marker.Id), burn); readErr != nil {
 			return nil, readErr
-		} else if !found || burn.Status != "pending_release" || len(burn.CanonicalChainDigest) != 32 {
+		} else if !found || burn.Status != "pending_release" {
 			continue
 		}
 		certificateBurn := proto.Clone(burn).(*BridgeBurn)
-		if certificateBurn.ValidatorSetId != clock.ValidatorSetId {
-			certificateBurn.ValidatorSetId = clock.ValidatorSetId
-			certificateBurn.CanonicalChainDigest = bridgeReleaseDigest(params, clock.ValidatorSetId, certificateBurn.Nonce, certificateBurn.CanonicalChainRecipient, certificateBurn.Amount, certificateBurn.BurnId)
+		batch.Releases = append(batch.Releases, certificateBurn)
+	}
+	if len(batch.Releases) != 0 {
+		keyFields := make([][]byte, 1, len(batch.Releases)+1)
+		keyFields[0] = []byte("takusen:bridge-release-batch")
+		for _, release := range batch.Releases {
+			keyFields = append(keyFields, release.BurnId)
 		}
-		payload, marshalErr := json.Marshal(certificateBurn)
+		batch.BatchId = hashFields(keyFields...)
+		batch.CanonicalChainDigest = bridgeReleaseBatchDigest(params, clock.ValidatorSetId, batch.Releases)
+		payload, marshalErr := json.Marshal(batch)
 		if marshalErr != nil {
-			return nil, ErrState("encode bridge release certificate payload")
+			return nil, ErrState("encode bridge release batch payload")
 		}
-		appendCandidate("bridge", &AuxiliaryCandidate{Kind: "bridge-release", Key: append([]byte(nil), marker.Id...), Digest: append([]byte(nil), certificateBurn.CanonicalChainDigest...), Payload: payload})
+		appendCandidate("bridge", &AuxiliaryCandidate{Kind: "bridge-release-batch", Key: append([]byte(nil), batch.BatchId...), Digest: append([]byte(nil), batch.CanonicalChainDigest...), Payload: payload})
 	}
 
 	// Emergency abandonment is an explicit governed intent plus the delay
@@ -285,10 +292,36 @@ func (c *Contract) applyNativeAuxiliaryCertificate(height uint64, candidate *Aux
 			!bytes.Equal(candidate.Digest, authorization.CanonicalChainDigest) {
 			return false
 		}
-	case "bridge-release":
-		burn := new(BridgeBurn)
-		if json.Unmarshal(candidate.Payload, burn) != nil || burn.Status != "pending_release" ||
-			!bytes.Equal(candidate.Key, burn.BurnId) || !bytes.Equal(candidate.Digest, burn.CanonicalChainDigest) {
+	case "bridge-release-batch":
+		batch := new(BridgeReleaseBatch)
+		if json.Unmarshal(candidate.Payload, batch) != nil || len(batch.Releases) == 0 || len(batch.Releases) > 64 ||
+			!bytes.Equal(candidate.Key, batch.BatchId) || !bytes.Equal(candidate.Digest, batch.CanonicalChainDigest) || batch.ValidatorSetId != certificate.ValidatorSetId {
+			return false
+		}
+		params, err := c.currentProtocolParams()
+		if err != nil {
+			return false
+		}
+		keyFields := make([][]byte, 1, len(batch.Releases)+1)
+		keyFields[0] = []byte("takusen:bridge-release-batch")
+		seen := make(map[string]struct{}, len(batch.Releases))
+		for index, release := range batch.Releases {
+			if release == nil || len(release.BurnId) != 32 || release.Status != "pending_release" {
+				return false
+			}
+			if _, duplicate := seen[string(release.BurnId)]; duplicate {
+				return false
+			}
+			seen[string(release.BurnId)] = struct{}{}
+			committed := new(BridgeBurn)
+			if found, readErr := c.read(KeyForBridgeBurn(release.BurnId), committed); readErr != nil || !found ||
+				committed.Status != "pending_release" || !proto.Equal(committed, release) {
+				return false
+			}
+			keyFields[index+1] = release.BurnId
+		}
+		if !bytes.Equal(batch.BatchId, hashFields(keyFields...)) ||
+			!bytes.Equal(batch.CanonicalChainDigest, bridgeReleaseBatchDigest(params, batch.ValidatorSetId, batch.Releases)) {
 			return false
 		}
 	case "settlement":

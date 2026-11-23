@@ -43,7 +43,7 @@ func TestSettlementCandidatesBatchStateReads(t *testing.T) {
 		executionID := settlementExecutionID(domain, requestHash, modelHash, servicerAddress, bytes.Repeat([]byte{6}, 32))
 		store.put(t, KeyForRequest(requestID), &RequestRecord{
 			SettlementDomainId: domain, RequestId: requestID, InputHash: bytes.Repeat([]byte{6}, 32),
-			Requester: requester, Models: []string{"model"}, OutputType: "boolean", Status: "ready",
+			Requester: requester, Models: testModelBudgets(100, "model"), PricingPolicy: testPricingPolicy(), OutputType: "boolean", Status: "ready",
 			Assignments: []*Assignment{{Model: "model", Completed: true, ExecutionId: executionID}},
 		})
 		store.put(t, KeyForReservation(domain, requestID), &ReservationRecord{

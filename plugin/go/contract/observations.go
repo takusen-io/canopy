@@ -50,12 +50,22 @@ func authorizationSubject(message *Authorization) []byte {
 		[]byte("takusen:signed-authorization"), []byte(message.RequestId), message.InputHash,
 		message.SettlementDomainId,
 		message.Requester, uint64Bytes(message.ReservedBudget), []byte(message.OutputType),
-		stringListBytes(message.Models), uint32Bytes(message.ExecutionQuorum),
+		modelBudgetBytes(message.Models), uint32Bytes(message.ExecutionQuorum),
 		uint64Bytes(uint64(message.OutputMinimum)), uint64Bytes(uint64(message.OutputMaximum)),
 		stringListBytes(message.OutputChoices), message.SchemaHash,
 		uint64Bytes(message.DeadlineHeight), message.AuthorizationSignature, uint64Bytes(message.AuthorizationDeadline),
 		[]byte(message.RequestArchiveId), uint64Bytes(message.AuthorizationChainBlockNumber), message.AuthorizationChainBlockHash,
 	)
+}
+
+func modelBudgetBytes(items []*ModelBudget) []byte {
+	encoded := make([]byte, 0, len(items)*32)
+	for _, item := range items {
+		if item != nil {
+			encoded = append(encoded, hashFields([]byte(item.Model), uint64Bytes(item.Budget))...)
+		}
+	}
+	return encoded
 }
 
 func settlementSubject(message *RequestFinalization) []byte {

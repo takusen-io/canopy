@@ -1386,8 +1386,8 @@ type PluginEndResponse struct {
 	ValidatorSetEpochEnd bool `protobuf:"varint,2,opt,name=validator_set_epoch_end,json=validatorSetEpochEnd,proto3" json:"validatorSetEpochEnd"` // @gotags: json:"validatorSetEpochEnd"
 	// validator_set_epoch_prepare freezes the next core committee atomically at
 	// S + 1,200 seconds while the current committee remains authoritative.
-	ValidatorSetEpochPrepare   bool                  `protobuf:"varint,3,opt,name=validator_set_epoch_prepare,json=validatorSetEpochPrepare,proto3" json:"validatorSetEpochPrepare"`     // @gotags: json:"validatorSetEpochPrepare"
-	AuxiliaryCandidates        []*AuxiliaryCandidate `protobuf:"bytes,4,rep,name=auxiliary_candidates,json=auxiliaryCandidates,proto3" json:"auxiliaryCandidates,omitempty"`                         // @gotags: json:"auxiliaryCandidates,omitempty"
+	ValidatorSetEpochPrepare   bool                  `protobuf:"varint,3,opt,name=validator_set_epoch_prepare,json=validatorSetEpochPrepare,proto3" json:"validatorSetEpochPrepare"`      // @gotags: json:"validatorSetEpochPrepare"
+	AuxiliaryCandidates        []*AuxiliaryCandidate `protobuf:"bytes,4,rep,name=auxiliary_candidates,json=auxiliaryCandidates,proto3" json:"auxiliaryCandidates,omitempty"`              // @gotags: json:"auxiliaryCandidates,omitempty"
 	ReplaceAuxiliaryCandidates bool                  `protobuf:"varint,5,opt,name=replace_auxiliary_candidates,json=replaceAuxiliaryCandidates,proto3" json:"replaceAuxiliaryCandidates"` // @gotags: json:"replaceAuxiliaryCandidates"
 	Error                      *PluginError          `protobuf:"bytes,99,opt,name=error,proto3" json:"error,omitempty"`
 	unknownFields              protoimpl.UnknownFields

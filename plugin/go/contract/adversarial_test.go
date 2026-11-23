@@ -289,12 +289,11 @@ func TestManageServicerRestoresSlashedBondImmediately(t *testing.T) {
 	store.put(t, KeyForEnclave(teeKeyID), &EnclaveKey{OwnerAddress: owner, TeeKeyId: teeKeyID, Status: "active"})
 	store.put(t, KeyForAccount(owner), &Account{Address: owner, Amount: 1_000})
 	payout := bytes.Repeat([]byte{8}, 20)
-	store.put(t, KeyForServicer(owner), &Servicer{OwnerAddress: owner, EvmPayoutAddress: payout, TeeKeyId: teeKeyID, Models: []string{"model"}, Bond: 99_000, Revision: 1})
+	store.put(t, KeyForServicer(owner), &Servicer{OwnerAddress: owner, EvmPayoutAddress: payout, TeeKeyId: teeKeyID, Models: testServicerModels("model"), Bond: 99_000, Active: true, Revision: 1})
 
 	response := contract.deliverManageServicer(10, 1, &MessageManageServicer{
 		OwnerAddress: owner, ExpectedRevision: 1,
-		Configuration: &ServicerConfigurationUpdate{EvmPayoutAddress: payout, Models: []string{"model"}, Active: true},
-		Bond:          &ServicerBondUpdate{TargetBond: 100_000, MaxDebit: 1_000},
+		Bond: &ServicerBondUpdate{TargetBond: 100_000, MaxDebit: 1_000},
 	})
 	if response.Error != nil {
 		t.Fatal(response.Error)
@@ -312,7 +311,7 @@ func TestManageServicerRestoresSlashedBondImmediately(t *testing.T) {
 	}
 }
 
-func TestActiveServicerIndexTracksRegistrationAndDeactivation(t *testing.T) {
+func TestActiveServicerIndexTracksRegistrationAndUnstake(t *testing.T) {
 	contract, store, owner, _ := newMemoryContract(t)
 	fixture := newNitroFixture(t, nitroFixtureTime, owner)
 	params := protocolParamsForNitroFixture(fixture)
@@ -327,11 +326,7 @@ func TestActiveServicerIndexTracksRegistrationAndDeactivation(t *testing.T) {
 	if found, err := contract.read(KeyForActiveServicer(owner), new(ReplayMarker)); err != nil || !found {
 		t.Fatalf("active servicer index missing: found=%v err=%v", found, err)
 	}
-	update := &MessageManageServicer{
-		OwnerAddress: owner, ExpectedRevision: 1,
-		Configuration: &ServicerConfigurationUpdate{EvmPayoutAddress: append([]byte(nil), owner...), Models: []string{"model"}, Active: false},
-	}
-	if response := contract.deliverManageServicer(2, uint64(nitroFixtureTime.Add(2*time.Minute).UnixMicro()), update); response.Error != nil {
+	if response := contract.deliverBeginServicerUnstake(2, &MessageBeginServicerUnstake{OwnerAddress: owner, ExpectedRevision: 1}); response.Error != nil {
 		t.Fatal(response.Error)
 	}
 	if found, err := contract.read(KeyForActiveServicer(owner), new(ReplayMarker)); err != nil || found {
@@ -576,13 +571,13 @@ func TestAdversarialExecutionRejectsDuplicatesAndRevokedEnclave(t *testing.T) {
 	keyDigest := sha256.Sum256(publicKey)
 	keyID := "ed25519:" + hex.EncodeToString(keyDigest[:])
 	store.put(t, KeyForEnclave(keyID), &EnclaveKey{OwnerAddress: first, PublicKey: publicKey, TeeKeyId: keyID, Status: "active"})
-	store.put(t, KeyForServicer(first), &Servicer{OwnerAddress: first, TeeKeyId: keyID, Models: []string{"model"}, Bond: 100, Active: true})
+	store.put(t, KeyForServicer(first), &Servicer{OwnerAddress: first, TeeKeyId: keyID, Models: testServicerModels("model"), Bond: 100, Active: true})
 	inputHash := sha256.Sum256([]byte("input"))
 	putRequest := func(id string) {
 		executionID := assignmentExecutionID(testSettlementDomainID(), id, "model", first, inputHash[:])
 		store.put(t, KeyForRequest(id), &RequestRecord{SettlementDomainId: testSettlementDomainID(),
 			RequestId: id, InputHash: inputHash[:], Requester: first,
-			OutputType: "boolean", Models: []string{"model"}, ExecutionQuorum: 1, DeadlineHeight: 30,
+			OutputType: "boolean", Models: testModelBudgets(100, "model"), PricingPolicy: testPricingPolicy(), ExecutionQuorum: 1, DeadlineHeight: 30,
 			Assignments: []*Assignment{{Model: "model", Provider: "provider", ServicerAddress: first, ExecutionId: executionID, TeeKeyId: keyID, MaxProviderCost: 100}}, Status: "authorized",
 		})
 		store.put(t, KeyForReservation(testSettlementDomainID(), id), &ReservationRecord{SettlementDomainId: testSettlementDomainID(), RequestId: id, Requester: first, Budget: 100, Status: "reserved"})
@@ -702,7 +697,7 @@ func TestAdversarialSettlementAndBridgeReplay(t *testing.T) {
 		t.Fatal(response.Error)
 	}
 	committedBurn := new(BridgeBurn)
-	if found, err := contract.read(KeyForBridgeBurn(burnID), committedBurn); err != nil || !found || committedBurn.Status != "released" || committedBurn.ValidatorSetId != 1 || committedBurn.ReleaseValidatorSetId != 2 {
+	if found, err := contract.read(KeyForBridgeBurn(burnID), committedBurn); err != nil || !found || committedBurn.Status != "released" || committedBurn.ReleaseValidatorSetId != 2 {
 		t.Fatalf("bridge release status = %q, found = %v, err = %v", committedBurn.Status, found, err)
 	}
 }
@@ -884,7 +879,7 @@ func TestCertifiedAssignmentExpirationIsTerminalAndNonSlashable(t *testing.T) {
 	store.put(t, KeyForServicer(servicerAddress), &Servicer{OwnerAddress: servicerAddress, Bond: 100, Active: true})
 	store.put(t, KeyForRequest("expired"), &RequestRecord{SettlementDomainId: testSettlementDomainID(),
 		RequestId: "expired", InputHash: bytes.Repeat([]byte{7}, 32), Requester: requester,
-		Models: []string{"model"}, DeadlineHeight: 10,
+		Models: testModelBudgets(100, "model"), DeadlineHeight: 10,
 		Assignments: []*Assignment{{Model: "model", Provider: "provider", ServicerAddress: servicerAddress, ExecutionId: executionID}},
 		Status:      "authorized",
 	})
@@ -919,20 +914,20 @@ func TestCertifiedAssignmentExpirationIsTerminalAndNonSlashable(t *testing.T) {
 	}
 }
 
-func TestManageServicerBondChangesAndSlashesAreBlockEffective(t *testing.T) {
+func TestBeginUnstakeReleasesOnlyTheCompleteSlashableBond(t *testing.T) {
 	contract, store, owner, _ := newMemoryContract(t)
 	params := defaultProtocolParams()
 	params.Revision = 1
 	params.MinimumServicerBond = 50
 	params.ServicerUnbondingBlocks = 20
-	params.InvalidReceiptSlashBps = 5_000
+	params.InvalidReceiptSlashBps = 100
 	store.put(t, KeyForProtocolParams(), params)
 	keyID := "ed25519:current"
 	payout := bytes.Repeat([]byte{8}, 20)
 	store.put(t, KeyForEnclave(keyID), &EnclaveKey{OwnerAddress: owner, TeeKeyId: keyID, Status: "active"})
 	store.put(t, KeyForServicer(owner), &Servicer{
 		OwnerAddress: owner, EvmPayoutAddress: payout, TeeKeyId: keyID,
-		Models: []string{"model"}, Bond: 100, Active: true, Revision: 1,
+		Models: testServicerModels("model"), Bond: 100, Active: true, Revision: 1,
 	})
 	store.put(t, KeyForActiveServicer(owner), &ReplayMarker{Id: owner})
 	store.put(t, KeyForAccount(owner), &Account{Address: owner, Amount: 50})
@@ -954,62 +949,46 @@ func TestManageServicerBondChangesAndSlashesAreBlockEffective(t *testing.T) {
 	}
 
 	manage.ExpectedRevision = 2
-	manage.Bond = &ServicerBondUpdate{TargetBond: 40}
-	manage.Configuration = &ServicerConfigurationUpdate{EvmPayoutAddress: payout, Models: []string{"model"}, Active: false}
-	if response := contract.deliverManageServicer(2, 2, manage); response.Error != nil {
+	manage.Bond = &ServicerBondUpdate{TargetBond: 149}
+	if response := contract.deliverManageServicer(2, 2, manage); response.Error == nil {
+		t.Fatal("active servicer partially reduced its bond")
+	}
+	if response := contract.deliverManageServicer(2, 2, &MessageManageServicer{
+		OwnerAddress: owner, ExpectedRevision: 2,
+		Configuration: &ServicerConfigurationUpdate{EvmPayoutAddress: payout, Models: testServicerModels("model"), Active: false},
+	}); response.Error == nil {
+		t.Fatal("active servicer bypassed begin unstake through configuration")
+	}
+	if response := contract.deliverBeginServicerUnstake(2, &MessageBeginServicerUnstake{OwnerAddress: owner, ExpectedRevision: 2}); response.Error != nil {
 		t.Fatal(response.Error)
 	}
-	if found, err := contract.read(KeyForServicer(owner), servicer); err != nil || !found ||
-		servicer.Bond != 40 || servicer.Active {
-		t.Fatalf("immediate bond decrease: found=%v servicer=%+v err=%v", found, servicer, err)
+	if found, err := contract.read(KeyForServicer(owner), servicer); err != nil || !found || servicer.Active || servicer.Bond != 0 || servicer.UnstakingReleaseHeight != 22 {
+		t.Fatalf("unstaking servicer: found=%v servicer=%+v err=%v", found, servicer, err)
 	}
-	if found, err := contract.read(KeyForAccount(owner), account); err != nil || !found ||
-		account.Amount != 110 || account.UnbondingAmount != 110 || account.UnbondingReleaseHeight != 22 {
-		t.Fatalf("single unbonding bucket: found=%v account=%+v err=%v", found, account, err)
+	if found, err := contract.read(KeyForAccount(owner), account); err != nil || !found || account.Amount != 150 || account.UnbondingAmount != 150 || account.UnbondingReleaseHeight != 22 {
+		t.Fatalf("complete unbonding bucket: found=%v account=%+v err=%v", found, account, err)
 	}
-	if accountSpendableAtHeight(account, 21) != 0 || accountSpendableAtHeight(account, 22) != 110 {
+	if found, err := contract.read(KeyForActiveServicer(owner), new(ReplayMarker)); err != nil || found {
+		t.Fatalf("unstaking servicer remains assignable: found=%v err=%v", found, err)
+	}
+	if accountSpendableAtHeight(account, 21) != 0 || accountSpendableAtHeight(account, 22) != 150 {
 		t.Fatalf("height-based unbonding spendability = (%d, %d)", accountSpendableAtHeight(account, 21), accountSpendableAtHeight(account, 22))
 	}
 
-	apply := func(height uint64, label string) {
-		t.Helper()
-		records := make(map[string]proto.Message)
-		var deletes [][]byte
-		if err := contract.applyInvalidReceiptPenalty(height, hashFields([]byte(label)), owner, params, records, &deletes); err != nil {
-			t.Fatal(err)
-		}
-		if err := contract.writeChanges(records, deletes); err != nil {
-			t.Fatal(err)
-		}
+	records := make(map[string]proto.Message)
+	var deletes [][]byte
+	if err := contract.applyInvalidReceiptPenalty(3, hashFields([]byte("evidence")), owner, params, records, &deletes); err != nil {
+		t.Fatal(err)
 	}
-	apply(3, "first")
-	apply(4, "second")
-	if found, err := contract.read(KeyForServicer(owner), servicer); err != nil || !found ||
-		servicer.Bond != 0 || servicer.TotalSlashed != 112 || servicer.Active {
-		t.Fatalf("canonical immediate slashes: found=%v servicer=%+v err=%v", found, servicer, err)
+	if err := contract.writeChanges(records, deletes); err != nil {
+		t.Fatal(err)
 	}
-	if found, err := contract.read(KeyForAccount(owner), account); err != nil || !found ||
-		account.Amount != 38 || account.UnbondingAmount != 38 || account.UnbondingReleaseHeight != 22 {
-		t.Fatalf("slashes did not consume the unbonding bucket: found=%v account=%+v err=%v", found, account, err)
-	}
-
-	// Reactivation consumes only newly spendable funds; the old unbonding
-	// collateral remains locked and slashable until its release height.
-	account.Amount += 50
-	store.put(t, KeyForAccount(owner), account)
-	manage.ExpectedRevision = 3
-	manage.Bond = &ServicerBondUpdate{TargetBond: 50, MaxDebit: 50}
-	manage.Configuration = &ServicerConfigurationUpdate{EvmPayoutAddress: payout, Models: []string{"model"}, Active: true}
-	if response := contract.deliverManageServicer(5, 5, manage); response.Error != nil {
-		t.Fatal(response.Error)
-	}
-	if found, err := contract.read(KeyForAccount(owner), account); err != nil || !found ||
-		account.Amount != 38 || account.UnbondingAmount != 38 {
-		t.Fatalf("reactivation consumed locked collateral: found=%v account=%+v err=%v", found, account, err)
+	if found, err := contract.read(KeyForAccount(owner), account); err != nil || !found || account.Amount != 149 || account.UnbondingAmount != 149 {
+		t.Fatalf("evidence window did not keep the entire bucket slashable: found=%v account=%+v err=%v", found, account, err)
 	}
 }
 
-func TestOwnerDeactivationAndEmergencyEnclaveRevocationAreDistinct(t *testing.T) {
+func TestOwnerUnstakeAndEmergencyEnclaveRevocationAreDistinct(t *testing.T) {
 	contract, store, first, _ := newMemoryContract(t)
 	params := defaultProtocolParams()
 	params.Revision = 1
@@ -1019,31 +998,34 @@ func TestOwnerDeactivationAndEmergencyEnclaveRevocationAreDistinct(t *testing.T)
 	store.put(t, KeyForEnclave(keyID), &EnclaveKey{OwnerAddress: first, TeeKeyId: keyID, Status: "active"})
 	store.put(t, KeyForServicer(first), &Servicer{
 		OwnerAddress: first, EvmPayoutAddress: payout, TeeKeyId: keyID,
-		Models: []string{"model"}, Bond: 100, Active: true, Revision: 1,
+		Models: testServicerModels("model"), Bond: 100, Active: true, Revision: 1,
 	})
 	store.put(t, KeyForActiveServicer(first), &ReplayMarker{Id: first})
 	remove := &MessageManageServicer{
 		OwnerAddress: first, ExpectedRevision: 1,
-		Configuration: &ServicerConfigurationUpdate{EvmPayoutAddress: payout, Models: []string{"model"}, Active: false},
+		Configuration: &ServicerConfigurationUpdate{EvmPayoutAddress: payout, Models: testServicerModels("model"), Active: false},
 	}
-	if response := contract.deliverManageServicer(1, 1, remove); response.Error != nil {
+	if response := contract.deliverManageServicer(1, 1, remove); response.Error == nil {
+		t.Fatal("configuration deactivation bypassed begin unstake")
+	}
+	if response := contract.deliverBeginServicerUnstake(1, &MessageBeginServicerUnstake{OwnerAddress: first, ExpectedRevision: 1}); response.Error != nil {
 		t.Fatal(response.Error)
 	}
 	servicer := new(Servicer)
 	enclave := new(EnclaveKey)
 	if found, err := contract.read(KeyForServicer(first), servicer); err != nil || !found ||
 		servicer.Active || servicer.TeeKeyId != keyID {
-		t.Fatalf("owner deactivation changed its enclave binding: found=%v servicer=%+v err=%v", found, servicer, err)
+		t.Fatalf("owner unstake changed its enclave binding: found=%v servicer=%+v err=%v", found, servicer, err)
 	}
 	if found, err := contract.read(KeyForEnclave(keyID), enclave); err != nil || !found || enclave.Status != "active" {
-		t.Fatalf("owner deactivation revoked its enclave key: found=%v enclave=%+v err=%v", found, enclave, err)
+		t.Fatalf("owner unstake revoked its enclave key: found=%v enclave=%+v err=%v", found, enclave, err)
 	}
 
 	forcedKey := "ed25519:forced"
 	store.put(t, KeyForEnclave(forcedKey), &EnclaveKey{OwnerAddress: first, TeeKeyId: forcedKey, Status: "active"})
 	store.put(t, KeyForServicer(first), &Servicer{
 		OwnerAddress: first, EvmPayoutAddress: payout, TeeKeyId: forcedKey,
-		Models: []string{"model"}, Bond: 100, Active: true, Revision: 1,
+		Models: testServicerModels("model"), Bond: 100, Active: true, Revision: 1,
 	})
 	store.put(t, KeyForActiveServicer(first), &ReplayMarker{Id: first})
 	force := &EnclaveRevocation{TeeKeyId: forcedKey, IncidentId: bytes.Repeat([]byte{9}, 32)}
@@ -1381,12 +1363,12 @@ func TestZeroCostEnclaveReceiptImmediatelySlashesAndLeavesAssignmentRetryable(t 
 	store.put(t, KeyForProtocolParams(), params)
 	store.put(t, KeyForRequest("request"), &RequestRecord{SettlementDomainId: testSettlementDomainID(),
 		RequestId: "request", Requester: owner, InputHash: inputHash[:], OutputType: "boolean",
-		Models: []string{"model"}, ExecutionQuorum: 1, Status: "authorized", DeadlineHeight: 100,
+		Models: testModelBudgets(100, "model"), PricingPolicy: testPricingPolicy(), ExecutionQuorum: 1, Status: "authorized", DeadlineHeight: 100,
 		Assignments: []*Assignment{{Model: "model", Provider: "provider", ServicerAddress: owner, ExecutionId: assignmentExecutionID(testSettlementDomainID(), "request", "model", owner, inputHash[:]), TeeKeyId: keyID, MaxProviderCost: 100}},
 	})
 	store.put(t, KeyForReservation(testSettlementDomainID(), "request"), &ReservationRecord{SettlementDomainId: testSettlementDomainID(), RequestId: "request", Requester: owner, Budget: 100, Status: "reserved"})
 	store.put(t, KeyForServicer(owner), &Servicer{
-		OwnerAddress: owner, TeeKeyId: keyID, Models: []string{"model"}, Bond: 100, Active: true,
+		OwnerAddress: owner, TeeKeyId: keyID, Models: testServicerModels("model"), Bond: 100, Active: true,
 	})
 	store.put(t, KeyForEnclave(keyID), &EnclaveKey{
 		OwnerAddress: owner, TeeKeyId: keyID, PublicKey: publicKey, Status: "active",
@@ -1460,11 +1442,11 @@ func TestAssignmentProviderCostLimitIsConsensusAuthenticated(t *testing.T) {
 			store.put(t, KeyForProtocolParams(), func() *ProtocolParams { p := defaultProtocolParams(); p.Revision = 1; return p }())
 			store.put(t, KeyForRequest("request"), &RequestRecord{
 				SettlementDomainId: testSettlementDomainID(), RequestId: "request", Requester: owner, InputHash: inputHash[:],
-				OutputType: "boolean", Models: []string{"model"}, ExecutionQuorum: 1, Status: "authorized", DeadlineHeight: 100,
+				OutputType: "boolean", Models: testModelBudgets(100, "model"), PricingPolicy: testPricingPolicy(), ExecutionQuorum: 1, Status: "authorized", DeadlineHeight: 100,
 				Assignments: []*Assignment{{Model: "model", Provider: "provider", ServicerAddress: owner, ExecutionId: executionID, TeeKeyId: keyID, MaxProviderCost: 100}},
 			})
 			store.put(t, KeyForReservation(testSettlementDomainID(), "request"), &ReservationRecord{SettlementDomainId: testSettlementDomainID(), RequestId: "request", Requester: owner, Budget: 100, Status: "reserved"})
-			store.put(t, KeyForServicer(owner), &Servicer{OwnerAddress: owner, TeeKeyId: keyID, Models: []string{"model"}, Bond: 100, Active: true})
+			store.put(t, KeyForServicer(owner), &Servicer{OwnerAddress: owner, TeeKeyId: keyID, Models: testServicerModels("model"), Bond: 100, Active: true})
 			store.put(t, KeyForEnclave(keyID), &EnclaveKey{OwnerAddress: owner, TeeKeyId: keyID, PublicKey: publicKey, Status: "active"})
 
 			message := signedExecution(t, privateKey, publicKey, keyID, owner, "request", executionID, inputHash)
@@ -1506,7 +1488,7 @@ func TestFinalReceiptMakesRequestReadyOnlyAfterAllAssignmentsResolve(t *testing.
 	store.put(t, KeyForProtocolParams(), params)
 	store.put(t, KeyForRequest("late"), &RequestRecord{SettlementDomainId: testSettlementDomainID(),
 		RequestId: "late", Requester: requester, InputHash: inputHash[:],
-		OutputType: "boolean", Models: []string{"prior", "model"}, ExecutionQuorum: 1, Status: "authorized", DeadlineHeight: 100,
+		OutputType: "boolean", Models: testModelBudgets(200, "prior", "model"), PricingPolicy: testPricingPolicy(), ExecutionQuorum: 1, Status: "authorized", DeadlineHeight: 100,
 		Assignments: []*Assignment{
 			{Model: "prior", Completed: true, ExecutionId: "prior-execution"},
 			{Model: "model", Provider: "provider", ServicerAddress: owner, ExecutionId: assignmentExecutionID(testSettlementDomainID(), "late", "model", owner, inputHash[:]), TeeKeyId: keyID, MaxProviderCost: 100},
@@ -1516,7 +1498,7 @@ func TestFinalReceiptMakesRequestReadyOnlyAfterAllAssignmentsResolve(t *testing.
 		ExecutionId: "prior-execution", RequestId: "late", Model: "prior", Status: "success", Output: "true", OutputHash: outputHash[:],
 	})
 	store.put(t, KeyForReservation(testSettlementDomainID(), "late"), &ReservationRecord{SettlementDomainId: testSettlementDomainID(), RequestId: "late", Requester: requester, Budget: 200, Spent: 10, Status: "reserved"})
-	store.put(t, KeyForServicer(owner), &Servicer{OwnerAddress: owner, TeeKeyId: keyID, Models: []string{"model"}, Bond: 100, Active: true})
+	store.put(t, KeyForServicer(owner), &Servicer{OwnerAddress: owner, TeeKeyId: keyID, Models: testServicerModels("model"), Bond: 100, Active: true})
 	store.put(t, KeyForEnclave(keyID), &EnclaveKey{OwnerAddress: owner, TeeKeyId: keyID, PublicKey: publicKey, Status: "active"})
 
 	executionID := assignmentExecutionID(testSettlementDomainID(), "late", "model", owner, inputHash[:])
@@ -1535,9 +1517,9 @@ func TestFinalReceiptMakesRequestReadyOnlyAfterAllAssignmentsResolve(t *testing.
 func TestTimeoutExhaustionBecomesReady(t *testing.T) {
 	contract, store, _, _ := newMemoryContract(t)
 	servicerAddress := bytes.Repeat([]byte{10}, 20)
-	store.put(t, KeyForServicer(servicerAddress), &Servicer{OwnerAddress: servicerAddress, Models: []string{"model"}, Bond: 100, Active: true})
+	store.put(t, KeyForServicer(servicerAddress), &Servicer{OwnerAddress: servicerAddress, Models: testServicerModels("model"), Bond: 100, Active: true})
 	store.put(t, KeyForRequest("resolved"), &RequestRecord{SettlementDomainId: testSettlementDomainID(),
-		RequestId: "resolved", InputHash: bytes.Repeat([]byte{11}, 32), Models: []string{"prior", "model"}, Status: "authorized", DeadlineHeight: 10,
+		RequestId: "resolved", InputHash: bytes.Repeat([]byte{11}, 32), Models: testModelBudgets(200, "prior", "model"), Status: "authorized", DeadlineHeight: 10,
 		Assignments: []*Assignment{
 			{Model: "prior", Completed: true, ExecutionId: "prior-execution"},
 			{Model: "model", ServicerAddress: servicerAddress, ExecutionId: "expired-execution"},

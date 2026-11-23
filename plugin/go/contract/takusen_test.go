@@ -21,6 +21,7 @@ const testRequestArchiveID = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 func TestProtocolV5ExposesOneTransactionPerTrustBoundary(t *testing.T) {
 	expected := []string{
 		MessageRegisterServicerName, MessageManageServicerName,
+		MessageBeginServicerUnstakeName,
 		MessageObserveDepositName, MessageResolveDepositName, MessageResolveSettlementName,
 		MessageObserveAuthorizationsName, MessageQueueAuthorizationName,
 		MessageSubmitExecutionsName, MessageFinalizeRequestsName, MessageGovernanceVoteName,
@@ -163,7 +164,7 @@ func TestMaximumProviderCostFitsAllInModelAllocation(t *testing.T) {
 func TestAuthorizationSubjectBindsContent(t *testing.T) {
 	message := &Authorization{SettlementDomainId: testSettlementDomainID(),
 		RequestId: "request", InputHash: make([]byte, 32),
-		Requester: make([]byte, 20), ReservedBudget: 100, OutputType: "boolean", Models: []string{"model"},
+		Requester: make([]byte, 20), ReservedBudget: 100, OutputType: "boolean", Models: testModelBudgets(100, "model"),
 		ExecutionQuorum: 1, DeadlineHeight: 100,
 	}
 	first := authorizationSubject(message)
@@ -270,9 +271,22 @@ func TestGovernedParamsRejectUnsafeValues(t *testing.T) {
 		t.Fatalf("rejected governed markup above 100%%: %v", err)
 	}
 	excessiveMarkup := proto.Clone(highMarkup).(*ProtocolParams)
-	excessiveMarkup.FoundationFeeBps = maxChargeBps + 1
+	excessiveMarkup.FoundationFeeBps = maxFoundationFeeBps + 1
 	if err := validateProtocolParams(excessiveMarkup); err == nil {
 		t.Fatal("accepted foundation markup above the safety ceiling")
+	}
+	for _, foundationFeeBps := range []uint32{100_000, 200_000, 1_000_000} {
+		boundary := proto.Clone(valid).(*ProtocolParams)
+		boundary.FoundationFeeBps = foundationFeeBps
+		if err := validateProtocolParams(boundary); err != nil {
+			t.Fatalf("rejected supported foundation fee %d bps: %v", foundationFeeBps, err)
+		}
+	}
+	excessiveMargin := proto.Clone(valid).(*ProtocolParams)
+	excessiveMargin.FoundationFeeBps = maxFoundationFeeBps
+	excessiveMargin.ServicerMarginBps = maxServicerMarginBps + 1
+	if err := validateProtocolParams(excessiveMargin); err == nil {
+		t.Fatal("accepted servicer margin above the 1x ceiling")
 	}
 	shortAbandonmentDelay := proto.Clone(valid).(*ProtocolParams)
 	shortAbandonmentDelay.SettlementDomains[0].AbandonmentDelaySeconds = minimumDomainAbandonmentDelaySeconds - 1
@@ -347,12 +361,12 @@ func TestGovernedParamsRejectUnsafeValues(t *testing.T) {
 	}
 }
 
-func TestBridgeReleaseDigestMatchesSolidityABI(t *testing.T) {
+func TestBridgeReleaseBatchDigestMatchesSolidityABI(t *testing.T) {
 	params := &ProtocolParams{
 		CanonicalChainId: 8453, CanonicalBridgeAddress: bytes.Repeat([]byte{0x11}, 20),
 	}
-	digest := bridgeReleaseDigest(params, 7, 9, bytes.Repeat([]byte{0x22}, 20), 123, bytes.Repeat([]byte{0xaa}, 32))
-	if got := "0x" + hex.EncodeToString(digest); got != "0xf1ef0fcefcc4b5d2851b9809469bb86c326fc5bf2a8e8d6850e40fc99fb17981" {
+	digest := bridgeReleaseBatchDigest(params, 7, []*BridgeBurn{{Nonce: 9, CanonicalChainRecipient: bytes.Repeat([]byte{0x22}, 20), Amount: 123, BurnId: bytes.Repeat([]byte{0xaa}, 32)}})
+	if got := "0x" + hex.EncodeToString(digest); got != "0x1515e2ecb2a74ff3fab5c22d54fcb3592de43eae88e22c578babd75610155e0c" {
 		t.Fatalf("bridge digest = %s", got)
 	}
 }

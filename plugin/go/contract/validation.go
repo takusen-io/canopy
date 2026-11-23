@@ -6,7 +6,6 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
-	"sort"
 	"strings"
 
 	"golang.org/x/crypto/sha3"
@@ -30,29 +29,37 @@ func validPayoutAddress(address []byte) bool {
 
 func validHash(hash []byte) bool { return len(hash) == sha256.Size }
 
-func validModels(models []string) bool {
-	return validModelList(models, true)
+func validModels(models []*ServicerModelPolicy) bool {
+	if len(models) == 0 || len(models) > 7 {
+		return false
+	}
+	previous := ""
+	for _, item := range models {
+		if item == nil || item.Model == "" || strings.TrimSpace(item.Model) != item.Model || len(item.Model) > 200 || item.MinimumAcceptableBudget == 0 || item.Model <= previous {
+			return false
+		}
+		previous = item.Model
+	}
+	return true
 }
 
-func validRequestModels(models []string) bool {
-	return validModelList(models, false)
-}
-
-func validModelList(models []string, requireSorted bool) bool {
+func validRequestModels(models []*ModelBudget, reserved uint64) bool {
 	if len(models) == 0 || len(models) > 7 {
 		return false
 	}
 	seen := make(map[string]struct{}, len(models))
-	for _, model := range models {
-		if strings.TrimSpace(model) != model || model == "" || len(model) > 200 {
+	var total uint64
+	for _, item := range models {
+		if item == nil || strings.TrimSpace(item.Model) != item.Model || item.Model == "" || len(item.Model) > 200 || item.Budget == 0 || ^uint64(0)-total < item.Budget {
 			return false
 		}
-		if _, exists := seen[model]; exists {
+		if _, exists := seen[item.Model]; exists {
 			return false
 		}
-		seen[model] = struct{}{}
+		seen[item.Model] = struct{}{}
+		total += item.Budget
 	}
-	return !requireSorted || sort.StringsAreSorted(models)
+	return total == reserved
 }
 
 func validOutputType(outputType string) bool {
@@ -98,6 +105,13 @@ func checkManageServicer(message *MessageManageServicer) ([]byte, *PluginError) 
 		if err := checkAttestedEnclave(rotation.TeeKeyId, rotation.PublicKey, rotation.Nonce, rotation.UserData, rotation.ProofSignature); err != nil {
 			return nil, err
 		}
+	}
+	return message.OwnerAddress, nil
+}
+
+func checkBeginServicerUnstake(message *MessageBeginServicerUnstake) ([]byte, *PluginError) {
+	if message == nil || !validAddress(message.OwnerAddress) || message.ExpectedRevision == 0 {
+		return nil, ErrInvalidTransaction("invalid servicer unstake")
 	}
 	return message.OwnerAddress, nil
 }
@@ -180,7 +194,7 @@ func checkResolveSettlement(message *MessageResolveSettlement) ([]byte, *PluginE
 func checkAuthorizationItem(message *Authorization) ([]byte, *PluginError) {
 	if !validHash(message.SettlementDomainId) || message.RequestId == "" || len(message.RequestId) > 128 ||
 		!validHash(message.InputHash) || !validAddress(message.Requester) || message.ReservedBudget == 0 ||
-		!validOutputType(message.OutputType) || !validRequestModels(message.Models) || message.ExecutionQuorum == 0 ||
+		!validOutputType(message.OutputType) || !validRequestModels(message.Models, message.ReservedBudget) || message.ExecutionQuorum == 0 ||
 		!validRequestOutputSchema(message) ||
 		int(message.ExecutionQuorum) > len(message.Models) || message.DeadlineHeight == 0 ||
 		len(message.AuthorizationSignature) == 0 || message.AuthorizationDeadline == 0 ||

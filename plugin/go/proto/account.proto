@@ -64,17 +64,28 @@ message EnclaveKey {
   string status = 9;
 }
 
+message ModelBudget {
+  string model = 1;
+  uint64 budget = 2;
+}
+
+message ServicerModelPolicy {
+  string model = 1;
+  uint64 minimum_acceptable_budget = 2;
+}
+
 message Servicer {
   bytes owner_address = 1;
   bytes evm_payout_address = 2;
   string tee_key_id = 3;
-  repeated string models = 4;
+  repeated ServicerModelPolicy models = 4;
   uint64 bond = 5;
   bool active = 6;
   uint64 registered_height = 7;
   uint64 failure_count = 8;
   uint64 total_slashed = 9;
   uint64 revision = 10;
+  uint64 unstaking_release_height = 11;
 }
 
 message Assignment {
@@ -86,6 +97,25 @@ message Assignment {
   string provider = 6;
   string terminal_status = 7;
   uint64 max_provider_cost = 8;
+  uint64 input_price_micros_per_million_tokens = 9;
+  uint64 output_price_micros_per_million_tokens = 10;
+  uint64 provider_request_price_micros = 11;
+}
+
+message ModelPricingSnapshot {
+  string model = 1;
+  uint64 minimum_execution_budget = 2;
+  uint64 maximum_execution_budget = 3;
+  uint64 input_price_micros_per_million_tokens = 4;
+  uint64 output_price_micros_per_million_tokens = 5;
+  uint64 provider_request_price_micros = 6;
+}
+
+message PricingPolicySnapshot {
+  uint64 revision = 1;
+  uint32 foundation_fee_bps = 2;
+  uint32 servicer_margin_bps = 3;
+  repeated ModelPricingSnapshot models = 4;
 }
 
 message RequestRecord {
@@ -93,7 +123,7 @@ message RequestRecord {
   bytes input_hash = 2;
   bytes requester = 3;
   string output_type = 4;
-  repeated string models = 5;
+  repeated ModelBudget models = 5;
   // Display-only agreement observation threshold.
   uint32 execution_quorum = 6;
   uint64 deadline_height = 7;
@@ -104,9 +134,7 @@ message RequestRecord {
   bytes consensus_output_hash = 12;
   uint32 agreement_count = 13;
   bytes settlement_tx_hash = 14;
-  uint64 parameter_revision = 15;
-  uint32 foundation_fee_bps = 16;
-  uint32 servicer_margin_bps = 17;
+  PricingPolicySnapshot pricing_policy = 15;
   bytes authorization_signature_hash = 18;
   string request_archive_id = 19;
   bytes settlement_domain_id = 20;
@@ -237,6 +265,10 @@ message ModelParams {
   string provider = 2;
   uint64 maximum_execution_budget = 3;
   bool active = 4;
+  uint64 minimum_execution_budget = 5;
+  uint64 input_price_micros_per_million_tokens = 6;
+  uint64 output_price_micros_per_million_tokens = 7;
+  uint64 provider_request_price_micros = 8;
 }
 
 message PCRPolicy {
@@ -274,6 +306,7 @@ message ProtocolParams {
   // DER-encoded X.509 roots that anchor Nitro attestation certificate chains.
   // Governance may overlap old and new roots during a trust-anchor transition.
   repeated bytes nitro_trust_roots = 28;
+  uint64 minimum_bridge_amount = 29;
 }
 
 message SlashEvidence {
@@ -387,11 +420,16 @@ message BridgeBurn {
   bytes canonical_chain_recipient = 4;
   uint64 amount = 5;
   uint64 burned_height = 6;
-  uint64 validator_set_id = 7;
-  bytes canonical_chain_digest = 8;
-  string status = 9;
-  bytes canonical_chain_release_tx_hash = 10;
-  uint64 release_validator_set_id = 11;
+  string status = 7;
+  bytes canonical_chain_release_tx_hash = 8;
+  uint64 release_validator_set_id = 9;
+}
+
+message BridgeReleaseBatch {
+  bytes batch_id = 1;
+  uint64 validator_set_id = 2;
+  repeated BridgeBurn releases = 3;
+  bytes canonical_chain_digest = 4;
 }
 
 message ReplayMarker {

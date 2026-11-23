@@ -63,7 +63,7 @@ func TestDeterministicAssignmentExpirationPublishesTerminalTimeout(t *testing.T)
 	executionID := "exec:" + hex.EncodeToString(bytes.Repeat([]byte{0x33}, 32))
 	request := &RequestRecord{
 		SettlementDomainId: domain, RequestId: "request", InputHash: bytes.Repeat([]byte{0x44}, 32),
-		Requester: bytes.Repeat([]byte{0x55}, 20), Models: []string{"model"}, Status: "authorized", DeadlineHeight: 10,
+		Requester: bytes.Repeat([]byte{0x55}, 20), Models: testModelBudgets(100, "model"), Status: "authorized", DeadlineHeight: 10,
 		Assignments: []*Assignment{{Model: "model", Provider: "openrouter", ServicerAddress: servicer, ExecutionId: executionID}},
 	}
 	store.put(t, KeyForRequest(request.RequestId), request)
@@ -100,7 +100,7 @@ func TestCertifiedEnclaveRevocationRequiresNoObservationTransactions(t *testing.
 	keyID := "ed25519:emergency"
 	store.put(t, KeyForEnclave(keyID), &EnclaveKey{OwnerAddress: owner, TeeKeyId: keyID, Status: "active"})
 	store.put(t, KeyForServicer(owner), &Servicer{
-		OwnerAddress: owner, TeeKeyId: keyID, Models: []string{"model"}, Bond: 100, Active: true, Revision: 1,
+		OwnerAddress: owner, TeeKeyId: keyID, Models: testServicerModels("model"), Bond: 100, Active: true, Revision: 1,
 	})
 	store.put(t, KeyForActiveServicer(owner), &ReplayMarker{Id: owner})
 	message := &EnclaveRevocation{TeeKeyId: keyID, IncidentId: bytes.Repeat([]byte{0x71}, 32)}

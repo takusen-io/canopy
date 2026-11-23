@@ -13,6 +13,7 @@ import (
 const (
 	MessageRegisterServicerName      = "takusenRegisterServicer"
 	MessageManageServicerName        = "takusenManageServicer"
+	MessageBeginServicerUnstakeName  = "takusenBeginServicerUnstake"
 	MessageObserveDepositName        = "takusenObserveDeposit"
 	MessageResolveDepositName        = "takusenResolveDeposit"
 	MessageResolveSettlementName     = "takusenResolveSettlement"
@@ -37,6 +38,7 @@ var ContractConfig = &PluginConfig{
 	SupportedTransactions: []string{
 		MessageRegisterServicerName,
 		MessageManageServicerName,
+		MessageBeginServicerUnstakeName,
 		MessageObserveDepositName,
 		MessageResolveDepositName,
 		MessageResolveSettlementName,
@@ -54,6 +56,7 @@ var ContractConfig = &PluginConfig{
 	TransactionTypeUrls: []string{
 		"type.googleapis.com/types.MessageRegisterServicer",
 		"type.googleapis.com/types.MessageManageServicer",
+		"type.googleapis.com/types.MessageBeginServicerUnstake",
 		"type.googleapis.com/types.MessageObserveDeposit",
 		"type.googleapis.com/types.MessageResolveDeposit",
 		"type.googleapis.com/types.MessageResolveSettlement",
@@ -228,6 +231,8 @@ func (c *Contract) CheckTx(request *PluginCheckRequest) *PluginCheckResponse {
 		signer, err = checkRegisterServicer(message)
 	case *MessageManageServicer:
 		signer, err = checkManageServicer(message)
+	case *MessageBeginServicerUnstake:
+		signer, err = checkBeginServicerUnstake(message)
 	case *MessageObserveDeposit:
 		signer, err = checkObserveDeposit(message)
 	case *MessageResolveDeposit:
@@ -279,6 +284,8 @@ func (c *Contract) DeliverTx(request *PluginDeliverRequest) *PluginDeliverRespon
 		return c.deliverRegisterServicer(request.Height, request.TimeMicros, message)
 	case *MessageManageServicer:
 		return c.deliverManageServicer(request.Height, request.TimeMicros, message)
+	case *MessageBeginServicerUnstake:
+		return c.deliverBeginServicerUnstake(request.Height, message)
 	case *MessageObserveDeposit:
 		return c.deliverObserveDeposit(request.Height, message)
 	case *MessageResolveDeposit:

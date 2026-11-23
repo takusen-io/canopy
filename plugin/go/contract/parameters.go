@@ -13,7 +13,10 @@ import (
 // AWS Nitro Enclaves Root-G1 DER.
 const defaultNitroTrustRootBase64 = "MIICETCCAZagAwIBAgIRAPkxdWgbkK/hHUbMtOTn+FYwCgYIKoZIzj0EAwMwSTELMAkGA1UEBhMCVVMxDzANBgNVBAoMBkFtYXpvbjEMMAoGA1UECwwDQVdTMRswGQYDVQQDDBJhd3Mubml0cm8tZW5jbGF2ZXMwHhcNMTkxMDI4MTMyODA1WhcNNDkxMDI4MTQyODA1WjBJMQswCQYDVQQGEwJVUzEPMA0GA1UECgwGQW1hem9uMQwwCgYDVQQLDANBV1MxGzAZBgNVBAMMEmF3cy5uaXRyby1lbmNsYXZlczB2MBAGByqGSM49AgEGBSuBBAAiA2IABPwCVOumCMHzaHDimtqQvkY4MpJzbolL//Zy2YlES1BR5TSksfbb48C8WBoyt7F2Bw7eEtaaP+ohG2bnUs990d0JX28TcPQXCEPZ3BABIeTPYwEoCWZEh8l5YoQwTcU/9KNCMEAwDwYDVR0TAQH/BAQDAgGGMAoGCCqGSM49BAMDA2kAMGYCMQCjfy+Rocm9Xue4YnwWmNJVA44fA0P5W2OpYow9OYCVRaEevL8uO1XYru5xtMPWrfMCMQCi85sWBbJwKKXdS6BptQFuZbT73o/gBh1qUxl/nNr12UO8Yfwr6wPLb+6NIwLz3/Y="
 
-const maxChargeBps uint32 = 100_000
+const (
+	maxFoundationFeeBps  uint32 = 1_000_000
+	maxServicerMarginBps uint32 = 10_000
+)
 
 const (
 	minimumDomainAbandonmentDelaySeconds uint64 = 24 * 60 * 60
@@ -24,7 +27,9 @@ func defaultProtocolParams() *ProtocolParams {
 	nitroRoot, _ := base64.StdEncoding.DecodeString(defaultNitroTrustRootBase64)
 	return &ProtocolParams{
 		MinimumServicerBond: 1, ServicerUnbondingBlocks: 86_400,
+		InvalidReceiptSlashBps: 100, TreasuryAddress: bytes.Repeat([]byte{0x77}, 20),
 		BridgeEpochMintLimit: math.MaxUint64, BridgeTransferLimit: math.MaxUint64,
+		MinimumBridgeAmount:    1,
 		SupportedOutputSchemas: []string{"boolean", "score", "choice", "private_hash"},
 		SettlementDomains:      []*SettlementDomain{defaultSettlementDomain()},
 		NitroTrustRoots:        [][]byte{nitroRoot},
@@ -59,11 +64,11 @@ func (c *Contract) currentProtocolParams() (*ProtocolParams, *PluginError) {
 
 func validateProtocolParams(params *ProtocolParams) *PluginError {
 	if params == nil || params.Revision == 0 ||
-		params.FoundationFeeBps > maxChargeBps || params.ServicerMarginBps > maxChargeBps ||
+		params.FoundationFeeBps > maxFoundationFeeBps || params.ServicerMarginBps > maxServicerMarginBps ||
 		(params.ServicerMarginBps > 0 && params.ServicerMarginBps >= params.FoundationFeeBps) ||
 		params.InvalidReceiptSlashBps > 10_000 || params.TreasuryBps > 10_000 ||
 		params.ServicerUnbondingBlocks == 0 || params.ServicerUnbondingBlocks <= params.AuthorizationDeadlineBlocks ||
-		params.MinimumServicerBond == 0 {
+		params.MinimumServicerBond == 0 || params.MinimumBridgeAmount == 0 || params.BridgeTransferLimit < params.MinimumBridgeAmount {
 		return ErrInvalidTransaction("invalid governed protocol parameters")
 	}
 	if params.CanonicalChainId != 0 || len(params.CanonicalTokenAddress) != 0 || len(params.CanonicalBridgeAddress) != 0 || params.EmissionPerEpoch != 0 {
@@ -92,7 +97,9 @@ func validateProtocolParams(params *ProtocolParams) *PluginError {
 	}
 	models := make(map[string]bool, len(params.Models))
 	for _, model := range params.Models {
-		if model == nil || model.Model == "" || model.Provider == "" || len(model.Model) > 200 || len(model.Provider) > 100 {
+		if model == nil || model.Model == "" || model.Provider == "" || len(model.Model) > 200 || len(model.Provider) > 100 ||
+			model.MinimumExecutionBudget == 0 || model.MaximumExecutionBudget < model.MinimumExecutionBudget ||
+			model.InputPriceMicrosPerMillionTokens == 0 || model.OutputPriceMicrosPerMillionTokens == 0 {
 			return ErrInvalidTransaction("invalid governed model")
 		}
 		if _, exists := models[model.Model]; exists {

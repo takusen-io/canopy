@@ -160,7 +160,7 @@ func (c *Contract) settlementAuxiliaryCandidates(clock *EpochClock, limit int) (
 		}
 		candidate := certifiedSettlementRequest{
 			SettlementDomain: "0x" + hex.EncodeToString(request.SettlementDomainId), RequestID: request.RequestId,
-			InputHash: "0x" + hex.EncodeToString(request.InputHash), Models: append([]string(nil), request.Models...),
+			InputHash: "0x" + hex.EncodeToString(request.InputHash), Models: modelBudgetNames(request.Models),
 			OutputType: request.OutputType, OutputSchema: certifiedSettlementSchema{Minimum: request.OutputMinimum, Maximum: request.OutputMaximum, Choices: append([]string(nil), request.OutputChoices...)},
 			Deadline: request.DeadlineHeight, Requester: "0x" + hex.EncodeToString(request.Requester), ReservedBudget: reservation.Budget, RequestSpent: reservation.Spent,
 			Initialize: true, FinalizesRequest: request.Status == "ready",
@@ -190,7 +190,7 @@ func (c *Contract) settlementAuxiliaryCandidates(clock *EpochClock, limit int) (
 				ServicerOwner: "0x" + hex.EncodeToString(execution.ServicerAddress), Servicer: "0x" + hex.EncodeToString(payout),
 				Output: execution.Output, OutputType: request.OutputType, Status: execution.Status,
 				CostMicros: int64(execution.Cost), ServicerPaymentMicros: int64(execution.ProviderCost + execution.ServicerMargin),
-				FoundationFeeMicros: int64(execution.FoundationFee), FoundationFeeBps: request.FoundationFeeBps,
+				FoundationFeeMicros: int64(execution.FoundationFee), FoundationFeeBps: request.PricingPolicy.FoundationFeeBps,
 			})
 			executionIDs = append(executionIDs, execution.ExecutionId)
 		}

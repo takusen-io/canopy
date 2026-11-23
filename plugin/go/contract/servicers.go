@@ -34,16 +34,50 @@ func (c *Contract) applyEnclaveRevocation(message *EnclaveRevocation, records ma
 	return true
 }
 
-func validateServicerModels(params *ProtocolParams, models []string) *PluginError {
+func validateServicerModels(params *ProtocolParams, models []*ServicerModelPolicy) *PluginError {
 	if len(params.Models) == 0 {
 		return nil
 	}
-	for _, model := range models {
-		if modelPolicy(params, model) == nil {
+	seen := make(map[string]struct{}, len(models))
+	for _, item := range models {
+		if item == nil || item.Model == "" || item.MinimumAcceptableBudget == 0 || modelPolicy(params, item.Model) == nil {
 			return ErrUnauthorized("servicer model is not governed")
 		}
+		if _, duplicate := seen[item.Model]; duplicate {
+			return ErrInvalidTransaction("servicer model policies must be unique")
+		}
+		seen[item.Model] = struct{}{}
 	}
 	return nil
+}
+
+func cloneServicerModelPolicies(items []*ServicerModelPolicy) []*ServicerModelPolicy {
+	result := make([]*ServicerModelPolicy, len(items))
+	for i, item := range items {
+		result[i] = &ServicerModelPolicy{Model: item.Model, MinimumAcceptableBudget: item.MinimumAcceptableBudget}
+	}
+	return result
+}
+
+func equalServicerModelPolicies(left, right []*ServicerModelPolicy) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for i := range left {
+		if left[i] == nil || right[i] == nil || left[i].Model != right[i].Model || left[i].MinimumAcceptableBudget != right[i].MinimumAcceptableBudget {
+			return false
+		}
+	}
+	return true
+}
+
+func servicerAcceptsModel(items []*ServicerModelPolicy, model string, budget uint64) bool {
+	for _, item := range items {
+		if item != nil && item.Model == model && budget >= item.MinimumAcceptableBudget {
+			return true
+		}
+	}
+	return false
 }
 
 // deliverRegisterServicer atomically registers the first enclave, locks the
@@ -86,7 +120,7 @@ func (c *Contract) deliverRegisterServicer(height, timeMicros uint64, message *M
 	attestationHash := sha256.Sum256(message.AttestationDocument)
 	servicer := &Servicer{
 		OwnerAddress: append([]byte(nil), message.OwnerAddress...), EvmPayoutAddress: append([]byte(nil), message.EvmPayoutAddress...),
-		TeeKeyId: message.TeeKeyId, Models: append([]string(nil), message.Models...), Bond: message.Bond,
+		TeeKeyId: message.TeeKeyId, Models: cloneServicerModelPolicies(message.Models), Bond: message.Bond,
 		Active: true, RegisteredHeight: height, Revision: 1,
 	}
 	return &PluginDeliverResponse{Error: c.write(map[string]proto.Message{
@@ -117,10 +151,12 @@ func (c *Contract) deliverManageServicer(height, timeMicros uint64, message *Mes
 	} else if !found {
 		return &PluginDeliverResponse{Error: ErrNotFound("servicer is not registered")}
 	}
+	if !servicer.Active {
+		return &PluginDeliverResponse{Error: ErrConflict("unstaking servicers cannot be managed")}
+	}
 	if servicer.Revision != message.ExpectedRevision {
 		return &PluginDeliverResponse{Error: ErrConflict("servicer revision changed")}
 	}
-	wasActive := servicer.Active
 	oldKeyID := servicer.TeeKeyId
 	records := map[string]proto.Message{}
 	var deletes [][]byte
@@ -142,33 +178,7 @@ func (c *Contract) deliverManageServicer(height, timeMicros uint64, message *Mes
 		servicer.Bond = update.TargetBond
 		changed = true
 	} else if update := message.Bond; update != nil && update.TargetBond < servicer.Bond {
-		decrease := servicer.Bond - update.TargetBond
-		account := new(Account)
-		if found, readErr := c.read(KeyForAccount(message.OwnerAddress), account); readErr != nil {
-			return &PluginDeliverResponse{Error: readErr}
-		} else if !found {
-			account.Address = append([]byte(nil), message.OwnerAddress...)
-		}
-		if ^uint64(0)-account.Amount < decrease || ^uint64(0)-height < params.ServicerUnbondingBlocks {
-			return &PluginDeliverResponse{Error: ErrState("servicer bond reduction overflows its locked balance")}
-		}
-		account.Amount += decrease
-		releaseHeight := height + params.ServicerUnbondingBlocks
-		if account.UnbondingAmount == 0 || height >= account.UnbondingReleaseHeight {
-			account.UnbondingAmount = decrease
-			account.UnbondingReleaseHeight = releaseHeight
-		} else {
-			if ^uint64(0)-account.UnbondingAmount < decrease {
-				return &PluginDeliverResponse{Error: ErrState("servicer locked balance overflow")}
-			}
-			account.UnbondingAmount += decrease
-			if releaseHeight > account.UnbondingReleaseHeight {
-				account.UnbondingReleaseHeight = releaseHeight
-			}
-		}
-		records[string(KeyForAccount(message.OwnerAddress))] = account
-		servicer.Bond = update.TargetBond
-		changed = true
+		return &PluginDeliverResponse{Error: ErrInvalidTransaction("active servicer bonds may only increase; use begin unstake")}
 	} else if message.Bond != nil {
 		return &PluginDeliverResponse{Error: ErrConflict("servicer bond target is unchanged")}
 	}
@@ -213,16 +223,19 @@ func (c *Contract) deliverManageServicer(height, timeMicros uint64, message *Mes
 	}
 
 	if update := message.Configuration; update != nil {
+		if !update.Active {
+			return &PluginDeliverResponse{Error: ErrInvalidTransaction("use begin unstake to stop serving and release the complete bond")}
+		}
 		if modelErr := validateServicerModels(params, update.Models); modelErr != nil {
 			return &PluginDeliverResponse{Error: modelErr}
 		}
 		configurationChanged := !bytes.Equal(servicer.EvmPayoutAddress, update.EvmPayoutAddress) ||
-			!equalStrings(servicer.Models, update.Models) || servicer.Active != update.Active
+			!equalServicerModelPolicies(servicer.Models, update.Models) || servicer.Active != update.Active
 		if !configurationChanged {
 			return &PluginDeliverResponse{Error: ErrConflict("servicer configuration is unchanged")}
 		}
 		servicer.EvmPayoutAddress = append([]byte(nil), update.EvmPayoutAddress...)
-		servicer.Models = append([]string(nil), update.Models...)
+		servicer.Models = cloneServicerModelPolicies(update.Models)
 		servicer.Active = update.Active
 		changed = true
 	}
@@ -250,12 +263,48 @@ func (c *Contract) deliverManageServicer(height, timeMicros uint64, message *Mes
 	}
 	servicer.Revision++
 	records[string(KeyForServicer(message.OwnerAddress))] = servicer
-	if servicer.Active {
-		records[string(KeyForActiveServicer(message.OwnerAddress))] = &ReplayMarker{Id: append([]byte(nil), message.OwnerAddress...)}
-	} else if wasActive {
-		deletes = append(deletes, KeyForActiveServicer(message.OwnerAddress))
-	}
+	records[string(KeyForActiveServicer(message.OwnerAddress))] = &ReplayMarker{Id: append([]byte(nil), message.OwnerAddress...)}
 	return &PluginDeliverResponse{Error: c.writeChanges(records, deletes)}
+}
+
+func (c *Contract) deliverBeginServicerUnstake(height uint64, message *MessageBeginServicerUnstake) *PluginDeliverResponse {
+	params, paramsErr := c.currentProtocolParams()
+	if paramsErr != nil {
+		return &PluginDeliverResponse{Error: paramsErr}
+	}
+	servicer := new(Servicer)
+	if found, err := c.read(KeyForServicer(message.OwnerAddress), servicer); err != nil {
+		return &PluginDeliverResponse{Error: err}
+	} else if !found || !servicer.Active || servicer.Bond == 0 {
+		return &PluginDeliverResponse{Error: ErrConflict("servicer is not actively bonded")}
+	}
+	if servicer.Revision != message.ExpectedRevision {
+		return &PluginDeliverResponse{Error: ErrConflict("servicer revision changed")}
+	}
+	account := new(Account)
+	if found, err := c.read(KeyForAccount(message.OwnerAddress), account); err != nil {
+		return &PluginDeliverResponse{Error: err}
+	} else if !found {
+		account.Address = append([]byte(nil), message.OwnerAddress...)
+	}
+	if account.UnbondingAmount != 0 && height < account.UnbondingReleaseHeight {
+		return &PluginDeliverResponse{Error: ErrConflict("owner already has slashable unbonding collateral")}
+	}
+	if ^uint64(0)-height < params.ServicerUnbondingBlocks || ^uint64(0)-account.Amount < servicer.Bond {
+		return &PluginDeliverResponse{Error: ErrState("servicer unstake overflows")}
+	}
+	releaseHeight := height + params.ServicerUnbondingBlocks
+	account.Amount += servicer.Bond
+	account.UnbondingAmount = servicer.Bond
+	account.UnbondingReleaseHeight = releaseHeight
+	servicer.Bond = 0
+	servicer.Active = false
+	servicer.UnstakingReleaseHeight = releaseHeight
+	servicer.Revision++
+	return &PluginDeliverResponse{Error: c.writeChanges(map[string]proto.Message{
+		string(KeyForAccount(message.OwnerAddress)):  account,
+		string(KeyForServicer(message.OwnerAddress)): servicer,
+	}, [][]byte{KeyForActiveServicer(message.OwnerAddress)})}
 }
 
 func equalStrings(left, right []string) bool {

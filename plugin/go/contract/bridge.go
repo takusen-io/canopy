@@ -8,7 +8,10 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-const bridgeReleaseType = "BridgeRelease(uint256 chainId,address bridge,uint64 validatorSetId,uint64 nonce,address recipient,uint256 amount,bytes32 canopyBurnId)"
+const (
+	bridgeReleaseType      = "BridgeRelease(uint256 chainId,address bridge,uint64 validatorSetId,uint64 nonce,address recipient,uint256 amount,bytes32 canopyBurnId)"
+	bridgeReleaseBatchType = "BridgeReleaseBatch(uint256 chainId,address bridge,uint64 validatorSetId,bytes32 releasesHash)"
+)
 
 func bridgeLockSubject(message *MessageObserveBridgeLock) []byte {
 	return hashFields(
@@ -22,6 +25,13 @@ func (c *Contract) deliverObserveBridgeLock(height uint64, message *MessageObser
 }
 
 func (c *Contract) deliverObserveBridgeLockCertified(height uint64, message *MessageObserveBridgeLock, certified bool) *PluginDeliverResponse {
+	params, paramsErr := c.currentProtocolParams()
+	if paramsErr != nil {
+		return &PluginDeliverResponse{Error: paramsErr}
+	}
+	if message.Amount < params.MinimumBridgeAmount || message.Amount > params.BridgeTransferLimit {
+		return &PluginDeliverResponse{Error: ErrInvalidTransaction("bridge lock amount is outside governed bounds")}
+	}
 	if found, err := c.read(KeyForBridgeMint(message.CanonicalChainTxHash), new(BridgeMint)); err != nil {
 		return &PluginDeliverResponse{Error: err}
 	} else if found {
@@ -103,12 +113,8 @@ func (c *Contract) deliverBurnBridge(height uint64, message *MessageBurnBridge) 
 	if err != nil {
 		return &PluginDeliverResponse{Error: err}
 	}
-	validatorSetID, setErr := c.currentValidatorSetID(params)
-	if setErr != nil {
-		return &PluginDeliverResponse{Error: setErr}
-	}
 	if !validAddress(params.CanonicalBridgeAddress) || params.CanonicalChainId == 0 ||
-		message.Amount > params.BridgeTransferLimit {
+		message.Amount < params.MinimumBridgeAmount || message.Amount > params.BridgeTransferLimit {
 		return &PluginDeliverResponse{Error: ErrInvalidTransaction("bridge is disabled or transfer exceeds governed limits")}
 	}
 	account := new(Account)
@@ -127,12 +133,10 @@ func (c *Contract) deliverBurnBridge(height uint64, message *MessageBurnBridge) 
 	}
 	state.OutboundNonce++
 	account.Amount -= message.Amount
-	digest := bridgeReleaseDigest(params, validatorSetID, state.OutboundNonce, message.CanonicalChainRecipient, message.Amount, message.BurnId)
 	burn := &BridgeBurn{
 		BurnId: append([]byte(nil), message.BurnId...), Nonce: state.OutboundNonce,
 		OwnerAddress: append([]byte(nil), message.OwnerAddress...), CanonicalChainRecipient: append([]byte(nil), message.CanonicalChainRecipient...),
-		Amount: message.Amount, BurnedHeight: height, ValidatorSetId: validatorSetID,
-		CanonicalChainDigest: digest, Status: "pending_release",
+		Amount: message.Amount, BurnedHeight: height, Status: "pending_release",
 	}
 	return &PluginDeliverResponse{Error: c.write(map[string]proto.Message{
 		string(KeyForAccount(message.OwnerAddress)):     account,
@@ -190,17 +194,24 @@ func (c *Contract) deliverObserveBridgeReleaseCertified(height uint64, message *
 	return &PluginDeliverResponse{Error: c.write(records)}
 }
 
-func bridgeReleaseDigest(params *ProtocolParams, validatorSetID, nonce uint64, recipient []byte, amount uint64, burnID []byte) []byte {
-	typeHash := keccak256([]byte(bridgeReleaseType))
-	encoded := make([]byte, 0, 32*8)
-	encoded = append(encoded, typeHash...)
+func bridgeReleaseBatchDigest(params *ProtocolParams, validatorSetID uint64, releases []*BridgeBurn) []byte {
+	itemTypeHash := keccak256([]byte(bridgeReleaseType))
+	itemHashes := make([]byte, 0, len(releases)*32)
+	for _, release := range releases {
+		encoded := make([]byte, 0, 32*5)
+		encoded = append(encoded, itemTypeHash...)
+		encoded = append(encoded, abiUint64(release.Nonce)...)
+		encoded = append(encoded, abiAddress(release.CanonicalChainRecipient)...)
+		encoded = append(encoded, abiUint64(release.Amount)...)
+		encoded = append(encoded, release.BurnId...)
+		itemHashes = append(itemHashes, keccak256(encoded)...)
+	}
+	encoded := make([]byte, 0, 32*5)
+	encoded = append(encoded, keccak256([]byte(bridgeReleaseBatchType))...)
 	encoded = append(encoded, abiUint64(params.CanonicalChainId)...)
 	encoded = append(encoded, abiAddress(params.CanonicalBridgeAddress)...)
 	encoded = append(encoded, abiUint64(validatorSetID)...)
-	encoded = append(encoded, abiUint64(nonce)...)
-	encoded = append(encoded, abiAddress(recipient)...)
-	encoded = append(encoded, abiUint64(amount)...)
-	encoded = append(encoded, burnID...)
+	encoded = append(encoded, keccak256(itemHashes)...)
 	return keccak256(encoded)
 }
 

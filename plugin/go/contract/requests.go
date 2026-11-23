@@ -85,8 +85,8 @@ func (c *Contract) applyAuthorizationItem(height uint64, message *Authorization,
 		return &PluginDeliverResponse{Error: ErrUnauthorized("request output schema is not governed")}
 	}
 	if len(params.Models) != 0 {
-		for _, model := range message.Models {
-			if modelPolicy(params, model) == nil {
+		for _, item := range message.Models {
+			if item == nil || modelPolicy(params, item.Model) == nil {
 				return &PluginDeliverResponse{Error: ErrUnauthorized("request model is not active")}
 			}
 		}
@@ -152,16 +152,20 @@ func (c *Contract) applyAuthorizationItem(height uint64, message *Authorization,
 			return &PluginDeliverResponse{Error: ErrState("current finalized-block assignment anchor is unavailable")}
 		}
 		assignments := make([]*Assignment, 0, len(message.Models))
-		for modelIndex, model := range message.Models {
+		for _, item := range message.Models {
+			model, modelBudget := item.Model, item.Budget
 			policy := modelPolicy(params, model)
 			if policy == nil && len(params.Models) != 0 {
 				return &PluginDeliverResponse{Error: ErrUnauthorized("request model is not active")}
+			}
+			if policy != nil && (modelBudget < policy.MinimumExecutionBudget || modelBudget > policy.MaximumExecutionBudget) {
+				return &PluginDeliverResponse{Error: ErrInvalidTransaction("request model budget is outside governed bounds")}
 			}
 			provider := "provider"
 			if policy != nil {
 				provider = policy.Provider
 			}
-			servicers, selectErr := c.eligibleServicers(model)
+			servicers, selectErr := c.eligibleServicers(model, modelBudget)
 			if selectErr != nil {
 				return &PluginDeliverResponse{Error: selectErr}
 			}
@@ -169,7 +173,7 @@ func (c *Contract) applyAuthorizationItem(height uint64, message *Authorization,
 				return &PluginDeliverResponse{Error: ErrState("no bonded servicer supports model " + model)}
 			}
 			selected := selectServicer(message.InputHash, anchor.PreviousBlockHash, model, servicers)
-			maximumProviderCost, costErr := assignmentMaxProviderCost(message.ReservedBudget, modelIndex, len(message.Models), params.ServicerMarginBps, params.FoundationFeeBps)
+			maximumProviderCost, costErr := maxProviderCost(modelBudget, params.ServicerMarginBps, params.FoundationFeeBps)
 			if costErr != nil {
 				return &PluginDeliverResponse{Error: costErr}
 			}
@@ -177,20 +181,22 @@ func (c *Contract) applyAuthorizationItem(height uint64, message *Authorization,
 				Model: model, ServicerAddress: selected.OwnerAddress,
 				ExecutionId: assignmentExecutionID(message.SettlementDomainId, message.RequestId, model, selected.OwnerAddress, message.InputHash),
 				TeeKeyId:    selected.TeeKeyId, Provider: provider, MaxProviderCost: maximumProviderCost,
+				InputPriceMicrosPerMillionTokens:  policy.InputPriceMicrosPerMillionTokens,
+				OutputPriceMicrosPerMillionTokens: policy.OutputPriceMicrosPerMillionTokens,
+				ProviderRequestPriceMicros:        policy.ProviderRequestPriceMicros,
 			})
 		}
 		request := &RequestRecord{
 			RequestId: message.RequestId, InputHash: message.InputHash, Requester: message.Requester,
 			SettlementDomainId: append([]byte(nil), message.SettlementDomainId...),
 			RequestArchiveId:   message.RequestArchiveId,
-			OutputType:         message.OutputType, Models: append([]string(nil), message.Models...),
+			OutputType:         message.OutputType, Models: cloneModelBudgets(message.Models),
 			OutputMinimum: message.OutputMinimum, OutputMaximum: message.OutputMaximum,
 			OutputChoices: append([]string(nil), message.OutputChoices...), SchemaHash: append([]byte(nil), message.SchemaHash...),
 			ExecutionQuorum: message.ExecutionQuorum, DeadlineHeight: message.DeadlineHeight,
 			ReservedBudget:   message.ReservedBudget,
 			AuthorizedHeight: height, AssignmentSeed: anchor.PreviousBlockHash, Assignments: assignments, Status: "authorized",
-			ParameterRevision: params.Revision, FoundationFeeBps: params.FoundationFeeBps,
-			ServicerMarginBps:          params.ServicerMarginBps,
+			PricingPolicy:              snapshotPricingPolicy(params, message.Models),
 			AuthorizationSignatureHash: hashFields(message.AuthorizationSignature),
 		}
 		records[string(KeyForRequest(message.RequestId))] = request
@@ -262,8 +268,8 @@ func (c *Contract) stageDirectAuthorization(height uint64, message *Authorizatio
 		return &PluginDeliverResponse{Error: ErrUnauthorized("request output schema is not governed")}
 	}
 	if len(params.Models) != 0 {
-		for _, model := range message.Models {
-			if modelPolicy(params, model) == nil {
+		for _, item := range message.Models {
+			if item == nil || modelPolicy(params, item.Model) == nil {
 				return &PluginDeliverResponse{Error: ErrUnauthorized("request model is not active")}
 			}
 		}
@@ -305,7 +311,8 @@ func (c *Contract) stageDirectAuthorization(height uint64, message *Authorizatio
 	}
 
 	assignments := make([]*Assignment, 0, len(message.Models))
-	for modelIndex, model := range message.Models {
+	for _, item := range message.Models {
+		model, modelBudget := item.Model, item.Budget
 		policy := modelPolicy(params, model)
 		if policy == nil && len(params.Models) != 0 {
 			return &PluginDeliverResponse{Error: ErrUnauthorized("request model is not active")}
@@ -317,7 +324,7 @@ func (c *Contract) stageDirectAuthorization(height uint64, message *Authorizatio
 		servicers, loaded := eligible[model]
 		if !loaded {
 			var selectErr *PluginError
-			servicers, selectErr = c.eligibleServicers(model)
+			servicers, selectErr = c.eligibleServicers(model, modelBudget)
 			if selectErr != nil {
 				return &PluginDeliverResponse{Error: selectErr}
 			}
@@ -327,7 +334,7 @@ func (c *Contract) stageDirectAuthorization(height uint64, message *Authorizatio
 			return &PluginDeliverResponse{Error: ErrState("no bonded servicer supports model " + model)}
 		}
 		selected := selectServicer(message.InputHash, anchor.PreviousBlockHash, model, servicers)
-		maximumProviderCost, costErr := assignmentMaxProviderCost(message.ReservedBudget, modelIndex, len(message.Models), params.ServicerMarginBps, params.FoundationFeeBps)
+		maximumProviderCost, costErr := maxProviderCost(modelBudget, params.ServicerMarginBps, params.FoundationFeeBps)
 		if costErr != nil {
 			return &PluginDeliverResponse{Error: costErr}
 		}
@@ -335,20 +342,22 @@ func (c *Contract) stageDirectAuthorization(height uint64, message *Authorizatio
 			Model: model, ServicerAddress: selected.OwnerAddress,
 			ExecutionId: assignmentExecutionID(message.SettlementDomainId, message.RequestId, model, selected.OwnerAddress, message.InputHash),
 			TeeKeyId:    selected.TeeKeyId, Provider: provider, MaxProviderCost: maximumProviderCost,
+			InputPriceMicrosPerMillionTokens:  policy.InputPriceMicrosPerMillionTokens,
+			OutputPriceMicrosPerMillionTokens: policy.OutputPriceMicrosPerMillionTokens,
+			ProviderRequestPriceMicros:        policy.ProviderRequestPriceMicros,
 		})
 	}
 	request := &RequestRecord{
 		RequestId: message.RequestId, InputHash: message.InputHash, Requester: message.Requester,
 		SettlementDomainId: append([]byte(nil), message.SettlementDomainId...),
 		RequestArchiveId:   message.RequestArchiveId,
-		OutputType:         message.OutputType, Models: append([]string(nil), message.Models...),
+		OutputType:         message.OutputType, Models: cloneModelBudgets(message.Models),
 		OutputMinimum: message.OutputMinimum, OutputMaximum: message.OutputMaximum,
 		OutputChoices: append([]string(nil), message.OutputChoices...), SchemaHash: append([]byte(nil), message.SchemaHash...),
 		ExecutionQuorum: message.ExecutionQuorum, DeadlineHeight: message.DeadlineHeight,
 		ReservedBudget:   message.ReservedBudget,
 		AuthorizedHeight: height, AssignmentSeed: anchor.PreviousBlockHash, Assignments: assignments, Status: "authorized",
-		ParameterRevision: params.Revision, FoundationFeeBps: params.FoundationFeeBps,
-		ServicerMarginBps:          params.ServicerMarginBps,
+		PricingPolicy:              snapshotPricingPolicy(params, message.Models),
 		AuthorizationSignatureHash: hashFields(message.AuthorizationSignature),
 	}
 	records[string(KeyForRequest(message.RequestId))] = request
@@ -372,15 +381,40 @@ func authorizationWindowValid(height, deadline, maximum uint64) bool {
 	return maximum != 0 && deadline > height && deadline-height <= maximum
 }
 
-func assignmentMaxProviderCost(reservedBudget uint64, modelIndex, modelCount int, marginBps, feeBps uint32) (uint64, *PluginError) {
-	if reservedBudget == 0 || modelCount <= 0 || modelIndex < 0 || modelIndex >= modelCount {
-		return 0, ErrInvalidTransaction("assignment model allocation is invalid")
+func cloneModelBudgets(items []*ModelBudget) []*ModelBudget {
+	result := make([]*ModelBudget, len(items))
+	for i, item := range items {
+		result[i] = &ModelBudget{Model: item.Model, Budget: item.Budget}
 	}
-	modelBudget := reservedBudget / uint64(modelCount)
-	if uint64(modelIndex) < reservedBudget%uint64(modelCount) {
-		modelBudget++
+	return result
+}
+
+func snapshotPricingPolicy(params *ProtocolParams, budgets []*ModelBudget) *PricingPolicySnapshot {
+	snapshot := &PricingPolicySnapshot{
+		Revision: params.Revision, FoundationFeeBps: params.FoundationFeeBps, ServicerMarginBps: params.ServicerMarginBps,
+		Models: make([]*ModelPricingSnapshot, 0, len(budgets)),
 	}
-	return maxProviderCost(modelBudget, marginBps, feeBps)
+	for _, budget := range budgets {
+		policy := modelPolicy(params, budget.Model)
+		if policy == nil {
+			continue
+		}
+		snapshot.Models = append(snapshot.Models, &ModelPricingSnapshot{
+			Model: budget.Model, MinimumExecutionBudget: policy.MinimumExecutionBudget, MaximumExecutionBudget: policy.MaximumExecutionBudget,
+			InputPriceMicrosPerMillionTokens:  policy.InputPriceMicrosPerMillionTokens,
+			OutputPriceMicrosPerMillionTokens: policy.OutputPriceMicrosPerMillionTokens,
+			ProviderRequestPriceMicros:        policy.ProviderRequestPriceMicros,
+		})
+	}
+	return snapshot
+}
+
+func modelBudgetNames(items []*ModelBudget) []string {
+	result := make([]string, len(items))
+	for i, item := range items {
+		result[i] = item.Model
+	}
+	return result
 }
 
 const (
@@ -735,7 +769,7 @@ func (c *Contract) stageFinalization(height uint64, message *RequestFinalization
 	return &PluginDeliverResponse{}
 }
 
-func (c *Contract) eligibleServicers(model string) ([]*Servicer, *PluginError) {
+func (c *Contract) eligibleServicers(model string, modelBudget uint64) ([]*Servicer, *PluginError) {
 	entries, err := c.rangeRead(ActiveServicerPrefix())
 	if err != nil {
 		return nil, err
@@ -759,7 +793,7 @@ func (c *Contract) eligibleServicers(model string) ([]*Servicer, *PluginError) {
 		} else if !found || !servicer.Active || !bytes.Equal(servicer.OwnerAddress, marker.Id) {
 			return nil, ErrState("active servicer index references invalid state")
 		}
-		if servicer.Bond < params.MinimumServicerBond || !containsString(servicer.Models, model) {
+		if servicer.Bond < params.MinimumServicerBond || !servicerAcceptsModel(servicer.Models, model, modelBudget) {
 			continue
 		}
 		enclave := new(EnclaveKey)

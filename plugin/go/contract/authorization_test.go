@@ -22,7 +22,7 @@ func TestQueueAuthorizationPublishesIntentWithoutValidatorApproval(t *testing.T)
 		SettlementDomainId: params.SettlementDomains[0].Id, RequestId: "erc1271-request",
 		InputHash: bytes.Repeat([]byte{2}, 32), RequestArchiveId: "sha256:" + strings.Repeat("02", 32),
 		Requester: bytes.Repeat([]byte{3}, 20), ReservedBudget: 10, OutputType: "boolean",
-		OutputMinimum: 0, OutputMaximum: 1, Models: []string{"model"}, ExecutionQuorum: 1,
+		OutputMinimum: 0, OutputMaximum: 1, Models: testModelBudgets(10, "model"), ExecutionQuorum: 1,
 		DeadlineHeight: 200, AuthorizationSignature: []byte{1, 2, 3}, AuthorizationDeadline: 200,
 		AuthorizationChainBlockNumber: 77, AuthorizationChainBlockHash: bytes.Repeat([]byte{4}, 32),
 	}
@@ -90,7 +90,7 @@ func TestAuthorizationBatchValidation(t *testing.T) {
 			RequestArchiveId: "sha256:0202020202020202020202020202020202020202020202020202020202020202",
 			Requester:        bytes.Repeat([]byte{3}, 20), ReservedBudget: 1, OutputType: "boolean",
 			OutputMinimum: 0, OutputMaximum: 1,
-			Models: []string{"model"}, ExecutionQuorum: 1, DeadlineHeight: 2,
+			Models: testModelBudgets(1, "model"), ExecutionQuorum: 1, DeadlineHeight: 2,
 			AuthorizationSignature: []byte{1}, AuthorizationDeadline: 3,
 		}
 		message.SchemaHash = requestOutputSchemaHash(message)
@@ -110,12 +110,13 @@ func TestAuthorizationBatchValidation(t *testing.T) {
 		t.Fatal("ERC-1271 authorization was accepted in the direct EOA batch")
 	}
 	message.Authorizations[1] = authorization("two")
-	message.Authorizations[1].Models = []string{"provider/z", "provider/a"}
+	message.Authorizations[1].ReservedBudget = 2
+	message.Authorizations[1].Models = testModelBudgets(2, "provider/z", "provider/a")
 	message.Authorizations[1].ExecutionQuorum = 2
 	if _, err := checkObserveAuthorizations(message); err != nil {
 		t.Fatalf("request model order was incorrectly treated as servicer configuration: %v", err)
 	}
-	message.Authorizations[1].Models = []string{"provider/z", "provider/z"}
+	message.Authorizations[1].Models = testModelBudgets(2, "provider/z", "provider/z")
 	if _, err := checkObserveAuthorizations(message); err == nil {
 		t.Fatal("duplicate request models were accepted")
 	}

@@ -186,13 +186,15 @@ func (c *Contract) stageAuthenticatedExecution(height uint64, servicerAddress []
 	if parsed.CostMicros == 0 || parsed.Status == "provider_failure" {
 		return invalid(ErrInvalidTransaction("receipt has no positive provider cost"))
 	}
-	modelIndex := indexOf(request.Models, parsed.Model)
-	modelBudget := reservation.Budget / uint64(len(request.Models))
-	if uint64(modelIndex) < reservation.Budget%uint64(len(request.Models)) {
-		modelBudget++
+	modelBudget, modelIndex := budgetForModel(request.Models, parsed.Model)
+	if modelIndex < 0 {
+		return invalid(ErrInvalidTransaction("receipt model has no snapshotted budget"))
+	}
+	if request.PricingPolicy == nil {
+		return &PluginDeliverResponse{Error: ErrState("request has no pricing policy snapshot")}
 	}
 	reportedProviderCost := uint64(parsed.CostMicros)
-	maximumProviderCost, maximumErr := assignmentMaxProviderCost(reservation.Budget, modelIndex, len(request.Models), request.ServicerMarginBps, request.FoundationFeeBps)
+	maximumProviderCost, maximumErr := maxProviderCost(modelBudget, request.PricingPolicy.ServicerMarginBps, request.PricingPolicy.FoundationFeeBps)
 	if maximumErr != nil {
 		return &PluginDeliverResponse{Error: maximumErr}
 	}
@@ -213,8 +215,8 @@ func (c *Contract) stageAuthenticatedExecution(height uint64, servicerAddress []
 		}
 		providerCost = maximumProviderCost
 	}
-	servicerMargin, marginOK := mulDiv64(providerCost, uint64(request.ServicerMarginBps), 10_000)
-	foundationFee, feeOK := mulDiv64(providerCost, uint64(request.FoundationFeeBps), 10_000)
+	servicerMargin, marginOK := mulDiv64(providerCost, uint64(request.PricingPolicy.ServicerMarginBps), 10_000)
+	foundationFee, feeOK := mulDiv64(providerCost, uint64(request.PricingPolicy.FoundationFeeBps), 10_000)
 	if !marginOK || !feeOK || ^uint64(0)-providerCost < servicerMargin || ^uint64(0)-(providerCost+servicerMargin) < foundationFee {
 		return &PluginDeliverResponse{Error: ErrState("execution charge overflow")}
 	}
@@ -553,13 +555,13 @@ func decodeHash(value string) ([]byte, error) {
 	return hex.DecodeString(value[2:])
 }
 
-func indexOf(values []string, wanted string) int {
+func budgetForModel(values []*ModelBudget, wanted string) (uint64, int) {
 	for index, value := range values {
-		if value == wanted {
-			return index
+		if value != nil && value.Model == wanted {
+			return value.Budget, index
 		}
 	}
-	return -1
+	return 0, -1
 }
 
 func completedExecutions(request *RequestRecord) int {
