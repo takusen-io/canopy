@@ -232,17 +232,6 @@ message EVMControlEvidence {
   bytes lifecycle_intent_id = 13;
 }
 
-// MessageGovernanceVote is the only explicit validator signature-share
-// transaction. It cannot carry settlement, bridge, reward, rotation, or
-// retirement metadata.
-message MessageGovernanceVote {
-  bytes validator_address = 1;
-  bytes proposal_id = 2;
-  bytes digest = 3;
-  uint64 validator_set_id = 4;
-  bytes signature = 5;
-}
-
 message MessageObserveBridgeLock {
   bytes observer_address = 1;
   bytes canonical_chain_tx_hash = 2;

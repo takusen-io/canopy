@@ -16,15 +16,27 @@ import (
 
 func storeLifecycleIntent(t *testing.T, store *memoryStateStore, domainID, generation []byte, action string, nonce, expiresAtTimestamp uint64) []byte {
 	t.Helper()
-	intentID := settlementDomainLifecycleIntentID(domainID, generation, action, nonce, expiresAtTimestamp)
-	store.put(t, KeyForSettlementDomainLifecycleIntent(domainID), &SettlementDomainLifecycleIntent{
-		Id:                     intentID,
+	resolution := ""
+	if action == "retire" || action == "abandon" {
+		resolution, action = map[bool]string{true: "abandon", false: "clean"}[action == "abandon"], "resolve"
+	} else if action == "cancel" {
+		action = "reactivate"
+	}
+	intent := &SettlementDomainAction{
 		SettlementDomainId:     append([]byte(nil), domainID...),
 		DeactivationGeneration: append([]byte(nil), generation...),
 		Action:                 action,
+		Resolution:             resolution,
 		Nonce:                  nonce,
+		ExpectedRevision:       1,
 		ExpiresAtTimestamp:     expiresAtTimestamp,
-	})
+	}
+	intentID, err := settlementDomainActionID(intent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	intent.Id = intentID
+	store.put(t, KeyForSettlementDomainAction(domainID), intent)
 	return intentID
 }
 

@@ -53,7 +53,7 @@
       "maxNonSign": 4,
       "nonSignWindow": 10,
       "maxCommittees": 15,
-      "maxCommitteeSize": 100,
+      "maxCommitteeSize": 60,
       "earlyWithdrawalPenalty": 20,
       "delegateUnstakingBlocks": 2,
       "minimumOrderSize": 1000,
@@ -90,45 +90,59 @@
           "model": "openai/gpt-6-luna",
           "provider": "local-deterministic",
           "maximumExecutionBudget": "300000",
+          "minimumExecutionBudget": "50000",
+          "inputPriceMicrosPerMillionTokens": "5000000",
+          "outputPriceMicrosPerMillionTokens": "20000000",
+          "providerRequestPriceMicros": "0",
           "active": true
         },
         {
           "model": "anthropic/claude-haiku-5.5",
           "provider": "local-deterministic",
           "maximumExecutionBudget": "300000",
+          "minimumExecutionBudget": "50000",
+          "inputPriceMicrosPerMillionTokens": "2000000",
+          "outputPriceMicrosPerMillionTokens": "10000000",
+          "providerRequestPriceMicros": "0",
           "active": true
         },
         {
           "model": "google/gemini-3.8-flash",
           "provider": "local-deterministic",
           "maximumExecutionBudget": "300000",
+          "minimumExecutionBudget": "50000",
+          "inputPriceMicrosPerMillionTokens": "1000000",
+          "outputPriceMicrosPerMillionTokens": "5000000",
+          "providerRequestPriceMicros": "0",
           "active": true
         }
       ],
       "approvedPcrs": [
         {
-          "pcr0": "BFqTPAWxyfpJOIkk6VWVNF6KOCfoXVPjSYalzoCAyzf8ckezK3ACt9o/7jnoXTS+",
-          "pcr1": "S01bNmGz78EpIJAMgOEm5M54PFIt5sAqKlv3rzorkye4Z3bxiOS+HBxAShKdvaST",
-          "pcr2": "6ewwAoVIKf5xzf4qMoe90IaRWBzu/IgjHnHBAqTdaJsc2fmuJz09gZYbfTgbihx6",
+          "pcr0": "xThLRTtlP/7oaihlePGeS7YsqC9q9lN630wzwmReGPclgiVHpj7MjLsCJBadEvRx",
+          "pcr1": "LoZKKOF+A5MiNm4gwBczPj475ud8HVhEiNkipFfJz3z0y2jDeGFb4Y3lXz2+Cgog",
+          "pcr2": "m6OLdyPl0xBhXy2boRmhEHZTzhKWEecQPLMslEZZamPztxBpoNJTn1qLrgUc/pxk",
           "active": true
         }
       ],
-      "nitroTrustRoot": "MIICETCCAZagAwIBAgIRAPkxdWgbkK/hHUbMtOTn+FYwCgYIKoZIzj0EAwMwSTELMAkGA1UEBhMCVVMxDzANBgNVBAoMBkFtYXpvbjEMMAoGA1UECwwDQVdTMRswGQYDVQQDDBJhd3Mubml0cm8tZW5jbGF2ZXMwHhcNMTkxMDI4MTMyODA1WhcNNDkxMDI4MTQyODA1WjBJMQswCQYDVQQGEwJVUzEPMA0GA1UECgwGQW1hem9uMQwwCgYDVQQLDANBV1MxGzAZBgNVBAMMEmF3cy5uaXRyby1lbmNsYXZlczB2MBAGByqGSM49AgEGBSuBBAAiA2IABPwCVOumCMHzaHDimtqQvkY4MpJzbolL//Zy2YlES1BR5TSksfbb48C8WBoyt7F2Bw7eEtaaP+ohG2bnUs990d0JX28TcPQXCEPZ3BABIeTPYwEoCWZEh8l5YoQwTcU/9KNCMEAwDwYDVR0TAQH/BAUwAwEB/zAdBgNVHQ4EFgQUkCW1DdkFR+eWw5b6cp3PmanfS5YwDgYDVR0PAQH/BAQDAgGGMAoGCCqGSM49BAMDA2kAMGYCMQCjfy+Rocm9Xue4YnwWmNJVA44fA0P5W2OpYow9OYCVRaEevL8uO1XYru5xtMPWrfMCMQCi85sWBbJwKKXdS6BptQFuZbT73o/gBh1qUxl/nNr12UO8Yfwr6wPLb+6NIwLz3/Y=",
+      "nitroTrustRoots": [
+        "MIICBzCCAY2gAwIBAgIJAL9D9wfEkmeWMAoGCCqGSM49BAMDMFcxCzAJBgNVBAYTAlVTMRwwGgYDVQQKDBNUYWt1c2VuIERldmVsb3BtZW50MSowKAYDVQQDDCFUYWt1c2VuIExvY2FsIEF0dGVzdGF0aW9uIFJvb3QgdjEwIBcNMjYxMTE3MTU1MjQ3WhgPMjEyNjEwMjQxNTUyNDdaMFcxCzAJBgNVBAYTAlVTMRwwGgYDVQQKDBNUYWt1c2VuIERldmVsb3BtZW50MSowKAYDVQQDDCFUYWt1c2VuIExvY2FsIEF0dGVzdGF0aW9uIFJvb3QgdjEwdjAQBgcqhkjOPQIBBgUrgQQAIgNiAASSUjR9nojKF2GNulAOF+GDzn7v9MDcJ+DNSh49V1ASIMRdu9iNcOqCk1O7CSD679LgcuKp/IYevr3TwDNWtUhB4jpFUxNCp6ivNqCS02EFh+1hcxSK44vy6mzA12DJENKjIzAhMA8GA1UdEwEB/wQFMAMBAf8wDgYDVR0PAQH/BAQDAgKEMAoGCCqGSM49BAMDA2gAMGUCMADDxNHycpwT7AZ2BVxufRvDNc6UR7dPIqTaZArlcWFFlbugED+Y76DLYPLxu/JwdQIxAI2zTVhvVXswhbIDpX3UEwOTsTEfiHtIxir9CWoaiqCB2l1eRYRQIHcqRopLBjTRiA=="
+      ],
       "foundationFeeBps": 500,
       "servicerMarginBps": 250,
       "authorizationDeadlineBlocks": "360",
       "minimumServicerBond": "100000",
-      "minimumValidatorBond": "1",
-      "invalidReceiptSlashBps": 10000,
+      "invalidReceiptSlashBps": 100,
       "servicerUnbondingBlocks": "115200",
       "emissionPerEpoch": "1000000000",
-      "treasuryAddress": "85/W5RqtiPb0zmq4gnJ5z/+5ImY=",
+      "treasuryAddress": "gv4W+lXTdNro0HV4it0N6pX1GCU=",
       "treasuryBps": 1000,
       "canonicalChainId": "84532",
-      "canonicalTokenAddress": "3MbEn5U6AnQpBwU7qpTLbcmXd/o=",
-      "canonicalBridgeAddress": "hnnrCDSvD5YWyHR+ucIlsP7eOdI=",
+      "canonicalTokenAddress": "CnZUAbzSc7x6L5fMfbn21UaHU1Q=",
+      "canonicalBridgeAddress": "pe2WOuICN6y3YOxzgmY9bzgD6M8=",
       "bridgeEpochMintLimit": "18446744073709551615",
       "bridgeTransferLimit": "18446744073709551615",
+      "minimumBridgeAmount": "1000000",
       "settlementIntervalBlocks": "1",
       "supportedOutputSchemas": [
         "boolean",
@@ -148,7 +162,8 @@
           "tokenAddress": "X72yMVZ4r+yzZ/Ay2T9kL2QYCqM=",
           "escrowAddress": "X8jTJpDMkdTDnZ06vL0WmJ+HVwc=",
           "verifierAddress": "5/FyXnc0ziiPg2fhuxQ+kLs/BRI=",
-          "foundationTreasuryAddress": "85/W5RqtiPb0zmq4gnJ5z/+5ImY=",
+          "governanceAddress": "n+RnNmedLZpl8JkvInLenzx/puA=",
+          "foundationTreasuryAddress": "gv4W+lXTdNro0HV4it0N6pX1GCU=",
           "tokenDecimals": 6,
           "network": "eip155:31337",
           "depositMechanisms": [
@@ -156,9 +171,30 @@
           ],
           "authorizationName": "USD Coin",
           "authorizationVersion": "2",
+          "abandonmentDelaySeconds": "604800",
           "finalityPolicy": "flashblock",
           "confirmations": 1,
-          "active": true
+          "state": "ACTIVE"
+        },
+        {
+          "id": "E9zvIqs6n5JvsAUsbgowhamgqWZ/9B1RP9EwS9vRx1I=",
+          "chainId": "97",
+          "tokenAddress": "X72yMVZ4r+yzZ/Ay2T9kL2QYCqM=",
+          "escrowAddress": "X8jTJpDMkdTDnZ06vL0WmJ+HVwc=",
+          "verifierAddress": "5/FyXnc0ziiPg2fhuxQ+kLs/BRI=",
+          "governanceAddress": "n+RnNmedLZpl8JkvInLenzx/puA=",
+          "foundationTreasuryAddress": "gv4W+lXTdNro0HV4it0N6pX1GCU=",
+          "tokenDecimals": 6,
+          "network": "eip155:97",
+          "depositMechanisms": [
+            "eip3009"
+          ],
+          "authorizationName": "USD Coin",
+          "authorizationVersion": "2",
+          "abandonmentDelaySeconds": "604800",
+          "finalityPolicy": "flashblock",
+          "confirmations": 1,
+          "state": "STAGED"
         }
       ]
     }

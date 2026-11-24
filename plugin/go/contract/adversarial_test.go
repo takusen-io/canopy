@@ -769,7 +769,7 @@ func TestAbandonmentUsesDelaySnapshottedAtDeactivation(t *testing.T) {
 	params := defaultProtocolParams()
 	params.Revision = 2
 	domain := params.SettlementDomains[0]
-	domain.Active = false
+	domain.State = domainStateDeactivated
 	domain.AbandonmentDelaySeconds = minimumDomainAbandonmentDelaySeconds
 	store.put(t, KeyForProtocolParams(), params)
 	generation := bytes.Repeat([]byte{0x81}, 32)
@@ -778,9 +778,9 @@ func TestAbandonmentUsesDelaySnapshottedAtDeactivation(t *testing.T) {
 		SettlementDomainId: domain.Id, Generation: generation, Timestamp: 100,
 		AbandonmentDelaySeconds: defaultDomainAbandonmentDelaySeconds,
 	})
-	store.put(t, KeyForSettlementDomainLifecycleIntent(domain.Id), &SettlementDomainLifecycleIntent{
+	store.put(t, KeyForSettlementDomainAction(domain.Id), &SettlementDomainAction{
 		Id: intentID, SettlementDomainId: domain.Id, DeactivationGeneration: generation,
-		Action: "abandon", Nonce: 1, ExpiresAtTimestamp: 100 + defaultDomainAbandonmentDelaySeconds + 100,
+		Action: "resolve", Resolution: "abandon", Nonce: 1, ExpiresAtTimestamp: 100 + defaultDomainAbandonmentDelaySeconds + 100,
 	})
 	clock := testEpochClock(params, 1, 1, 1, 100)
 	clock.ConsensusTimeSeconds = 100 + minimumDomainAbandonmentDelaySeconds
@@ -1047,304 +1047,146 @@ func TestAuthorityHandoffDomainsIgnoreTrafficActivationAcrossEpochs(t *testing.T
 	staged := proto.Clone(params.SettlementDomains[0]).(*SettlementDomain)
 	staged.Id = bytes.Repeat([]byte{0x95}, 32)
 	staged.ChainId = 56
-	staged.Active = false
+	staged.State = domainStateStaged
 	params.SettlementDomains = append(params.SettlementDomains, staged)
 	first := authorityHandoffDomains(params)
-	if len(first) != 2 || !slices.ContainsFunc(first, func(id []byte) bool { return bytes.Equal(id, staged.Id) }) {
-		t.Fatalf("staged domain omitted from authority handoff: %x", first)
+	if len(first) != 1 || slices.ContainsFunc(first, func(id []byte) bool { return bytes.Equal(id, staged.Id) }) {
+		t.Fatalf("never-active staged domain entered authority handoff: %x", first)
 	}
-	params.SettlementDomains[0].Active = false
-	staged.Active = true
+	params.SettlementDomains[0].State = domainStateDeactivated
+	staged.State = domainStateActive
 	second := authorityHandoffDomains(params)
-	if len(second) != 2 || !slices.EqualFunc(first, second, bytes.Equal) {
-		t.Fatalf("traffic activation rewrote later authority snapshot: first=%x second=%x", first, second)
+	if len(second) != 2 || !slices.ContainsFunc(second, func(id []byte) bool { return bytes.Equal(id, staged.Id) }) {
+		t.Fatalf("activated domain omitted from authority handoff: %x", second)
 	}
 }
 
-func TestGovernanceCannotRemoveDomainWithoutRetirementProtocol(t *testing.T) {
+func submitDomainActionForTest(t *testing.T, contract *Contract, action *SettlementDomainAction) *PluginError {
+	t.Helper()
+	id, err := settlementDomainActionID(action)
+	if err != nil {
+		t.Fatal(err)
+	}
+	action.Id = id
+	encoded, marshalErr := Marshal(action)
+	if marshalErr != nil {
+		t.Fatal(marshalErr)
+	}
+	return contract.deliverGovernedParameter("takusen", "settlementDomainAction", []byte(base64.StdEncoding.EncodeToString(encoded))).Error
+}
+
+func TestTypedDomainActionsOwnLifecycleState(t *testing.T) {
 	contract, store, _, _ := newMemoryContract(t)
 	params := defaultProtocolParams()
 	params.Revision = 1
 	params.ApprovedPcrs = []*PCRPolicy{testPCRPolicy()}
 	params.NitroTrustRoots = testNitroRoots(t)
-	second := proto.Clone(params.SettlementDomains[0]).(*SettlementDomain)
-	second.ChainId = 56
-	second.Network = "eip155:56"
-	second.TokenAddress = bytes.Repeat([]byte{0x81}, 20)
-	second.EscrowAddress = bytes.Repeat([]byte{0x82}, 20)
-	second.VerifierAddress = bytes.Repeat([]byte{0x83}, 20)
-	second.FoundationTreasuryAddress = bytes.Repeat([]byte{0x84}, 20)
-	second.Id = keccak(abiUint64(second.ChainId), abiAddress(second.TokenAddress), abiAddress(second.EscrowAddress), abiAddress(second.VerifierAddress))
-	params.SettlementDomains = append(params.SettlementDomains, second)
 	store.put(t, KeyForProtocolParams(), params)
 	store.put(t, KeyForEpochClock(), testEpochClock(params, 1, 1, 1, 100))
+	domain := params.SettlementDomains[0]
 
-	deactivated := proto.Clone(params).(*ProtocolParams)
-	deactivated.Revision = 2
-	deactivated.SettlementDomains[1].Active = false
-	encoded, err := Marshal(deactivated)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if response := contract.deliverGovernedParameter("takusen", "protocolParams", []byte(base64.StdEncoding.EncodeToString(encoded))); response.Error != nil {
-		t.Fatalf("traffic deactivation incorrectly removed authority tracking: %v", response.Error)
-	}
-	preparedClock := &EpochClock{
-		CurrentEpoch: 1, StartHeight: 1, EndHeight: 100, ValidatorSetId: 1,
-		StartTimestamp: 1, FreezeTimestamp: 1 + validatorEpochOpenSeconds,
-		NominalEndTimestamp: 1 + validatorEpochDurationSeconds, ConsensusTimeSeconds: 1,
-		ValidatorHandoffTimestamp: 1 + validatorEpochDurationSeconds,
-	}
-	completePreparedClock(preparedClock, deactivated, nil)
-	store.put(t, KeyForEpochClock(), preparedClock)
-	reactivated := proto.Clone(deactivated).(*ProtocolParams)
-	reactivated.Revision = 3
-	reactivated.SettlementDomains[1].Active = true
-	encoded, err = Marshal(reactivated)
+	mutated := proto.Clone(params).(*ProtocolParams)
+	mutated.Revision = 2
+	mutated.SettlementDomains[0].State = domainStateDeactivated
+	encoded, err := Marshal(mutated)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if response := contract.deliverGovernedParameter("takusen", "protocolParams", []byte(base64.StdEncoding.EncodeToString(encoded))); response.Error == nil {
-		t.Fatal("staged domain was activated during a prepared validator handoff")
+		t.Fatal("complete parameter replacement changed domain state")
 	}
 
-	removed := proto.Clone(deactivated).(*ProtocolParams)
-	removed.Revision = 3
-	removed.SettlementDomains = removed.SettlementDomains[:1]
-	encoded, err = Marshal(removed)
-	if err != nil {
-		t.Fatal(err)
+	deactivate := &SettlementDomainAction{Action: "deactivate", SettlementDomainId: domain.Id, Nonce: 1, ExpectedRevision: 1, ExpiresAtTimestamp: 200}
+	if actionErr := submitDomainActionForTest(t, contract, deactivate); actionErr != nil {
+		t.Fatal(actionErr)
 	}
-	if response := contract.deliverGovernedParameter("takusen", "protocolParams", []byte(base64.StdEncoding.EncodeToString(encoded))); response.Error == nil {
-		t.Fatal("domain was removed without finalized pause, drain, and retirement protocol")
+	current, stateErr := contract.currentProtocolParams()
+	if stateErr != nil || current.Revision != 2 || current.SettlementDomains[0].State != domainStateDeactivated {
+		t.Fatalf("deactivation was not committed: params=%+v err=%v", current, stateErr)
 	}
-	deactivation := new(SettlementDomainDeactivationSnapshot)
-	if found, readErr := contract.read(KeyForSettlementDomainDeactivation(second.Id), deactivation); readErr != nil || !found {
-		t.Fatalf("traffic deactivation marker missing: found=%v err=%v", found, readErr)
-	} else if len(deactivation.Generation) != 32 || deactivation.Timestamp != 1 ||
-		deactivation.AbandonmentDelaySeconds != second.AbandonmentDelaySeconds || !bytes.Equal(deactivation.SettlementDomainId, second.Id) {
-		t.Fatalf("invalid deactivation snapshot: %+v", deactivation)
+	snapshot := new(SettlementDomainDeactivationSnapshot)
+	if found, readErr := contract.read(KeyForSettlementDomainDeactivation(domain.Id), snapshot); readErr != nil || !found || len(snapshot.Generation) != 32 {
+		t.Fatalf("deactivation snapshot missing: found=%v err=%v", found, readErr)
 	}
-	store.put(t, KeyForEpochClock(), testEpochClock(params, 1, 1, 1, 100))
-	store.put(t, KeyForSettlementDomainRetirement(second.Id), &ReplayMarker{Id: bytes.Repeat([]byte{0xaa}, 32)})
-	if response := contract.deliverGovernedParameter("takusen", "protocolParams", []byte(base64.StdEncoding.EncodeToString(encoded))); response.Error != nil {
-		t.Fatalf("finalized retired domain removal failed: %v", response.Error)
+	store.put(t, KeyForSettlementDomainAuthority(domain.Id, 1), &ReplayMarker{Id: bytes.Repeat([]byte{0x91}, 32)})
+
+	reactivate := &SettlementDomainAction{Action: "reactivate", SettlementDomainId: domain.Id, DeactivationGeneration: snapshot.Generation,
+		Nonce: 2, ExpectedRevision: 2, ExpiresAtTimestamp: 200}
+	if actionErr := submitDomainActionForTest(t, contract, reactivate); actionErr != nil {
+		t.Fatal(actionErr)
 	}
-	readded := proto.Clone(removed).(*ProtocolParams)
-	readded.Revision = 4
-	readded.SettlementDomains = append(readded.SettlementDomains, second)
-	encoded, err = Marshal(readded)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if response := contract.deliverGovernedParameter("takusen", "protocolParams", []byte(base64.StdEncoding.EncodeToString(encoded))); response.Error == nil {
-		t.Fatal("permanently retired domain identifier was re-admitted")
+	current, stateErr = contract.currentProtocolParams()
+	if stateErr != nil || current.SettlementDomains[0].State != domainStateActive {
+		t.Fatalf("reactivation was not committed: params=%+v err=%v", current, stateErr)
 	}
 }
 
-func TestLifecycleIntentRequiresExactGovernedGenerationActionNonceAndExpiry(t *testing.T) {
+func TestGovernedEVMActionBecomesAutomaticConsensusCandidate(t *testing.T) {
 	contract, store, _, _ := newMemoryContract(t)
 	params := defaultProtocolParams()
 	params.Revision = 1
+	store.put(t, KeyForProtocolParams(), params)
+	clock := testEpochClock(params, 1, 7, 1, 100)
+	store.put(t, KeyForEpochClock(), clock)
+	domain := params.SettlementDomains[0]
+	intent := &EVMGovernanceActionIntent{
+		SettlementDomainId: domain.Id, ValidatorSetId: 7, ActionNonce: 1,
+		Target: bytes.Repeat([]byte{0x91}, 20), Value: make([]byte, 32), DataHash: bytes.Repeat([]byte{0x92}, 32),
+		ExpiresAtTimestamp: 200,
+	}
+	intent.Digest = evmGovernanceActionDigest(domain, intent)
+	intent.Id = evmGovernanceActionIntentID(intent)
+	encoded, err := Marshal(intent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response := contract.deliverGovernedParameter("takusen", "evmGovernanceActionIntent", []byte(base64.StdEncoding.EncodeToString(encoded))); response.Error != nil {
+		t.Fatal(response.Error)
+	}
+	candidates, candidateErr := contract.nativeAuxiliaryCandidates(2, params)
+	if candidateErr != nil {
+		t.Fatal(candidateErr)
+	}
+	if !slices.ContainsFunc(candidates, func(candidate *AuxiliaryCandidate) bool {
+		return candidate.Kind == "governance-action" && bytes.Equal(candidate.Key, intent.Id) && bytes.Equal(candidate.Digest, intent.Digest)
+	}) {
+		t.Fatal("governed EVM action did not become an automatic consensus candidate")
+	}
+}
+
+func TestNeverActiveStagedDomainResolvesWithoutEVMRetirement(t *testing.T) {
+	contract, store, _, _ := newMemoryContract(t)
+	params := defaultProtocolParams()
+	params.Revision = 1
+	params.ApprovedPcrs = []*PCRPolicy{testPCRPolicy()}
+	params.NitroTrustRoots = testNitroRoots(t)
+	store.put(t, KeyForProtocolParams(), params)
+	store.put(t, KeyForEpochClock(), testEpochClock(params, 1, 1, 1, 100))
+
 	domain := proto.Clone(params.SettlementDomains[0]).(*SettlementDomain)
-	domain.Id = bytes.Repeat([]byte{0x97}, 32)
-	domain.ChainId = 56
-	domain.Network = "eip155:56"
-	domain.Active = false
-	params.SettlementDomains = append(params.SettlementDomains, domain)
-	store.put(t, KeyForProtocolParams(), params)
-	clock := testEpochClock(params, 1, 5, 1, 100)
-	clock.StartTimestamp, clock.FreezeTimestamp, clock.NominalEndTimestamp, clock.ConsensusTimeSeconds = 100, 1_300, 3_700, 100
-	store.put(t, KeyForEpochClock(), clock)
-	generation := bytes.Repeat([]byte{0x98}, 32)
-	store.put(t, KeyForSettlementDomainDeactivation(domain.Id), &SettlementDomainDeactivationSnapshot{
-		SettlementDomainId: domain.Id, Generation: generation, Timestamp: 100,
-		AbandonmentDelaySeconds: domain.AbandonmentDelaySeconds,
-	})
-
-	submit := func(intent *SettlementDomainLifecycleIntent) *PluginError {
-		t.Helper()
-		encoded, err := Marshal(intent)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return contract.deliverGovernedParameter(
-			"takusen", "settlementDomainLifecycleIntent", []byte(base64.StdEncoding.EncodeToString(encoded)),
-		).Error
-	}
-	intent := &SettlementDomainLifecycleIntent{
-		SettlementDomainId: domain.Id, DeactivationGeneration: generation, Action: "retire", Nonce: 1, ExpiresAtTimestamp: 200,
-	}
-	intent.Id = settlementDomainLifecycleIntentID(domain.Id, generation, intent.Action, intent.Nonce, intent.ExpiresAtTimestamp)
-	if err := submit(intent); err != nil {
-		t.Fatalf("valid governed lifecycle intent failed: %v", err)
-	}
-	wrongAction := proto.Clone(intent).(*SettlementDomainLifecycleIntent)
-	wrongAction.Action = "cancel"
-	wrongAction.Id = settlementDomainLifecycleIntentID(domain.Id, generation, wrongAction.Action, wrongAction.Nonce, wrongAction.ExpiresAtTimestamp)
-	if err := submit(wrongAction); err == nil {
-		t.Fatal("an unexpired governed lifecycle intent was replaced by a different action")
-	}
-
-	clock.ConsensusTimeSeconds = 300
-	store.put(t, KeyForEpochClock(), clock)
-	wrongGeneration := proto.Clone(intent).(*SettlementDomainLifecycleIntent)
-	wrongGeneration.DeactivationGeneration = bytes.Repeat([]byte{0x99}, 32)
-	wrongGeneration.Action, wrongGeneration.Nonce, wrongGeneration.ExpiresAtTimestamp = "cancel", 2, 400
-	wrongGeneration.Id = settlementDomainLifecycleIntentID(domain.Id, wrongGeneration.DeactivationGeneration, wrongGeneration.Action, 2, 400)
-	if err := submit(wrongGeneration); err == nil {
-		t.Fatal("lifecycle intent for a different deactivation generation was accepted")
-	}
-	replacement := proto.Clone(wrongGeneration).(*SettlementDomainLifecycleIntent)
-	replacement.DeactivationGeneration = generation
-	replacement.Id = settlementDomainLifecycleIntentID(domain.Id, generation, replacement.Action, replacement.Nonce, replacement.ExpiresAtTimestamp)
-	if err := submit(replacement); err != nil {
-		t.Fatalf("expired intent could not be replaced with the next exact nonce: %v", err)
-	}
-	stored := new(SettlementDomainLifecycleIntent)
-	if found, err := contract.read(KeyForSettlementDomainLifecycleIntent(domain.Id), stored); err != nil || !found ||
-		!bytes.Equal(stored.Id, replacement.Id) {
-		t.Fatalf("replacement lifecycle intent was not committed: found=%v err=%v", found, err)
-	}
-}
-
-func TestGovernanceRequiresFinalizedAuthorityCertificateForDomainAdmissionAndActivation(t *testing.T) {
-	contract, store, _, _ := newMemoryContract(t)
-	params := defaultProtocolParams()
-	params.Revision = 1
-	params.ApprovedPcrs = []*PCRPolicy{testPCRPolicy()}
-	params.NitroTrustRoots = testNitroRoots(t)
-	store.put(t, KeyForProtocolParams(), params)
-	store.put(t, KeyForEpochClock(), testEpochClock(params, 1, 1, 1, 100))
-
-	staged := proto.Clone(params.SettlementDomains[0]).(*SettlementDomain)
-	staged.ChainId = 56
-	staged.Network = "eip155:56"
-	staged.TokenAddress = bytes.Repeat([]byte{0x91}, 20)
-	staged.EscrowAddress = bytes.Repeat([]byte{0x92}, 20)
-	staged.VerifierAddress = bytes.Repeat([]byte{0x93}, 20)
-	staged.FoundationTreasuryAddress = bytes.Repeat([]byte{0x94}, 20)
-	staged.Id = keccak(abiUint64(staged.ChainId), abiAddress(staged.TokenAddress), abiAddress(staged.EscrowAddress), abiAddress(staged.VerifierAddress))
-	staged.Active = false
-	admitted := proto.Clone(params).(*ProtocolParams)
-	admitted.Revision = 2
-	admitted.SettlementDomains = append(admitted.SettlementDomains, staged)
-	encoded, err := Marshal(admitted)
-	if err != nil {
+	domain.ChainId, domain.Network, domain.State = 56, "eip155:56", domainStateStaged
+	domain.TokenAddress = bytes.Repeat([]byte{0xa1}, 20)
+	domain.EscrowAddress = bytes.Repeat([]byte{0xa2}, 20)
+	domain.VerifierAddress = bytes.Repeat([]byte{0xa3}, 20)
+	domain.GovernanceAddress = bytes.Repeat([]byte{0xa4}, 20)
+	domain.FoundationTreasuryAddress = bytes.Repeat([]byte{0xa5}, 20)
+	domain.Id = keccak(abiUint64(domain.ChainId), abiAddress(domain.TokenAddress), abiAddress(domain.EscrowAddress), abiAddress(domain.VerifierAddress))
+	store.put(t, KeyForSettlementDomainAuthority(domain.Id, 1), &ReplayMarker{Id: bytes.Repeat([]byte{0xa6}, 32)})
+	register := &SettlementDomainAction{Action: "register", SettlementDomainId: domain.Id, Domain: domain, Nonce: 1, ExpectedRevision: 1, ExpiresAtTimestamp: 200}
+	if err := submitDomainActionForTest(t, contract, register); err != nil {
 		t.Fatal(err)
 	}
-	if response := contract.deliverGovernedParameter("takusen", "protocolParams", []byte(base64.StdEncoding.EncodeToString(encoded))); response.Error == nil {
-		t.Fatal("domain admission succeeded without finalized authority certificate")
-	}
-	store.put(t, KeyForSettlementDomainAuthority(staged.Id, 1), &ReplayMarker{Id: bytes.Repeat([]byte{0x95}, 32)})
-	if response := contract.deliverGovernedParameter("takusen", "protocolParams", []byte(base64.StdEncoding.EncodeToString(encoded))); response.Error != nil {
-		t.Fatalf("certified staged domain admission failed: %v", response.Error)
-	}
-	if found, readErr := contract.read(KeyForSettlementDomainDeactivation(staged.Id), new(SettlementDomainDeactivationSnapshot)); readErr != nil || found {
-		t.Fatalf("initially staged domain acquired a false deactivation record: found=%v err=%v", found, readErr)
-	}
-
-	delete(store.values, string(KeyForSettlementDomainAuthority(staged.Id, 1)))
-	activated := proto.Clone(admitted).(*ProtocolParams)
-	activated.Revision = 3
-	activated.SettlementDomains[1].Active = true
-	encoded, err = Marshal(activated)
-	if err != nil {
+	resolve := &SettlementDomainAction{Action: "resolve", Resolution: "clean", SettlementDomainId: domain.Id, Nonce: 2, ExpectedRevision: 2, ExpiresAtTimestamp: 200}
+	if err := submitDomainActionForTest(t, contract, resolve); err != nil {
 		t.Fatal(err)
 	}
-	if response := contract.deliverGovernedParameter("takusen", "protocolParams", []byte(base64.StdEncoding.EncodeToString(encoded))); response.Error == nil {
-		t.Fatal("domain activation succeeded without a current finalized authority certificate")
+	current, err := contract.currentProtocolParams()
+	if err != nil || current.Revision != 3 || current.SettlementDomains[1].State != domainStateResolved {
+		t.Fatalf("staged resolution was not committed: params=%+v err=%v", current, err)
 	}
-	store.put(t, KeyForSettlementDomainAuthority(staged.Id, 1), &ReplayMarker{Id: bytes.Repeat([]byte{0x96}, 32)})
-	if response := contract.deliverGovernedParameter("takusen", "protocolParams", []byte(base64.StdEncoding.EncodeToString(encoded))); response.Error != nil {
-		t.Fatalf("initial staged activation required a nonexistent retirement cancellation: %v", response.Error)
-	}
-
-	deactivated := proto.Clone(activated).(*ProtocolParams)
-	deactivated.Revision = 4
-	deactivated.SettlementDomains[1].Active = false
-	encoded, err = Marshal(deactivated)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if response := contract.deliverGovernedParameter("takusen", "protocolParams", []byte(base64.StdEncoding.EncodeToString(encoded))); response.Error != nil {
-		t.Fatalf("domain deactivation failed: %v", response.Error)
-	}
-	deactivation := new(SettlementDomainDeactivationSnapshot)
-	if found, readErr := contract.read(KeyForSettlementDomainDeactivation(staged.Id), deactivation); readErr != nil || !found || len(deactivation.Generation) != 32 {
-		t.Fatalf("domain deactivation generation missing: found=%v err=%v", found, readErr)
-	}
-	reactivated := proto.Clone(deactivated).(*ProtocolParams)
-	reactivated.Revision = 5
-	reactivated.SettlementDomains[1].Active = true
-	encoded, err = Marshal(reactivated)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if response := contract.deliverGovernedParameter("takusen", "protocolParams", []byte(base64.StdEncoding.EncodeToString(encoded))); response.Error == nil {
-		t.Fatal("domain reactivation succeeded without finalized retirement-proof cancellation")
-	}
-	store.put(t, KeyForSettlementDomainRetirementCancellation(staged.Id, deactivation.Generation), &ReplayMarker{Id: bytes.Repeat([]byte{0x97}, 32)})
-	if response := contract.deliverGovernedParameter("takusen", "protocolParams", []byte(base64.StdEncoding.EncodeToString(encoded))); response.Error != nil {
-		t.Fatalf("certified domain reactivation failed: %v", response.Error)
-	}
-	if _, found := store.values[string(KeyForSettlementDomainRetirementCancellation(staged.Id, deactivation.Generation))]; found {
-		t.Fatal("consumed retirement cancellation marker was retained after activation")
-	}
-}
-
-func TestGovernanceCanDiscardNeverActiveStagedDomain(t *testing.T) {
-	contract, store, _, _ := newMemoryContract(t)
-	params := defaultProtocolParams()
-	params.Revision = 1
-	params.ApprovedPcrs = []*PCRPolicy{testPCRPolicy()}
-	params.NitroTrustRoots = testNitroRoots(t)
-	store.put(t, KeyForProtocolParams(), params)
-	store.put(t, KeyForEpochClock(), testEpochClock(params, 1, 1, 1, 100))
-
-	staged := proto.Clone(params.SettlementDomains[0]).(*SettlementDomain)
-	staged.ChainId, staged.Network, staged.Active = 42161, "eip155:42161", false
-	staged.TokenAddress = bytes.Repeat([]byte{0xa1}, 20)
-	staged.EscrowAddress = bytes.Repeat([]byte{0xa2}, 20)
-	staged.VerifierAddress = bytes.Repeat([]byte{0xa3}, 20)
-	staged.FoundationTreasuryAddress = bytes.Repeat([]byte{0xa4}, 20)
-	staged.Id = keccak(abiUint64(staged.ChainId), abiAddress(staged.TokenAddress), abiAddress(staged.EscrowAddress), abiAddress(staged.VerifierAddress))
-	store.put(t, KeyForSettlementDomainAuthority(staged.Id, 1), &ReplayMarker{Id: bytes.Repeat([]byte{0xa5}, 32)})
-
-	admitted := proto.Clone(params).(*ProtocolParams)
-	admitted.Revision = 2
-	admitted.SettlementDomains = append(admitted.SettlementDomains, staged)
-	encoded, err := Marshal(admitted)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if response := contract.deliverGovernedParameter("takusen", "protocolParams", []byte(base64.StdEncoding.EncodeToString(encoded))); response.Error != nil {
-		t.Fatalf("staged admission failed: %v", response.Error)
-	}
-
-	discarded := proto.Clone(admitted).(*ProtocolParams)
-	discarded.Revision = 3
-	discarded.SettlementDomains = discarded.SettlementDomains[:1]
-	encoded, err = Marshal(discarded)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if response := contract.deliverGovernedParameter("takusen", "protocolParams", []byte(base64.StdEncoding.EncodeToString(encoded))); response.Error != nil {
-		t.Fatalf("never-active staged domain discard failed: %v", response.Error)
-	}
-	if found, readErr := contract.read(KeyForSettlementDomainRetirement(staged.Id), new(ReplayMarker)); readErr != nil || !found {
-		t.Fatalf("discarded staged domain was not tombstoned: found=%v err=%v", found, readErr)
-	}
-
-	readded := proto.Clone(discarded).(*ProtocolParams)
-	readded.Revision = 4
-	readded.SettlementDomains = append(readded.SettlementDomains, staged)
-	encoded, err = Marshal(readded)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if response := contract.deliverGovernedParameter("takusen", "protocolParams", []byte(base64.StdEncoding.EncodeToString(encoded))); response.Error == nil {
-		t.Fatal("discarded staged domain identifier was re-admitted")
+	record := new(SettlementDomainResolution)
+	if found, readErr := contract.read(KeyForSettlementDomainResolution(domain.Id), record); readErr != nil || !found || record.Outcome != "DISCARDED" {
+		t.Fatalf("discard resolution missing: found=%v record=%+v err=%v", found, record, readErr)
 	}
 }
 

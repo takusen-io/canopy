@@ -1,1 +1,98 @@
-{}
+{
+  "5705f81df68e394df39248073cf4a6c20012e6ec102986e869f4848406dc2a53": {
+    "proposal": {
+      "chainID": 1,
+      "createdHeight": 11,
+      "fee": 10000,
+      "memo": "Takusen settlement-domain action",
+      "msg": {
+        "endHeight": 511,
+        "parameterKey": "settlementDomainAction",
+        "parameterSpace": "takusen",
+        "parameterValue": "CiCRQupFqFB4hvT1+4FiCseaMk7eVQmXYqrgbAHxqy6BqhIIYWN0aXZhdGUaIBPc7yKrOp+Sb7AFLG4KMIWpoKlmf/QdUT/RMEvb0cdSMAE4BEDgkpfYBg==",
+        "signer": "851e90eaef1fa27debaee2c2591503bdeec1d123",
+        "startHeight": 11
+      },
+      "networkID": 1,
+      "signature": {
+        "publicKey": "b88a5928e54cbf0a36e0b98f5bcf02de9a9a1deba6994739f9160181a609f516eb702936a0cbf4c1f2e7e6be5b8272f2",
+        "signature": "992ed799157e46fb6266ec17f9f3170088549381d83505e846fb02edfc365d087178f89cd6becd479092ba377eca98820b35b5bd309f699e0d9ea3b3f141a7f7f781bfc13314fa4a12af45b7a481747fc985ff315d3c70449c7a34a77c753a6e"
+      },
+      "time": 1795537765091465,
+      "type": "changeParameter"
+    },
+    "approve": true
+  },
+  "6571b6a338d2977b60be8932258583b9b8de8b566eb59158076d291e3ad77367": {
+    "proposal": {
+      "chainID": 1,
+      "createdHeight": 7,
+      "fee": 10000,
+      "memo": "Takusen protocol parameter proposal",
+      "msg": {
+        "endHeight": 507,
+        "parameterKey": "protocolParams",
+        "parameterSpace": "takusen",
+        "parameterValue": "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",
+        "signer": "851e90eaef1fa27debaee2c2591503bdeec1d123",
+        "startHeight": 7
+      },
+      "networkID": 1,
+      "signature": {
+        "publicKey": "b88a5928e54cbf0a36e0b98f5bcf02de9a9a1deba6994739f9160181a609f516eb702936a0cbf4c1f2e7e6be5b8272f2",
+        "signature": "98f8cd0ad3f7798eb029aa211cba887f89c79fbf1d5aed3bcfdda707580919b4a5eb4499acdb15e649805b14db236b8c036ee19fb39c998a6a56cc50989116979c1a9932a6a31f8a83689a4e3d8d77da11a12afe49be0675b3e259f214df569b"
+      },
+      "time": 1795537685364925,
+      "type": "changeParameter"
+    },
+    "approve": true
+  },
+  "a80d109d22c0710e8ed9798a9e204f0034b22edd5018be1989ac4e9134271150": {
+    "proposal": {
+      "chainID": 1,
+      "createdHeight": 9,
+      "fee": 10000,
+      "memo": "Takusen protocol parameter proposal",
+      "msg": {
+        "endHeight": 509,
+        "parameterKey": "protocolParams",
+        "parameterSpace": "takusen",
+        "parameterValue": "CAQSPAoRb3BlbmFpL2dwdC02LWx1bmESE2xvY2FsLWRldGVybWluaXN0aWMY4KcSIAEo0IYDMMCWsQI4gNrECRJEChphbnRocm9waWMvY2xhdWRlLWhhaWt1LTUuNRITbG9jYWwtZGV0ZXJtaW5pc3RpYxjgpxIgASjQhgMwgIl6OICt4gQSQQoXZ29vZ2xlL2dlbWluaS0zLjgtZmxhc2gSE2xvY2FsLWRldGVybWluaXN0aWMY4KcSIAEo0IYDMMCEPTjAlrECGpgBCjDFOEtFO2U//uhqKGV48Z5LtiyoL2r2U3rfTDPCZF4Y9yWCJUemPsyMuwIkFp0S9HESMC6GSijhfgOTIjZuIMAXMz4+O+bnfB1YRIjZIqRXyc989Mtow3hhW+GN5V89vgoKIBowm6OLdyPl0xBhXy2boRmhEHZTzhKWEecQPLMslEZZamPztxBpoNJTn1qLrgUc/pxkIAEg9AMo+gFA6AJIoI0GWGRogIQHcICU69wDehSC/hb6VdN02ujQdXiK3Q3qlfUYJYAB6AeIAbSUBZIBFAp2VAG80nO8ei+XzH259tVGh1NUmgEUpe2WOuICN6y3YOxzgmY9bzgD6M+oAf///////////wGwAf///////////wG4AQHCAQdib29sZWFuwgEFc2NvcmXCAQZjaG9pY2XCAQxwcml2YXRlX2hhc2jKARFvcGVuYWkvZ3B0LTYtbHVuYcoBGmFudGhyb3BpYy9jbGF1ZGUtaGFpa3UtNS41ygEXZ29vZ2xlL2dlbWluaS0zLjgtZmxhc2jSAdUBCiAqSUaMKAN8d8iI7eBS4x0jeYKMnddY2l0H5QRzSStwjRDp9AEaFF+9sjFWeK/ss2fwMtk/ZC9kGAqjIhRfyNMmkMyR1MOdnTq8vRaYn4dXByoU5/FyXnc0ziiPg2fhuxQ+kLs/BRIyFIL+FvpV03Ta6NB1eIrdDeqV9RglOAZCDGVpcDE1NTozMTMzN0oHZWlwMzAwOVIKZmxhc2hibG9ja1gBYgZBQ1RJVkVqCFVTRCBDb2lucgEyeID1JIIBFJ/kZzZnnS2aZfCZLyJy3p88f6bg0gHQAQogE9zvIqs6n5JvsAUsbgowhamgqWZ/9B1RP9EwS9vRx1IQYRoUX72yMVZ4r+yzZ/Ay2T9kL2QYCqMiFF/I0yaQzJHUw52dOry9Fpifh1cHKhTn8XJedzTOKI+DZ+G7FD6Quz8FEjIUgv4W+lXTdNro0HV4it0N6pX1GCU4BkIJZWlwMTU1Ojk3SgdlaXAzMDA5UgpmbGFzaGJsb2NrWAFiBlNUQUdFRGoIVVNEIENvaW5yATJ4gPUkggEUn+RnNmedLZpl8JkvInLenzx/puDiAYsEMIICBzCCAY2gAwIBAgIJAL9D9wfEkmeWMAoGCCqGSM49BAMDMFcxCzAJBgNVBAYTAlVTMRwwGgYDVQQKDBNUYWt1c2VuIERldmVsb3BtZW50MSowKAYDVQQDDCFUYWt1c2VuIExvY2FsIEF0dGVzdGF0aW9uIFJvb3QgdjEwIBcNMjYxMTE3MTU1MjQ3WhgPMjEyNjEwMjQxNTUyNDdaMFcxCzAJBgNVBAYTAlVTMRwwGgYDVQQKDBNUYWt1c2VuIERldmVsb3BtZW50MSowKAYDVQQDDCFUYWt1c2VuIExvY2FsIEF0dGVzdGF0aW9uIFJvb3QgdjEwdjAQBgcqhkjOPQIBBgUrgQQAIgNiAASSUjR9nojKF2GNulAOF+GDzn7v9MDcJ+DNSh49V1ASIMRdu9iNcOqCk1O7CSD679LgcuKp/IYevr3TwDNWtUhB4jpFUxNCp6ivNqCS02EFh+1hcxSK44vy6mzA12DJENKjIzAhMA8GA1UdEwEB/wQFMAMBAf8wDgYDVR0PAQH/BAQDAgKEMAoGCCqGSM49BAMDA2gAMGUCMADDxNHycpwT7AZ2BVxufRvDNc6UR7dPIqTaZArlcWFFlbugED+Y76DLYPLxu/JwdQIxAI2zTVhvVXswhbIDpX3UEwOTsTEfiHtIxir9CWoaiqCB2l1eRYRQIHcqRopLBjTRiOgBwIQ9",
+        "signer": "851e90eaef1fa27debaee2c2591503bdeec1d123",
+        "startHeight": 9
+      },
+      "networkID": 1,
+      "signature": {
+        "publicKey": "b88a5928e54cbf0a36e0b98f5bcf02de9a9a1deba6994739f9160181a609f516eb702936a0cbf4c1f2e7e6be5b8272f2",
+        "signature": "a2adad5b014087fc74335c4d9f3ed09ce15d6545d99890804763dabcd3b48f4016f5aea3b335ec3d4676beaf0ee2fd830b766eb90a8c9efe8ca764f309995d8e0e7a67271c53b20e45f59f88c04307359edb4967c51a7966556a9238cbd5ef6e"
+      },
+      "time": 1795537724737417,
+      "type": "changeParameter"
+    },
+    "approve": true
+  },
+  "b57f5adf110e6db68a708c0295c5af0ad5b32a52e353b51708300e5a5f36670f": {
+    "proposal": {
+      "chainID": 1,
+      "createdHeight": 5,
+      "fee": 10000,
+      "memo": "Takusen protocol parameter proposal",
+      "msg": {
+        "endHeight": 505,
+        "parameterKey": "protocolParams",
+        "parameterSpace": "takusen",
+        "parameterValue": "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",
+        "signer": "851e90eaef1fa27debaee2c2591503bdeec1d123",
+        "startHeight": 5
+      },
+      "networkID": 1,
+      "signature": {
+        "publicKey": "b88a5928e54cbf0a36e0b98f5bcf02de9a9a1deba6994739f9160181a609f516eb702936a0cbf4c1f2e7e6be5b8272f2",
+        "signature": "b48b8fa2bf3a84e3938c8f61d161ffabb52c1db6f22139dcfe51e2174c6af69fdc7813324c59ff5b68d3ec7d04fd24ad093ab378ea33066b5bdcda57b3356331a7884c029a28967fea86bd627d3778ca63005aa9144e34acb4dd345199eba78f"
+      },
+      "time": 1795537646672338,
+      "type": "changeParameter"
+    },
+    "approve": true
+  }
+}

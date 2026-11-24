@@ -21,7 +21,6 @@ const (
 	MessageQueueAuthorizationName    = "takusenQueueAuthorization"
 	MessageSubmitExecutionsName      = "takusenSubmitExecutions"
 	MessageFinalizeRequestsName      = "takusenFinalizeRequests"
-	MessageGovernanceVoteName        = "takusenGovernanceVote"
 	MessageObserveBridgeLockName     = "takusenObserveBridgeLock"
 	MessageObserveBridgeReleaseName  = "takusenObserveBridgeRelease"
 	MessageObserveEpochMintName      = "takusenObserveEpochMint"
@@ -32,7 +31,7 @@ const (
 var ContractConfig = &PluginConfig{
 	Name:                      "takusen",
 	Id:                        22,
-	Version:                   5,
+	Version:                   6,
 	ValidatorSetEpochs:        true,
 	GovernanceParameterSpaces: []string{"takusen"},
 	SupportedTransactions: []string{
@@ -46,7 +45,6 @@ var ContractConfig = &PluginConfig{
 		MessageQueueAuthorizationName,
 		MessageSubmitExecutionsName,
 		MessageFinalizeRequestsName,
-		MessageGovernanceVoteName,
 		MessageObserveBridgeLockName,
 		MessageObserveBridgeReleaseName,
 		MessageObserveEpochMintName,
@@ -64,7 +62,6 @@ var ContractConfig = &PluginConfig{
 		"type.googleapis.com/types.MessageQueueAuthorization",
 		"type.googleapis.com/types.MessageSubmitExecutions",
 		"type.googleapis.com/types.MessageFinalizeRequests",
-		"type.googleapis.com/types.MessageGovernanceVote",
 		"type.googleapis.com/types.MessageObserveBridgeLock",
 		"type.googleapis.com/types.MessageObserveBridgeRelease",
 		"type.googleapis.com/types.MessageObserveEpochMint",
@@ -247,8 +244,6 @@ func (c *Contract) CheckTx(request *PluginCheckRequest) *PluginCheckResponse {
 		signer, err = checkSubmitExecutions(message)
 	case *MessageFinalizeRequests:
 		signer, err = checkFinalizeRequests(message)
-	case *MessageGovernanceVote:
-		signer, err = checkGovernanceVote(message)
 	case *MessageObserveBridgeLock:
 		signer, err = checkObserveBridgeLock(message)
 	case *MessageObserveBridgeRelease:
@@ -300,8 +295,6 @@ func (c *Contract) DeliverTx(request *PluginDeliverRequest) *PluginDeliverRespon
 		return c.deliverSubmitExecutions(request.Height, message)
 	case *MessageFinalizeRequests:
 		return c.deliverFinalizeRequests(request.Height, message)
-	case *MessageGovernanceVote:
-		return c.deliverGovernanceVote(request.Height, message)
 	case *MessageObserveBridgeLock:
 		return c.deliverObserveBridgeLock(request.Height, message)
 	case *MessageObserveBridgeRelease:

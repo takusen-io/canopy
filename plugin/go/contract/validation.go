@@ -393,18 +393,6 @@ func checkFinalizeRequests(message *MessageFinalizeRequests) ([]byte, *PluginErr
 	return message.ObserverAddress, nil
 }
 
-func checkGovernanceVote(message *MessageGovernanceVote) ([]byte, *PluginError) {
-	if message == nil || !validAddress(message.ValidatorAddress) || !validHash(message.ProposalId) ||
-		!validHash(message.Digest) || message.ValidatorSetId == 0 || len(message.Signature) != 96 {
-		return nil, ErrInvalidTransaction("invalid governance vote")
-	}
-	expectedID := quorumProofID("governance-action", message.ValidatorSetId, message.Digest)
-	if !bytes.Equal(expectedID, message.ProposalId) {
-		return nil, ErrInvalidTransaction("governance proposal identifier mismatch")
-	}
-	return message.ValidatorAddress, nil
-}
-
 func checkObserveBridgeLock(message *MessageObserveBridgeLock) ([]byte, *PluginError) {
 	if !validAddress(message.ObserverAddress) || !validHash(message.CanonicalChainTxHash) || message.Nonce == 0 ||
 		!validAddress(message.CanonicalChainSender) || !validAddress(message.Recipient) || message.Amount == 0 {

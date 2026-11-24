@@ -1915,10 +1915,11 @@ type SettlementDomain struct {
 	DepositMechanisms         []string               `protobuf:"bytes,9,rep,name=deposit_mechanisms,json=depositMechanisms,proto3" json:"deposit_mechanisms,omitempty"`
 	FinalityPolicy            string                 `protobuf:"bytes,10,opt,name=finality_policy,json=finalityPolicy,proto3" json:"finality_policy,omitempty"`
 	Confirmations             uint32                 `protobuf:"varint,11,opt,name=confirmations,proto3" json:"confirmations,omitempty"`
-	Active                    bool                   `protobuf:"varint,12,opt,name=active,proto3" json:"active,omitempty"`
+	State                     string                 `protobuf:"bytes,12,opt,name=state,proto3" json:"state,omitempty"`
 	AuthorizationName         string                 `protobuf:"bytes,13,opt,name=authorization_name,json=authorizationName,proto3" json:"authorization_name,omitempty"`
 	AuthorizationVersion      string                 `protobuf:"bytes,14,opt,name=authorization_version,json=authorizationVersion,proto3" json:"authorization_version,omitempty"`
 	AbandonmentDelaySeconds   uint64                 `protobuf:"varint,15,opt,name=abandonment_delay_seconds,json=abandonmentDelaySeconds,proto3" json:"abandonment_delay_seconds,omitempty"`
+	GovernanceAddress         []byte                 `protobuf:"bytes,16,opt,name=governance_address,json=governanceAddress,proto3" json:"governance_address,omitempty"`
 	unknownFields             protoimpl.UnknownFields
 	sizeCache                 protoimpl.SizeCache
 }
@@ -2030,11 +2031,11 @@ func (x *SettlementDomain) GetConfirmations() uint32 {
 	return 0
 }
 
-func (x *SettlementDomain) GetActive() bool {
+func (x *SettlementDomain) GetState() string {
 	if x != nil {
-		return x.Active
+		return x.State
 	}
-	return false
+	return ""
 }
 
 func (x *SettlementDomain) GetAuthorizationName() string {
@@ -2056,6 +2057,13 @@ func (x *SettlementDomain) GetAbandonmentDelaySeconds() uint64 {
 		return x.AbandonmentDelaySeconds
 	}
 	return 0
+}
+
+func (x *SettlementDomain) GetGovernanceAddress() []byte {
+	if x != nil {
+		return x.GovernanceAddress
+	}
+	return nil
 }
 
 // SettlementDomainDeactivationSnapshot fixes the governed cooling period when
@@ -3610,35 +3618,38 @@ func (x *ReplayMarker) GetId() []byte {
 	return nil
 }
 
-// SettlementDomainLifecycleIntent is created only by Canopy's standard
-// changeParameter governance lifecycle. Observer credentials cannot create or
-// modify it; they may sign only the exact action while this intent is live.
-type SettlementDomainLifecycleIntent struct {
+// SettlementDomainAction is created only by Canopy's standard changeParameter
+// governance lifecycle. It is the sole policy path for domain membership,
+// traffic state, reactivation, and terminal resolution.
+type SettlementDomainAction struct {
 	state                  protoimpl.MessageState `protogen:"open.v1"`
 	Id                     []byte                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	SettlementDomainId     []byte                 `protobuf:"bytes,2,opt,name=settlement_domain_id,json=settlementDomainId,proto3" json:"settlement_domain_id,omitempty"`
-	DeactivationGeneration []byte                 `protobuf:"bytes,3,opt,name=deactivation_generation,json=deactivationGeneration,proto3" json:"deactivation_generation,omitempty"`
-	Action                 string                 `protobuf:"bytes,4,opt,name=action,proto3" json:"action,omitempty"`
-	Nonce                  uint64                 `protobuf:"varint,5,opt,name=nonce,proto3" json:"nonce,omitempty"`
-	ExpiresAtTimestamp     uint64                 `protobuf:"varint,6,opt,name=expires_at_timestamp,json=expiresAtTimestamp,proto3" json:"expires_at_timestamp,omitempty"`
+	Action                 string                 `protobuf:"bytes,2,opt,name=action,proto3" json:"action,omitempty"`
+	SettlementDomainId     []byte                 `protobuf:"bytes,3,opt,name=settlement_domain_id,json=settlementDomainId,proto3" json:"settlement_domain_id,omitempty"`
+	Domain                 *SettlementDomain      `protobuf:"bytes,4,opt,name=domain,proto3" json:"domain,omitempty"`
+	DeactivationGeneration []byte                 `protobuf:"bytes,5,opt,name=deactivation_generation,json=deactivationGeneration,proto3" json:"deactivation_generation,omitempty"`
+	Nonce                  uint64                 `protobuf:"varint,6,opt,name=nonce,proto3" json:"nonce,omitempty"`
+	ExpectedRevision       uint64                 `protobuf:"varint,7,opt,name=expected_revision,json=expectedRevision,proto3" json:"expected_revision,omitempty"`
+	ExpiresAtTimestamp     uint64                 `protobuf:"varint,8,opt,name=expires_at_timestamp,json=expiresAtTimestamp,proto3" json:"expires_at_timestamp,omitempty"`
+	Resolution             string                 `protobuf:"bytes,9,opt,name=resolution,proto3" json:"resolution,omitempty"`
 	unknownFields          protoimpl.UnknownFields
 	sizeCache              protoimpl.SizeCache
 }
 
-func (x *SettlementDomainLifecycleIntent) Reset() {
-	*x = SettlementDomainLifecycleIntent{}
+func (x *SettlementDomainAction) Reset() {
+	*x = SettlementDomainAction{}
 	mi := &file_account_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *SettlementDomainLifecycleIntent) String() string {
+func (x *SettlementDomainAction) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*SettlementDomainLifecycleIntent) ProtoMessage() {}
+func (*SettlementDomainAction) ProtoMessage() {}
 
-func (x *SettlementDomainLifecycleIntent) ProtoReflect() protoreflect.Message {
+func (x *SettlementDomainAction) ProtoReflect() protoreflect.Message {
 	mi := &file_account_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -3650,51 +3661,267 @@ func (x *SettlementDomainLifecycleIntent) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use SettlementDomainLifecycleIntent.ProtoReflect.Descriptor instead.
-func (*SettlementDomainLifecycleIntent) Descriptor() ([]byte, []int) {
+// Deprecated: Use SettlementDomainAction.ProtoReflect.Descriptor instead.
+func (*SettlementDomainAction) Descriptor() ([]byte, []int) {
 	return file_account_proto_rawDescGZIP(), []int{36}
 }
 
-func (x *SettlementDomainLifecycleIntent) GetId() []byte {
+func (x *SettlementDomainAction) GetId() []byte {
 	if x != nil {
 		return x.Id
 	}
 	return nil
 }
 
-func (x *SettlementDomainLifecycleIntent) GetSettlementDomainId() []byte {
-	if x != nil {
-		return x.SettlementDomainId
-	}
-	return nil
-}
-
-func (x *SettlementDomainLifecycleIntent) GetDeactivationGeneration() []byte {
-	if x != nil {
-		return x.DeactivationGeneration
-	}
-	return nil
-}
-
-func (x *SettlementDomainLifecycleIntent) GetAction() string {
+func (x *SettlementDomainAction) GetAction() string {
 	if x != nil {
 		return x.Action
 	}
 	return ""
 }
 
-func (x *SettlementDomainLifecycleIntent) GetNonce() uint64 {
+func (x *SettlementDomainAction) GetSettlementDomainId() []byte {
+	if x != nil {
+		return x.SettlementDomainId
+	}
+	return nil
+}
+
+func (x *SettlementDomainAction) GetDomain() *SettlementDomain {
+	if x != nil {
+		return x.Domain
+	}
+	return nil
+}
+
+func (x *SettlementDomainAction) GetDeactivationGeneration() []byte {
+	if x != nil {
+		return x.DeactivationGeneration
+	}
+	return nil
+}
+
+func (x *SettlementDomainAction) GetNonce() uint64 {
 	if x != nil {
 		return x.Nonce
 	}
 	return 0
 }
 
-func (x *SettlementDomainLifecycleIntent) GetExpiresAtTimestamp() uint64 {
+func (x *SettlementDomainAction) GetExpectedRevision() uint64 {
+	if x != nil {
+		return x.ExpectedRevision
+	}
+	return 0
+}
+
+func (x *SettlementDomainAction) GetExpiresAtTimestamp() uint64 {
 	if x != nil {
 		return x.ExpiresAtTimestamp
 	}
 	return 0
+}
+
+func (x *SettlementDomainAction) GetResolution() string {
+	if x != nil {
+		return x.Resolution
+	}
+	return ""
+}
+
+type SettlementDomainResolution struct {
+	state                  protoimpl.MessageState `protogen:"open.v1"`
+	SettlementDomainId     []byte                 `protobuf:"bytes,1,opt,name=settlement_domain_id,json=settlementDomainId,proto3" json:"settlement_domain_id,omitempty"`
+	DeactivationGeneration []byte                 `protobuf:"bytes,2,opt,name=deactivation_generation,json=deactivationGeneration,proto3" json:"deactivation_generation,omitempty"`
+	Outcome                string                 `protobuf:"bytes,3,opt,name=outcome,proto3" json:"outcome,omitempty"`
+	GovernanceActionId     []byte                 `protobuf:"bytes,4,opt,name=governance_action_id,json=governanceActionId,proto3" json:"governance_action_id,omitempty"`
+	ProofId                []byte                 `protobuf:"bytes,5,opt,name=proof_id,json=proofId,proto3" json:"proof_id,omitempty"`
+	CompletedTimestamp     uint64                 `protobuf:"varint,6,opt,name=completed_timestamp,json=completedTimestamp,proto3" json:"completed_timestamp,omitempty"`
+	unknownFields          protoimpl.UnknownFields
+	sizeCache              protoimpl.SizeCache
+}
+
+func (x *SettlementDomainResolution) Reset() {
+	*x = SettlementDomainResolution{}
+	mi := &file_account_proto_msgTypes[37]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SettlementDomainResolution) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SettlementDomainResolution) ProtoMessage() {}
+
+func (x *SettlementDomainResolution) ProtoReflect() protoreflect.Message {
+	mi := &file_account_proto_msgTypes[37]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SettlementDomainResolution.ProtoReflect.Descriptor instead.
+func (*SettlementDomainResolution) Descriptor() ([]byte, []int) {
+	return file_account_proto_rawDescGZIP(), []int{37}
+}
+
+func (x *SettlementDomainResolution) GetSettlementDomainId() []byte {
+	if x != nil {
+		return x.SettlementDomainId
+	}
+	return nil
+}
+
+func (x *SettlementDomainResolution) GetDeactivationGeneration() []byte {
+	if x != nil {
+		return x.DeactivationGeneration
+	}
+	return nil
+}
+
+func (x *SettlementDomainResolution) GetOutcome() string {
+	if x != nil {
+		return x.Outcome
+	}
+	return ""
+}
+
+func (x *SettlementDomainResolution) GetGovernanceActionId() []byte {
+	if x != nil {
+		return x.GovernanceActionId
+	}
+	return nil
+}
+
+func (x *SettlementDomainResolution) GetProofId() []byte {
+	if x != nil {
+		return x.ProofId
+	}
+	return nil
+}
+
+func (x *SettlementDomainResolution) GetCompletedTimestamp() uint64 {
+	if x != nil {
+		return x.CompletedTimestamp
+	}
+	return 0
+}
+
+// EVMGovernanceActionIntent is a human-approved Native policy decision. Native
+// vote extensions turn its exact digest into an EVM-consumable certificate;
+// there is no separate validator signature-share transaction.
+type EVMGovernanceActionIntent struct {
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	Id                 []byte                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	SettlementDomainId []byte                 `protobuf:"bytes,2,opt,name=settlement_domain_id,json=settlementDomainId,proto3" json:"settlement_domain_id,omitempty"`
+	ValidatorSetId     uint64                 `protobuf:"varint,3,opt,name=validator_set_id,json=validatorSetId,proto3" json:"validator_set_id,omitempty"`
+	ActionNonce        uint64                 `protobuf:"varint,4,opt,name=action_nonce,json=actionNonce,proto3" json:"action_nonce,omitempty"`
+	Target             []byte                 `protobuf:"bytes,5,opt,name=target,proto3" json:"target,omitempty"`
+	Value              []byte                 `protobuf:"bytes,6,opt,name=value,proto3" json:"value,omitempty"`
+	DataHash           []byte                 `protobuf:"bytes,7,opt,name=data_hash,json=dataHash,proto3" json:"data_hash,omitempty"`
+	ExpiresAtTimestamp uint64                 `protobuf:"varint,8,opt,name=expires_at_timestamp,json=expiresAtTimestamp,proto3" json:"expires_at_timestamp,omitempty"`
+	Digest             []byte                 `protobuf:"bytes,9,opt,name=digest,proto3" json:"digest,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *EVMGovernanceActionIntent) Reset() {
+	*x = EVMGovernanceActionIntent{}
+	mi := &file_account_proto_msgTypes[38]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *EVMGovernanceActionIntent) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*EVMGovernanceActionIntent) ProtoMessage() {}
+
+func (x *EVMGovernanceActionIntent) ProtoReflect() protoreflect.Message {
+	mi := &file_account_proto_msgTypes[38]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use EVMGovernanceActionIntent.ProtoReflect.Descriptor instead.
+func (*EVMGovernanceActionIntent) Descriptor() ([]byte, []int) {
+	return file_account_proto_rawDescGZIP(), []int{38}
+}
+
+func (x *EVMGovernanceActionIntent) GetId() []byte {
+	if x != nil {
+		return x.Id
+	}
+	return nil
+}
+
+func (x *EVMGovernanceActionIntent) GetSettlementDomainId() []byte {
+	if x != nil {
+		return x.SettlementDomainId
+	}
+	return nil
+}
+
+func (x *EVMGovernanceActionIntent) GetValidatorSetId() uint64 {
+	if x != nil {
+		return x.ValidatorSetId
+	}
+	return 0
+}
+
+func (x *EVMGovernanceActionIntent) GetActionNonce() uint64 {
+	if x != nil {
+		return x.ActionNonce
+	}
+	return 0
+}
+
+func (x *EVMGovernanceActionIntent) GetTarget() []byte {
+	if x != nil {
+		return x.Target
+	}
+	return nil
+}
+
+func (x *EVMGovernanceActionIntent) GetValue() []byte {
+	if x != nil {
+		return x.Value
+	}
+	return nil
+}
+
+func (x *EVMGovernanceActionIntent) GetDataHash() []byte {
+	if x != nil {
+		return x.DataHash
+	}
+	return nil
+}
+
+func (x *EVMGovernanceActionIntent) GetExpiresAtTimestamp() uint64 {
+	if x != nil {
+		return x.ExpiresAtTimestamp
+	}
+	return 0
+}
+
+func (x *EVMGovernanceActionIntent) GetDigest() []byte {
+	if x != nil {
+		return x.Digest
+	}
+	return nil
 }
 
 // QuorumProof is the finalized, EVM-consumable BDN proof for one exact
@@ -3727,7 +3954,7 @@ type QuorumProof struct {
 
 func (x *QuorumProof) Reset() {
 	*x = QuorumProof{}
-	mi := &file_account_proto_msgTypes[37]
+	mi := &file_account_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3739,7 +3966,7 @@ func (x *QuorumProof) String() string {
 func (*QuorumProof) ProtoMessage() {}
 
 func (x *QuorumProof) ProtoReflect() protoreflect.Message {
-	mi := &file_account_proto_msgTypes[37]
+	mi := &file_account_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3752,7 +3979,7 @@ func (x *QuorumProof) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use QuorumProof.ProtoReflect.Descriptor instead.
 func (*QuorumProof) Descriptor() ([]byte, []int) {
-	return file_account_proto_rawDescGZIP(), []int{37}
+	return file_account_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *QuorumProof) GetProofKind() string {
@@ -3905,7 +4132,7 @@ type ConsensusCertificate struct {
 
 func (x *ConsensusCertificate) Reset() {
 	*x = ConsensusCertificate{}
-	mi := &file_account_proto_msgTypes[38]
+	mi := &file_account_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3917,7 +4144,7 @@ func (x *ConsensusCertificate) String() string {
 func (*ConsensusCertificate) ProtoMessage() {}
 
 func (x *ConsensusCertificate) ProtoReflect() protoreflect.Message {
-	mi := &file_account_proto_msgTypes[38]
+	mi := &file_account_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3930,7 +4157,7 @@ func (x *ConsensusCertificate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConsensusCertificate.ProtoReflect.Descriptor instead.
 func (*ConsensusCertificate) Descriptor() ([]byte, []int) {
-	return file_account_proto_rawDescGZIP(), []int{38}
+	return file_account_proto_rawDescGZIP(), []int{40}
 }
 
 func (x *ConsensusCertificate) GetKind() string {
@@ -4037,7 +4264,7 @@ type ValidatorHandoffDomainManifest struct {
 
 func (x *ValidatorHandoffDomainManifest) Reset() {
 	*x = ValidatorHandoffDomainManifest{}
-	mi := &file_account_proto_msgTypes[39]
+	mi := &file_account_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4049,7 +4276,7 @@ func (x *ValidatorHandoffDomainManifest) String() string {
 func (*ValidatorHandoffDomainManifest) ProtoMessage() {}
 
 func (x *ValidatorHandoffDomainManifest) ProtoReflect() protoreflect.Message {
-	mi := &file_account_proto_msgTypes[39]
+	mi := &file_account_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4062,7 +4289,7 @@ func (x *ValidatorHandoffDomainManifest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ValidatorHandoffDomainManifest.ProtoReflect.Descriptor instead.
 func (*ValidatorHandoffDomainManifest) Descriptor() ([]byte, []int) {
-	return file_account_proto_rawDescGZIP(), []int{39}
+	return file_account_proto_rawDescGZIP(), []int{41}
 }
 
 func (x *ValidatorHandoffDomainManifest) GetSettlementDomainId() []byte {
@@ -4144,7 +4371,7 @@ type ValidatorHandoffManifest struct {
 
 func (x *ValidatorHandoffManifest) Reset() {
 	*x = ValidatorHandoffManifest{}
-	mi := &file_account_proto_msgTypes[40]
+	mi := &file_account_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4156,7 +4383,7 @@ func (x *ValidatorHandoffManifest) String() string {
 func (*ValidatorHandoffManifest) ProtoMessage() {}
 
 func (x *ValidatorHandoffManifest) ProtoReflect() protoreflect.Message {
-	mi := &file_account_proto_msgTypes[40]
+	mi := &file_account_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4169,7 +4396,7 @@ func (x *ValidatorHandoffManifest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ValidatorHandoffManifest.ProtoReflect.Descriptor instead.
 func (*ValidatorHandoffManifest) Descriptor() ([]byte, []int) {
-	return file_account_proto_rawDescGZIP(), []int{40}
+	return file_account_proto_rawDescGZIP(), []int{42}
 }
 
 func (x *ValidatorHandoffManifest) GetRoot() []byte {
@@ -4266,7 +4493,7 @@ type SettlementDomainRotationState struct {
 
 func (x *SettlementDomainRotationState) Reset() {
 	*x = SettlementDomainRotationState{}
-	mi := &file_account_proto_msgTypes[41]
+	mi := &file_account_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4278,7 +4505,7 @@ func (x *SettlementDomainRotationState) String() string {
 func (*SettlementDomainRotationState) ProtoMessage() {}
 
 func (x *SettlementDomainRotationState) ProtoReflect() protoreflect.Message {
-	mi := &file_account_proto_msgTypes[41]
+	mi := &file_account_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4291,7 +4518,7 @@ func (x *SettlementDomainRotationState) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SettlementDomainRotationState.ProtoReflect.Descriptor instead.
 func (*SettlementDomainRotationState) Descriptor() ([]byte, []int) {
-	return file_account_proto_rawDescGZIP(), []int{41}
+	return file_account_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *SettlementDomainRotationState) GetSettlementDomainId() []byte {
@@ -4320,7 +4547,7 @@ type QuorumSignatureShare struct {
 
 func (x *QuorumSignatureShare) Reset() {
 	*x = QuorumSignatureShare{}
-	mi := &file_account_proto_msgTypes[42]
+	mi := &file_account_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4332,7 +4559,7 @@ func (x *QuorumSignatureShare) String() string {
 func (*QuorumSignatureShare) ProtoMessage() {}
 
 func (x *QuorumSignatureShare) ProtoReflect() protoreflect.Message {
-	mi := &file_account_proto_msgTypes[42]
+	mi := &file_account_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4345,7 +4572,7 @@ func (x *QuorumSignatureShare) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use QuorumSignatureShare.ProtoReflect.Descriptor instead.
 func (*QuorumSignatureShare) Descriptor() ([]byte, []int) {
-	return file_account_proto_rawDescGZIP(), []int{42}
+	return file_account_proto_rawDescGZIP(), []int{44}
 }
 
 func (x *QuorumSignatureShare) GetProofId() []byte {
@@ -4576,7 +4803,7 @@ const file_account_proto_rawDesc = "" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x120\n" +
 	"\x14settlement_domain_id\x18\x02 \x01(\fR\x12settlementDomainId\x12$\n" +
 	"\rauthorization\x18\x03 \x01(\fR\rauthorization\x12#\n" +
-	"\rqueued_height\x18\x04 \x01(\x04R\fqueuedHeight\"\xeb\x04\n" +
+	"\rqueued_height\x18\x04 \x01(\x04R\fqueuedHeight\"\x98\x05\n" +
 	"\x10SettlementDomain\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\fR\x02id\x12\x19\n" +
 	"\bchain_id\x18\x02 \x01(\x04R\achainId\x12#\n" +
@@ -4589,11 +4816,12 @@ const file_account_proto_rawDesc = "" +
 	"\x12deposit_mechanisms\x18\t \x03(\tR\x11depositMechanisms\x12'\n" +
 	"\x0ffinality_policy\x18\n" +
 	" \x01(\tR\x0efinalityPolicy\x12$\n" +
-	"\rconfirmations\x18\v \x01(\rR\rconfirmations\x12\x16\n" +
-	"\x06active\x18\f \x01(\bR\x06active\x12-\n" +
+	"\rconfirmations\x18\v \x01(\rR\rconfirmations\x12\x14\n" +
+	"\x05state\x18\f \x01(\tR\x05state\x12-\n" +
 	"\x12authorization_name\x18\r \x01(\tR\x11authorizationName\x123\n" +
 	"\x15authorization_version\x18\x0e \x01(\tR\x14authorizationVersion\x12:\n" +
-	"\x19abandonment_delay_seconds\x18\x0f \x01(\x04R\x17abandonmentDelaySeconds\"\xd2\x01\n" +
+	"\x19abandonment_delay_seconds\x18\x0f \x01(\x04R\x17abandonmentDelaySeconds\x12-\n" +
+	"\x12governance_address\x18\x10 \x01(\fR\x11governanceAddress\"\xd2\x01\n" +
 	"$SettlementDomainDeactivationSnapshot\x120\n" +
 	"\x14settlement_domain_id\x18\x01 \x01(\fR\x12settlementDomainId\x12\x1e\n" +
 	"\n" +
@@ -4736,14 +4964,36 @@ const file_account_proto_rawDesc = "" +
 	"\breleases\x18\x03 \x03(\v2\x11.types.BridgeBurnR\breleases\x124\n" +
 	"\x16canonical_chain_digest\x18\x04 \x01(\fR\x14canonicalChainDigest\"\x1e\n" +
 	"\fReplayMarker\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\fR\x02id\"\xfc\x01\n" +
-	"\x1fSettlementDomainLifecycleIntent\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\fR\x02id\"\xf1\x02\n" +
+	"\x16SettlementDomainAction\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\fR\x02id\x12\x16\n" +
+	"\x06action\x18\x02 \x01(\tR\x06action\x120\n" +
+	"\x14settlement_domain_id\x18\x03 \x01(\fR\x12settlementDomainId\x12/\n" +
+	"\x06domain\x18\x04 \x01(\v2\x17.types.SettlementDomainR\x06domain\x127\n" +
+	"\x17deactivation_generation\x18\x05 \x01(\fR\x16deactivationGeneration\x12\x14\n" +
+	"\x05nonce\x18\x06 \x01(\x04R\x05nonce\x12+\n" +
+	"\x11expected_revision\x18\a \x01(\x04R\x10expectedRevision\x120\n" +
+	"\x14expires_at_timestamp\x18\b \x01(\x04R\x12expiresAtTimestamp\x12\x1e\n" +
+	"\n" +
+	"resolution\x18\t \x01(\tR\n" +
+	"resolution\"\x9f\x02\n" +
+	"\x1aSettlementDomainResolution\x120\n" +
+	"\x14settlement_domain_id\x18\x01 \x01(\fR\x12settlementDomainId\x127\n" +
+	"\x17deactivation_generation\x18\x02 \x01(\fR\x16deactivationGeneration\x12\x18\n" +
+	"\aoutcome\x18\x03 \x01(\tR\aoutcome\x120\n" +
+	"\x14governance_action_id\x18\x04 \x01(\fR\x12governanceActionId\x12\x19\n" +
+	"\bproof_id\x18\x05 \x01(\fR\aproofId\x12/\n" +
+	"\x13completed_timestamp\x18\x06 \x01(\x04R\x12completedTimestamp\"\xbf\x02\n" +
+	"\x19EVMGovernanceActionIntent\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\fR\x02id\x120\n" +
-	"\x14settlement_domain_id\x18\x02 \x01(\fR\x12settlementDomainId\x127\n" +
-	"\x17deactivation_generation\x18\x03 \x01(\fR\x16deactivationGeneration\x12\x16\n" +
-	"\x06action\x18\x04 \x01(\tR\x06action\x12\x14\n" +
-	"\x05nonce\x18\x05 \x01(\x04R\x05nonce\x120\n" +
-	"\x14expires_at_timestamp\x18\x06 \x01(\x04R\x12expiresAtTimestamp\"\x93\x06\n" +
+	"\x14settlement_domain_id\x18\x02 \x01(\fR\x12settlementDomainId\x12(\n" +
+	"\x10validator_set_id\x18\x03 \x01(\x04R\x0evalidatorSetId\x12!\n" +
+	"\faction_nonce\x18\x04 \x01(\x04R\vactionNonce\x12\x16\n" +
+	"\x06target\x18\x05 \x01(\fR\x06target\x12\x14\n" +
+	"\x05value\x18\x06 \x01(\fR\x05value\x12\x1b\n" +
+	"\tdata_hash\x18\a \x01(\fR\bdataHash\x120\n" +
+	"\x14expires_at_timestamp\x18\b \x01(\x04R\x12expiresAtTimestamp\x12\x16\n" +
+	"\x06digest\x18\t \x01(\fR\x06digest\"\x93\x06\n" +
 	"\vQuorumProof\x12\x1d\n" +
 	"\n" +
 	"proof_kind\x18\x01 \x01(\tR\tproofKind\x12\x19\n" +
@@ -4826,7 +5076,7 @@ func file_account_proto_rawDescGZIP() []byte {
 	return file_account_proto_rawDescData
 }
 
-var file_account_proto_msgTypes = make([]protoimpl.MessageInfo, 43)
+var file_account_proto_msgTypes = make([]protoimpl.MessageInfo, 45)
 var file_account_proto_goTypes = []any{
 	(*Account)(nil),                              // 0: types.Account
 	(*Pool)(nil),                                 // 1: types.Pool
@@ -4864,13 +5114,15 @@ var file_account_proto_goTypes = []any{
 	(*BridgeBurn)(nil),                           // 33: types.BridgeBurn
 	(*BridgeReleaseBatch)(nil),                   // 34: types.BridgeReleaseBatch
 	(*ReplayMarker)(nil),                         // 35: types.ReplayMarker
-	(*SettlementDomainLifecycleIntent)(nil),      // 36: types.SettlementDomainLifecycleIntent
-	(*QuorumProof)(nil),                          // 37: types.QuorumProof
-	(*ConsensusCertificate)(nil),                 // 38: types.ConsensusCertificate
-	(*ValidatorHandoffDomainManifest)(nil),       // 39: types.ValidatorHandoffDomainManifest
-	(*ValidatorHandoffManifest)(nil),             // 40: types.ValidatorHandoffManifest
-	(*SettlementDomainRotationState)(nil),        // 41: types.SettlementDomainRotationState
-	(*QuorumSignatureShare)(nil),                 // 42: types.QuorumSignatureShare
+	(*SettlementDomainAction)(nil),               // 36: types.SettlementDomainAction
+	(*SettlementDomainResolution)(nil),           // 37: types.SettlementDomainResolution
+	(*EVMGovernanceActionIntent)(nil),            // 38: types.EVMGovernanceActionIntent
+	(*QuorumProof)(nil),                          // 39: types.QuorumProof
+	(*ConsensusCertificate)(nil),                 // 40: types.ConsensusCertificate
+	(*ValidatorHandoffDomainManifest)(nil),       // 41: types.ValidatorHandoffDomainManifest
+	(*ValidatorHandoffManifest)(nil),             // 42: types.ValidatorHandoffManifest
+	(*SettlementDomainRotationState)(nil),        // 43: types.SettlementDomainRotationState
+	(*QuorumSignatureShare)(nil),                 // 44: types.QuorumSignatureShare
 }
 var file_account_proto_depIdxs = []int32{
 	5,  // 0: types.Servicer.models:type_name -> types.ServicerModelPolicy
@@ -4883,12 +5135,13 @@ var file_account_proto_depIdxs = []int32{
 	18, // 7: types.ProtocolParams.settlement_domains:type_name -> types.SettlementDomain
 	27, // 8: types.EpochAuthorization.allocations:type_name -> types.RewardAllocation
 	33, // 9: types.BridgeReleaseBatch.releases:type_name -> types.BridgeBurn
-	39, // 10: types.ValidatorHandoffManifest.domains:type_name -> types.ValidatorHandoffDomainManifest
-	11, // [11:11] is the sub-list for method output_type
-	11, // [11:11] is the sub-list for method input_type
-	11, // [11:11] is the sub-list for extension type_name
-	11, // [11:11] is the sub-list for extension extendee
-	0,  // [0:11] is the sub-list for field type_name
+	18, // 10: types.SettlementDomainAction.domain:type_name -> types.SettlementDomain
+	41, // 11: types.ValidatorHandoffManifest.domains:type_name -> types.ValidatorHandoffDomainManifest
+	12, // [12:12] is the sub-list for method output_type
+	12, // [12:12] is the sub-list for method input_type
+	12, // [12:12] is the sub-list for extension type_name
+	12, // [12:12] is the sub-list for extension extendee
+	0,  // [0:12] is the sub-list for field type_name
 }
 
 func init() { file_account_proto_init() }
@@ -4902,7 +5155,7 @@ func file_account_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_account_proto_rawDesc), len(file_account_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   43,
+			NumMessages:   45,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

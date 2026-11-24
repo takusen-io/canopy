@@ -21,6 +21,14 @@ const (
 const (
 	minimumDomainAbandonmentDelaySeconds uint64 = 24 * 60 * 60
 	defaultDomainAbandonmentDelaySeconds uint64 = 7 * 24 * 60 * 60
+	maximumGovernanceIntentSeconds       uint64 = 7 * 24 * 60 * 60
+)
+
+const (
+	domainStateStaged      = "STAGED"
+	domainStateActive      = "ACTIVE"
+	domainStateDeactivated = "DEACTIVATED"
+	domainStateResolved    = "RESOLVED"
 )
 
 func defaultProtocolParams() *ProtocolParams {
@@ -40,13 +48,14 @@ func defaultSettlementDomain() *SettlementDomain {
 	token := bytes.Repeat([]byte{0x44}, 20)
 	escrow := bytes.Repeat([]byte{0x55}, 20)
 	verifier := bytes.Repeat([]byte{0x66}, 20)
+	governance := bytes.Repeat([]byte{0x88}, 20)
 	return &SettlementDomain{
 		Id:      keccak(abiUint64(8453), abiAddress(token), abiAddress(escrow), abiAddress(verifier)),
 		ChainId: 8453, TokenAddress: token, EscrowAddress: escrow, VerifierAddress: verifier,
 		FoundationTreasuryAddress: bytes.Repeat([]byte{0x77}, 20), TokenDecimals: 6,
-		Network: "eip155:8453", DepositMechanisms: []string{"eip3009"}, FinalityPolicy: "safe", Active: true,
+		Network: "eip155:8453", DepositMechanisms: []string{"eip3009"}, FinalityPolicy: "safe", State: domainStateActive,
 		AuthorizationName: "USD Coin", AuthorizationVersion: "2",
-		AbandonmentDelaySeconds: defaultDomainAbandonmentDelaySeconds,
+		AbandonmentDelaySeconds: defaultDomainAbandonmentDelaySeconds, GovernanceAddress: governance,
 	}
 }
 
@@ -77,7 +86,6 @@ func validateProtocolParams(params *ProtocolParams) *PluginError {
 			return ErrInvalidTransaction("canonical reward and bridge parameters are incomplete")
 		}
 	}
-	activeDomains := 0
 	seenDomains := make(map[string]struct{}, len(params.SettlementDomains))
 	for _, domain := range params.SettlementDomains {
 		if err := validateSettlementDomain(domain); err != nil {
@@ -88,12 +96,6 @@ func validateProtocolParams(params *ProtocolParams) *PluginError {
 			return ErrInvalidTransaction("duplicate governed settlement domain")
 		}
 		seenDomains[key] = struct{}{}
-		if domain.Active {
-			activeDomains++
-		}
-	}
-	if activeDomains == 0 {
-		return ErrInvalidTransaction("at least one active settlement domain is required")
 	}
 	models := make(map[string]bool, len(params.Models))
 	for _, model := range params.Models {
@@ -162,10 +164,15 @@ func validateProtocolParams(params *ProtocolParams) *PluginError {
 func validateSettlementDomain(domain *SettlementDomain) *PluginError {
 	if domain == nil || len(domain.Id) != 32 || domain.ChainId == 0 ||
 		!validAddress(domain.TokenAddress) || !validAddress(domain.EscrowAddress) ||
-		!validAddress(domain.VerifierAddress) || !validAddress(domain.FoundationTreasuryAddress) ||
+		!validAddress(domain.VerifierAddress) || !validAddress(domain.FoundationTreasuryAddress) || !validAddress(domain.GovernanceAddress) ||
 		domain.TokenDecimals < 6 || domain.TokenDecimals > 36 || domain.Network != "eip155:"+strconv.FormatUint(domain.ChainId, 10) ||
 		len(domain.DepositMechanisms) == 0 || domain.AbandonmentDelaySeconds < minimumDomainAbandonmentDelaySeconds {
 		return ErrInvalidTransaction("invalid governed settlement domain")
+	}
+	switch domain.State {
+	case domainStateStaged, domainStateActive, domainStateDeactivated, domainStateResolved:
+	default:
+		return ErrInvalidTransaction("invalid governed settlement-domain state")
 	}
 	expected := keccak(
 		abiUint64(domain.ChainId), abiAddress(domain.TokenAddress),
@@ -206,7 +213,7 @@ func settlementDomain(params *ProtocolParams, id []byte, requireActive bool) (*S
 	}
 	for _, domain := range params.SettlementDomains {
 		if bytes.Equal(domain.Id, id) {
-			if requireActive && !domain.Active {
+			if requireActive && domain.State != domainStateActive {
 				return nil, ErrUnauthorized("settlement domain is inactive")
 			}
 			return domain, nil
@@ -219,18 +226,29 @@ func (c *Contract) deliverGovernedParameter(space, key string, value []byte) *Pl
 	if space != "takusen" || len(value) == 0 {
 		return &PluginDeliverResponse{Error: ErrInvalidTransaction("unsupported governed plugin parameter")}
 	}
-	if key == "settlementDomainLifecycleIntent" {
-		return c.deliverGovernedSettlementDomainLifecycleIntent(value)
-	}
-	if key != "protocolParams" {
+	switch key {
+	case "protocolParams":
+		return c.deliverGovernedProtocolParams(value)
+	case "settlementDomainAction":
+		return c.deliverGovernedSettlementDomainAction(value)
+	case "evmGovernanceActionIntent":
+		return c.deliverGovernedEVMActionIntent(value)
+	default:
 		return &PluginDeliverResponse{Error: ErrInvalidTransaction("unsupported governed plugin parameter")}
 	}
+}
+
+func decodeGovernedValue(value []byte, destination proto.Message) *PluginError {
 	encoded, decodeErr := base64.StdEncoding.DecodeString(string(value))
 	if decodeErr != nil {
-		return &PluginDeliverResponse{Error: ErrInvalidTransaction("governed protocol parameters are not canonical base64")}
+		return ErrInvalidTransaction("governed value is not canonical base64")
 	}
+	return Unmarshal(encoded, destination)
+}
+
+func (c *Contract) deliverGovernedProtocolParams(value []byte) *PluginDeliverResponse {
 	params := new(ProtocolParams)
-	if err := Unmarshal(encoded, params); err != nil {
+	if err := decodeGovernedValue(value, params); err != nil {
 		return &PluginDeliverResponse{Error: err}
 	}
 	if err := validateProtocolParams(params); err != nil {
@@ -243,179 +261,249 @@ func (c *Contract) deliverGovernedParameter(space, key string, value []byte) *Pl
 	if params.Revision != current.Revision+1 {
 		return &PluginDeliverResponse{Error: ErrConflict("protocol parameter revision must increase by one")}
 	}
-	currentDomains := make(map[string]*SettlementDomain, len(current.SettlementDomains))
-	for _, domain := range current.SettlementDomains {
-		currentDomains[string(domain.Id)] = domain
+	if !sameSettlementDomains(params.SettlementDomains, current.SettlementDomains) {
+		return &PluginDeliverResponse{Error: ErrUnauthorized("settlement domains change only through typed domain governance")}
 	}
-	authorityMembershipChanged, activatesDomain, deactivatesDomain, removesDomain := false, false, false, false
-	records := map[string]proto.Message{
-		string(KeyForProtocolParams()): proto.Clone(params).(*ProtocolParams),
+	return &PluginDeliverResponse{Error: c.write(map[string]proto.Message{
+		string(KeyForProtocolParams()): params,
+	})}
+}
+
+func sameSettlementDomains(left, right []*SettlementDomain) bool {
+	if len(left) != len(right) {
+		return false
 	}
+	for index := range left {
+		if !proto.Equal(left[index], right[index]) {
+			return false
+		}
+	}
+	return true
+}
+
+func settlementDomainActionID(action *SettlementDomainAction) ([]byte, *PluginError) {
+	var encodedDomain []byte
+	var err *PluginError
+	if action.Domain != nil {
+		encodedDomain, err = Marshal(action.Domain)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return hashFields(
+		[]byte("takusen:settlement-domain-action:v1"), []byte(action.Action), action.SettlementDomainId,
+		encodedDomain, action.DeactivationGeneration, uint64Bytes(action.Nonce), uint64Bytes(action.ExpectedRevision),
+		uint64Bytes(action.ExpiresAtTimestamp), []byte(action.Resolution),
+	), nil
+}
+
+func (c *Contract) deliverGovernedSettlementDomainAction(value []byte) *PluginDeliverResponse {
+	action := new(SettlementDomainAction)
+	if err := decodeGovernedValue(value, action); err != nil {
+		return &PluginDeliverResponse{Error: err}
+	}
+	if len(action.SettlementDomainId) != 32 || action.Nonce == 0 || action.ExpectedRevision == 0 ||
+		(action.Action != "register" && action.Action != "activate" && action.Action != "deactivate" && action.Action != "reactivate" && action.Action != "resolve") {
+		return &PluginDeliverResponse{Error: ErrInvalidTransaction("invalid settlement-domain action")}
+	}
+	params, err := c.currentProtocolParams()
+	if err != nil {
+		return &PluginDeliverResponse{Error: err}
+	}
+	if action.ExpectedRevision != params.Revision {
+		return &PluginDeliverResponse{Error: ErrConflict("settlement-domain action uses a stale protocol revision")}
+	}
+	clock, err := c.currentEpochClock(params)
+	if err != nil {
+		return &PluginDeliverResponse{Error: err}
+	}
+	if clock.ConsensusTimeSeconds == 0 || action.ExpiresAtTimestamp <= clock.ConsensusTimeSeconds ||
+		action.ExpiresAtTimestamp-clock.ConsensusTimeSeconds > maximumGovernanceIntentSeconds {
+		return &PluginDeliverResponse{Error: ErrInvalidTransaction("settlement-domain action expiry must be within seven days")}
+	}
+	prior := new(SettlementDomainAction)
+	foundPrior, readErr := c.read(KeyForSettlementDomainAction(action.SettlementDomainId), prior)
+	if readErr != nil {
+		return &PluginDeliverResponse{Error: readErr}
+	}
+	if (foundPrior && action.Nonce != prior.Nonce+1) || (!foundPrior && action.Nonce != 1) {
+		return &PluginDeliverResponse{Error: ErrConflict("settlement-domain action nonce must increase by one")}
+	}
+	expectedID, idErr := settlementDomainActionID(action)
+	if idErr != nil || !bytes.Equal(action.Id, expectedID) {
+		return &PluginDeliverResponse{Error: ErrInvalidTransaction("settlement-domain action identifier does not match its governed fields")}
+	}
+	next := proto.Clone(params).(*ProtocolParams)
+	next.Revision++
+	records := map[string]proto.Message{string(KeyForSettlementDomainAction(action.SettlementDomainId)): action}
 	var deletes [][]byte
-	clock, clockErr := c.currentEpochClock(current)
-	if clockErr != nil {
-		return &PluginDeliverResponse{Error: clockErr}
-	}
-	for _, domain := range params.SettlementDomains {
-		prior, exists := currentDomains[string(domain.Id)]
-		if !exists {
-			authorityMembershipChanged = true
-			if found, readErr := c.read(KeyForSettlementDomainRetirement(domain.Id), new(ReplayMarker)); readErr != nil {
-				return &PluginDeliverResponse{Error: readErr}
-			} else if found {
-				return &PluginDeliverResponse{Error: ErrUnauthorized("retired settlement domain identifiers cannot be re-admitted")}
-			}
-			if domain.Active {
-				return &PluginDeliverResponse{Error: ErrInvalidTransaction("new settlement domains must enter governance inactive")}
-			}
-			if found, readErr := c.read(KeyForSettlementDomainAuthority(domain.Id, clock.ValidatorSetId), new(ReplayMarker)); readErr != nil {
-				return &PluginDeliverResponse{Error: readErr}
-			} else if !found {
-				return &PluginDeliverResponse{Error: ErrUnauthorized("new settlement domain lacks quorum-certified finalized validator authority")}
-			}
-			continue
-		}
-		if !prior.Active && domain.Active {
-			activatesDomain = true
-			deactivation := new(SettlementDomainDeactivationSnapshot)
-			if found, readErr := c.read(KeyForSettlementDomainDeactivation(domain.Id), deactivation); readErr != nil {
-				return &PluginDeliverResponse{Error: readErr}
-			} else if found {
-				if len(deactivation.Generation) != 32 {
-					return &PluginDeliverResponse{Error: ErrState("settlement domain has an invalid deactivation generation")}
-				}
-				if cancelled, cancelErr := c.read(KeyForSettlementDomainRetirementCancellation(domain.Id, deactivation.Generation), new(ReplayMarker)); cancelErr != nil {
-					return &PluginDeliverResponse{Error: cancelErr}
-				} else if !cancelled {
-					return &PluginDeliverResponse{Error: ErrUnauthorized("settlement domain reactivation requires finalized retirement-proof cancellation")}
-				}
-				deletes = append(
-					deletes,
-					KeyForSettlementDomainDeactivation(domain.Id),
-					KeyForSettlementDomainRetirementCancellation(domain.Id, deactivation.Generation),
-				)
-			}
-			if found, readErr := c.read(KeyForSettlementDomainAuthority(domain.Id, clock.ValidatorSetId), new(ReplayMarker)); readErr != nil {
-				return &PluginDeliverResponse{Error: readErr}
-			} else if !found {
-				return &PluginDeliverResponse{Error: ErrUnauthorized("settlement domain activation lacks quorum-certified finalized validator authority")}
-			}
-		}
-		if prior.Active && !domain.Active {
-			deactivatesDomain = true
-			generation := settlementDomainDeactivationGeneration(domain.Id, params.Revision, clock.ConsensusTimeSeconds)
-			records[string(KeyForSettlementDomainDeactivation(domain.Id))] = &SettlementDomainDeactivationSnapshot{
-				SettlementDomainId: append([]byte(nil), domain.Id...), Generation: generation,
-				Timestamp: clock.ConsensusTimeSeconds, AbandonmentDelaySeconds: domain.AbandonmentDelaySeconds,
-			}
+	domainIndex := -1
+	for index, domain := range next.SettlementDomains {
+		if domain != nil && bytes.Equal(domain.Id, action.SettlementDomainId) {
+			domainIndex = index
+			break
 		}
 	}
-	if authorityMembershipChanged || activatesDomain {
-		if clock.ValidatorRosterFrozen || clock.ValidatorHandoffPrepared || clock.ValidatorHandoffTimestamp != 0 {
-			return &PluginDeliverResponse{Error: ErrConflict("settlement-domain membership or traffic state cannot change during a prepared validator handoff")}
+	preparedHandoff := clock.ValidatorRosterFrozen || clock.ValidatorHandoffPrepared || clock.ValidatorHandoffTimestamp != 0
+	switch action.Action {
+	case "register":
+		if domainIndex >= 0 || action.Domain == nil || !bytes.Equal(action.Domain.Id, action.SettlementDomainId) ||
+			(action.Domain.State != domainStateStaged && action.Domain.State != domainStateActive) {
+			return &PluginDeliverResponse{Error: ErrInvalidTransaction("invalid settlement-domain registration")}
 		}
-	}
-	if current.Revision != 0 {
-		nextDomains := make(map[string]struct{}, len(params.SettlementDomains))
-		for _, domain := range params.SettlementDomains {
-			nextDomains[string(domain.Id)] = struct{}{}
+		if validationErr := validateSettlementDomain(action.Domain); validationErr != nil {
+			return &PluginDeliverResponse{Error: validationErr}
 		}
-		for _, domain := range current.SettlementDomains {
-			if _, retained := nextDomains[string(domain.Id)]; !retained {
-				removesDomain = true
-				if domain.Active {
-					return &PluginDeliverResponse{Error: ErrInvalidTransaction("active settlement domains cannot be retired")}
-				}
-				if found, readErr := c.read(KeyForSettlementDomainRetirement(domain.Id), new(ReplayMarker)); readErr != nil {
-					return &PluginDeliverResponse{Error: readErr}
-				} else if !found {
-					if deactivated, deactivationErr := c.read(KeyForSettlementDomainDeactivation(domain.Id), new(SettlementDomainDeactivationSnapshot)); deactivationErr != nil {
-						return &PluginDeliverResponse{Error: deactivationErr}
-					} else if deactivated {
-						return &PluginDeliverResponse{Error: ErrUnauthorized("settlement-domain removal requires a finalized retirement or emergency-abandonment certificate")}
-					}
-					// A never-active staged domain cannot hold protocol custody. Let
-					// governance discard it without fabricating a deactivation and
-					// retirement ceremony, while permanently reserving its identity.
-					records[string(KeyForSettlementDomainRetirement(domain.Id))] = &ReplayMarker{Id: hashFields(
-						[]byte("takusen:staged-domain-discard"), domain.Id, uint64Bytes(params.Revision),
-					)}
-				}
+		if found, markerErr := c.read(KeyForSettlementDomainResolution(action.SettlementDomainId), new(SettlementDomainResolution)); markerErr != nil {
+			return &PluginDeliverResponse{Error: markerErr}
+		} else if found {
+			return &PluginDeliverResponse{Error: ErrUnauthorized("resolved settlement domains cannot be readmitted")}
+		}
+		if found, authorityErr := c.read(KeyForSettlementDomainAuthority(action.SettlementDomainId, clock.ValidatorSetId), new(ReplayMarker)); authorityErr != nil {
+			return &PluginDeliverResponse{Error: authorityErr}
+		} else if !found {
+			return &PluginDeliverResponse{Error: ErrUnauthorized("settlement-domain registration lacks current finalized authority")}
+		}
+		if action.Domain.State == domainStateActive && preparedHandoff {
+			return &PluginDeliverResponse{Error: ErrConflict("an active domain cannot join during a prepared validator handoff")}
+		}
+		next.SettlementDomains = append(next.SettlementDomains, proto.Clone(action.Domain).(*SettlementDomain))
+	case "activate":
+		if domainIndex < 0 || next.SettlementDomains[domainIndex].State != domainStateStaged || preparedHandoff {
+			return &PluginDeliverResponse{Error: ErrConflict("only a staged domain outside handoff may activate")}
+		}
+		if found, authorityErr := c.read(KeyForSettlementDomainAuthority(action.SettlementDomainId, clock.ValidatorSetId), new(ReplayMarker)); authorityErr != nil {
+			return &PluginDeliverResponse{Error: authorityErr}
+		} else if !found {
+			return &PluginDeliverResponse{Error: ErrUnauthorized("settlement-domain activation lacks current finalized authority")}
+		}
+		next.SettlementDomains[domainIndex].State = domainStateActive
+	case "deactivate":
+		if domainIndex < 0 || next.SettlementDomains[domainIndex].State != domainStateActive {
+			return &PluginDeliverResponse{Error: ErrConflict("only an active settlement domain may deactivate")}
+		}
+		domain := next.SettlementDomains[domainIndex]
+		domain.State = domainStateDeactivated
+		generation := settlementDomainDeactivationGeneration(domain.Id, next.Revision, clock.ConsensusTimeSeconds)
+		records[string(KeyForSettlementDomainDeactivation(domain.Id))] = &SettlementDomainDeactivationSnapshot{
+			SettlementDomainId: append([]byte(nil), domain.Id...), Generation: generation,
+			Timestamp: clock.ConsensusTimeSeconds, AbandonmentDelaySeconds: domain.AbandonmentDelaySeconds,
+		}
+	case "reactivate":
+		if domainIndex < 0 || next.SettlementDomains[domainIndex].State != domainStateDeactivated || preparedHandoff {
+			return &PluginDeliverResponse{Error: ErrConflict("only a deactivated domain outside handoff may reactivate")}
+		}
+		deactivation := new(SettlementDomainDeactivationSnapshot)
+		if found, deactivationErr := c.read(KeyForSettlementDomainDeactivation(action.SettlementDomainId), deactivation); deactivationErr != nil || !found ||
+			!bytes.Equal(deactivation.Generation, action.DeactivationGeneration) {
+			return &PluginDeliverResponse{Error: ErrConflict("reactivation does not match the current deactivation generation")}
+		}
+		if found, authorityErr := c.read(KeyForSettlementDomainAuthority(action.SettlementDomainId, clock.ValidatorSetId), new(ReplayMarker)); authorityErr != nil {
+			return &PluginDeliverResponse{Error: authorityErr}
+		} else if !found {
+			return &PluginDeliverResponse{Error: ErrUnauthorized("settlement-domain reactivation lacks current finalized authority")}
+		}
+		pending, pendingErr := c.read(KeyForNativeAuthorizationIntent("settlement-domain-retirement-readiness", action.SettlementDomainId), new(QuorumProof))
+		if pendingErr != nil {
+			return &PluginDeliverResponse{Error: pendingErr}
+		}
+		if pending {
+			if cancelled, cancelErr := c.read(KeyForSettlementDomainRetirementCancellation(action.SettlementDomainId, deactivation.Generation), new(ReplayMarker)); cancelErr != nil {
+				return &PluginDeliverResponse{Error: cancelErr}
+			} else if !cancelled {
+				break
 			}
 		}
+		next.SettlementDomains[domainIndex].State = domainStateActive
+		deletes = append(deletes, KeyForSettlementDomainDeactivation(action.SettlementDomainId), KeyForSettlementDomainRetirementCancellation(action.SettlementDomainId, deactivation.Generation))
+	case "resolve":
+		if domainIndex < 0 || (action.Resolution != "clean" && action.Resolution != "abandon") {
+			return &PluginDeliverResponse{Error: ErrInvalidTransaction("resolution requires a governed domain and an explicit outcome")}
+		}
+		if next.SettlementDomains[domainIndex].State == domainStateStaged {
+			if action.Resolution != "clean" || len(action.DeactivationGeneration) != 0 {
+				return &PluginDeliverResponse{Error: ErrInvalidTransaction("a never-active staged domain may only resolve cleanly")}
+			}
+			next.SettlementDomains[domainIndex].State = domainStateResolved
+			records[string(KeyForSettlementDomainResolution(action.SettlementDomainId))] = &SettlementDomainResolution{
+				SettlementDomainId: append([]byte(nil), action.SettlementDomainId...), Outcome: "DISCARDED",
+				GovernanceActionId: append([]byte(nil), action.Id...), ProofId: append([]byte(nil), action.Id...),
+				CompletedTimestamp: clock.ConsensusTimeSeconds,
+			}
+			break
+		}
+		if next.SettlementDomains[domainIndex].State != domainStateDeactivated {
+			return &PluginDeliverResponse{Error: ErrConflict("only a staged or deactivated domain may resolve")}
+		}
+		deactivation := new(SettlementDomainDeactivationSnapshot)
+		if found, deactivationErr := c.read(KeyForSettlementDomainDeactivation(action.SettlementDomainId), deactivation); deactivationErr != nil || !found ||
+			!bytes.Equal(deactivation.Generation, action.DeactivationGeneration) {
+			return &PluginDeliverResponse{Error: ErrConflict("resolution does not match the current deactivation generation")}
+		}
 	}
-	_ = deactivatesDomain
-	_ = removesDomain
+	if validationErr := validateProtocolParams(next); validationErr != nil {
+		return &PluginDeliverResponse{Error: validationErr}
+	}
+	records[string(KeyForProtocolParams())] = next
 	return &PluginDeliverResponse{Error: c.writeChanges(records, deletes)}
 }
 
-const maximumLifecycleIntentSeconds uint64 = 7 * 24 * 60 * 60
+func evmGovernanceActionDigest(domain *SettlementDomain, intent *EVMGovernanceActionIntent) []byte {
+	typeHash := ethereumKeccak256([]byte("GovernanceAction(uint256 chainId,address governance,uint64 validatorSetId,uint64 nonce,address target,uint256 value,bytes32 dataHash)"))
+	encoded := append([]byte(nil), typeHash...)
+	encoded = append(encoded, abiUint64(domain.ChainId)...)
+	encoded = append(encoded, abiAddress(domain.GovernanceAddress)...)
+	encoded = append(encoded, abiUint64(intent.ValidatorSetId)...)
+	encoded = append(encoded, abiUint64(intent.ActionNonce)...)
+	encoded = append(encoded, abiAddress(intent.Target)...)
+	encoded = append(encoded, intent.Value...)
+	encoded = append(encoded, intent.DataHash...)
+	return ethereumKeccak256(encoded)
+}
 
-func settlementDomainLifecycleIntentID(domainID, generation []byte, action string, nonce, expiresAtTimestamp uint64) []byte {
+func evmGovernanceActionIntentID(intent *EVMGovernanceActionIntent) []byte {
 	return hashFields(
-		[]byte("takusen:settlement-domain-lifecycle-intent"), domainID, generation, []byte(action),
-		uint64Bytes(nonce), uint64Bytes(expiresAtTimestamp),
+		[]byte("takusen:evm-governance-action-intent:v1"), intent.SettlementDomainId, uint64Bytes(intent.ValidatorSetId),
+		uint64Bytes(intent.ActionNonce), intent.Target, intent.Value, intent.DataHash, uint64Bytes(intent.ExpiresAtTimestamp), intent.Digest,
 	)
 }
 
-func (c *Contract) deliverGovernedSettlementDomainLifecycleIntent(value []byte) *PluginDeliverResponse {
-	encoded, decodeErr := base64.StdEncoding.DecodeString(string(value))
-	if decodeErr != nil {
-		return &PluginDeliverResponse{Error: ErrInvalidTransaction("governed lifecycle intent is not canonical base64")}
-	}
-	intent := new(SettlementDomainLifecycleIntent)
-	if err := Unmarshal(encoded, intent); err != nil {
+func (c *Contract) deliverGovernedEVMActionIntent(value []byte) *PluginDeliverResponse {
+	intent := new(EVMGovernanceActionIntent)
+	if err := decodeGovernedValue(value, intent); err != nil {
 		return &PluginDeliverResponse{Error: err}
-	}
-	if len(intent.SettlementDomainId) != 32 || len(intent.DeactivationGeneration) != 32 || intent.Nonce == 0 ||
-		(intent.Action != "retire" && intent.Action != "cancel" && intent.Action != "abandon") {
-		return &PluginDeliverResponse{Error: ErrInvalidTransaction("invalid settlement-domain lifecycle intent")}
 	}
 	params, err := c.currentProtocolParams()
 	if err != nil {
 		return &PluginDeliverResponse{Error: err}
 	}
 	domain, domainErr := settlementDomain(params, intent.SettlementDomainId, false)
-	if domainErr != nil || domain.Active {
-		return &PluginDeliverResponse{Error: ErrUnauthorized("lifecycle intent requires a governed inactive settlement domain")}
-	}
 	clock, clockErr := c.currentEpochClock(params)
-	if clockErr != nil {
-		return &PluginDeliverResponse{Error: clockErr}
+	if domainErr != nil || domain.State == domainStateResolved || clockErr != nil || intent.ValidatorSetId != clock.ValidatorSetId ||
+		intent.ActionNonce == 0 || !validAddress(intent.Target) || len(intent.Value) != 32 || len(intent.DataHash) != 32 || len(intent.Digest) != 32 {
+		return &PluginDeliverResponse{Error: ErrInvalidTransaction("invalid governed EVM action intent")}
 	}
 	if clock.ConsensusTimeSeconds == 0 || intent.ExpiresAtTimestamp <= clock.ConsensusTimeSeconds ||
-		intent.ExpiresAtTimestamp-clock.ConsensusTimeSeconds > maximumLifecycleIntentSeconds {
-		return &PluginDeliverResponse{Error: ErrInvalidTransaction("lifecycle intent expiry must be within seven days")}
+		intent.ExpiresAtTimestamp-clock.ConsensusTimeSeconds > maximumGovernanceIntentSeconds {
+		return &PluginDeliverResponse{Error: ErrInvalidTransaction("governed EVM action expiry must be within seven days")}
 	}
-	deactivation := new(SettlementDomainDeactivationSnapshot)
-	if found, readErr := c.read(KeyForSettlementDomainDeactivation(intent.SettlementDomainId), deactivation); readErr != nil {
+	if !bytes.Equal(intent.Digest, evmGovernanceActionDigest(domain, intent)) || !bytes.Equal(intent.Id, evmGovernanceActionIntentID(intent)) {
+		return &PluginDeliverResponse{Error: ErrInvalidTransaction("governed EVM action digest or identifier is invalid")}
+	}
+	prior := new(EVMGovernanceActionIntent)
+	if found, readErr := c.read(KeyForEVMGovernanceActionIntent(intent.SettlementDomainId), prior); readErr != nil {
 		return &PluginDeliverResponse{Error: readErr}
-	} else if !found || !bytes.Equal(deactivation.Generation, intent.DeactivationGeneration) {
-		return &PluginDeliverResponse{Error: ErrConflict("lifecycle intent does not match the current deactivation generation")}
-	}
-	prior := new(SettlementDomainLifecycleIntent)
-	if found, readErr := c.read(KeyForSettlementDomainLifecycleIntent(intent.SettlementDomainId), prior); readErr != nil {
-		return &PluginDeliverResponse{Error: readErr}
-	} else if found {
-		if prior.ExpiresAtTimestamp >= clock.ConsensusTimeSeconds {
-			return &PluginDeliverResponse{Error: ErrConflict("an unexpired settlement-domain lifecycle intent already exists")}
+	} else if found && prior.ExpiresAtTimestamp >= clock.ConsensusTimeSeconds {
+		proofID := quorumProofID("governance-action", prior.ValidatorSetId, prior.Digest)
+		if finalized, proofErr := c.read(KeyForQuorumProof(proofID), new(QuorumProof)); proofErr != nil {
+			return &PluginDeliverResponse{Error: proofErr}
+		} else if !finalized {
+			return &PluginDeliverResponse{Error: ErrConflict("an unfinalized governed EVM action already exists for this domain")}
 		}
-		if intent.Nonce != prior.Nonce+1 {
-			return &PluginDeliverResponse{Error: ErrConflict("lifecycle intent nonce must increase by one")}
-		}
-	} else if intent.Nonce != 1 {
-		return &PluginDeliverResponse{Error: ErrConflict("first lifecycle intent nonce must be one")}
 	}
-	expectedID := settlementDomainLifecycleIntentID(
-		intent.SettlementDomainId, intent.DeactivationGeneration, intent.Action, intent.Nonce, intent.ExpiresAtTimestamp,
-	)
-	if !bytes.Equal(intent.Id, expectedID) {
-		return &PluginDeliverResponse{Error: ErrInvalidTransaction("lifecycle intent identifier does not match its governed fields")}
-	}
-	if writeErr := c.write(map[string]proto.Message{string(KeyForSettlementDomainLifecycleIntent(intent.SettlementDomainId)): intent}); writeErr != nil {
-		return &PluginDeliverResponse{Error: writeErr}
-	}
-	return &PluginDeliverResponse{}
+	return &PluginDeliverResponse{Error: c.write(map[string]proto.Message{
+		string(KeyForEVMGovernanceActionIntent(intent.SettlementDomainId)): intent,
+	})}
 }
 
 func settlementDomainDeactivationGeneration(domainID []byte, revision, timestamp uint64) []byte {

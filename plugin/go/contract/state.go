@@ -185,8 +185,14 @@ func KeyForSettlementDomainRetirementCancellation(domainID, generation []byte) [
 func KeyForSettlementDomainRetirement(domainID []byte) []byte {
 	return JoinLenPrefix(rotationProofIndexPrefix, []byte("domain-retired"), domainID)
 }
-func KeyForSettlementDomainLifecycleIntent(domainID []byte) []byte {
-	return JoinLenPrefix(rotationProofIndexPrefix, []byte("domain-lifecycle-intent"), domainID)
+func KeyForSettlementDomainResolution(domainID []byte) []byte {
+	return KeyForSettlementDomainRetirement(domainID)
+}
+func KeyForSettlementDomainAction(domainID []byte) []byte {
+	return JoinLenPrefix(rotationProofIndexPrefix, []byte("domain-action"), domainID)
+}
+func KeyForEVMGovernanceActionIntent(domainID []byte) []byte {
+	return KeyForNativeAuthorizationIntent("evm-governance-action", domainID)
 }
 func KeyForQuorumShare(proofID, observer []byte) []byte {
 	return JoinLenPrefix(quorumSharePrefix, proofID, observer)

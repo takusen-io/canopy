@@ -18,7 +18,7 @@ const (
 
 var nativeCandidateCategoryLimits = map[string]int{
 	"priority": 32, "settlement": 64, "reward": 3, "bridge": 3,
-	"abandonment": 1, "lifecycle": 2,
+	"abandonment": 1, "lifecycle": 2, "governance": 2,
 }
 
 type certifiedEVMObservation struct {
@@ -145,17 +145,17 @@ func (c *Contract) nativeAuxiliaryCandidates(height uint64, params *ProtocolPara
 		appendCandidate("bridge", &AuxiliaryCandidate{Kind: "bridge-release-batch", Key: append([]byte(nil), batch.BatchId...), Digest: append([]byte(nil), batch.CanonicalChainDigest...), Payload: payload})
 	}
 
-	// Emergency abandonment is an explicit governed intent plus the delay
+	// Emergency abandonment is an explicit governed resolution plus the delay
 	// snapshotted when this domain was deactivated. Consensus participation
 	// certifies only that deterministic state; it is not itself a governance vote.
 	for _, domain := range params.SettlementDomains {
-		if len(result) == maxNativeAuxiliaryCandidates || domain == nil || domain.Active || len(domain.Id) != 32 {
+		if len(result) == maxNativeAuxiliaryCandidates || domain == nil || domain.State != domainStateDeactivated || len(domain.Id) != 32 {
 			continue
 		}
-		intent := new(SettlementDomainLifecycleIntent)
-		if found, readErr := c.read(KeyForSettlementDomainLifecycleIntent(domain.Id), intent); readErr != nil {
+		intent := new(SettlementDomainAction)
+		if found, readErr := c.read(KeyForSettlementDomainAction(domain.Id), intent); readErr != nil {
 			return nil, readErr
-		} else if !found || intent.Action != "abandon" || intent.ExpiresAtTimestamp < clock.ConsensusTimeSeconds {
+		} else if !found || intent.Action != "resolve" || intent.Resolution != "abandon" || intent.ExpiresAtTimestamp < clock.ConsensusTimeSeconds {
 			continue
 		}
 		deactivated := new(SettlementDomainDeactivationSnapshot)
@@ -190,17 +190,18 @@ func (c *Contract) nativeAuxiliaryCandidates(height uint64, params *ProtocolPara
 	}
 
 	for _, domain := range params.SettlementDomains {
-		if len(result) == maxNativeAuxiliaryCandidates || domain == nil || domain.Active || len(domain.Id) != 32 {
+		if len(result) == maxNativeAuxiliaryCandidates || domain == nil || domain.State != domainStateDeactivated || len(domain.Id) != 32 {
 			continue
 		}
-		intent := new(SettlementDomainLifecycleIntent)
-		if found, readErr := c.read(KeyForSettlementDomainLifecycleIntent(domain.Id), intent); readErr != nil {
+		intent := new(SettlementDomainAction)
+		if found, readErr := c.read(KeyForSettlementDomainAction(domain.Id), intent); readErr != nil {
 			return nil, readErr
-		} else if !found || intent.ExpiresAtTimestamp < clock.ConsensusTimeSeconds || intent.Action != "retire" && intent.Action != "cancel" {
+		} else if !found || intent.ExpiresAtTimestamp < clock.ConsensusTimeSeconds ||
+			(intent.Action != "resolve" || intent.Resolution != "clean") && intent.Action != "reactivate" {
 			continue
 		}
 		readinessKind, authorizationKind := "settlement-domain-retirement-readiness", "settlement-domain-retirement-action"
-		if intent.Action == "cancel" {
+		if intent.Action == "reactivate" {
 			readinessKind, authorizationKind = "settlement-domain-retirement-cancellation-readiness", "settlement-domain-retirement-cancellation"
 		}
 		readiness := new(QuorumProof)
@@ -225,6 +226,34 @@ func (c *Contract) nativeAuxiliaryCandidates(height uint64, params *ProtocolPara
 		}
 		key := hashFields(domain.Id, uint64Bytes(message.RotationNonce), message.HandoffGeneration, message.LifecycleIntentId)
 		appendCandidate("lifecycle", &AuxiliaryCandidate{Kind: authorizationKind, Key: key, Digest: append([]byte(nil), message.Digest...), Payload: payload})
+	}
+
+	// A human-approved Native intent is the only policy decision for an EVM
+	// administrative call. Consensus vote extensions create the exact proof the
+	// EVM executor consumes; validators never submit a second vote transaction.
+	for _, domain := range params.SettlementDomains {
+		if len(result) == maxNativeAuxiliaryCandidates || domain == nil || domain.State == domainStateResolved {
+			continue
+		}
+		intent := new(EVMGovernanceActionIntent)
+		if found, readErr := c.read(KeyForEVMGovernanceActionIntent(domain.Id), intent); readErr != nil {
+			return nil, readErr
+		} else if !found || intent.ValidatorSetId != clock.ValidatorSetId || intent.ExpiresAtTimestamp < clock.ConsensusTimeSeconds ||
+			!bytes.Equal(intent.SettlementDomainId, domain.Id) || !bytes.Equal(intent.Digest, evmGovernanceActionDigest(domain, intent)) ||
+			!bytes.Equal(intent.Id, evmGovernanceActionIntentID(intent)) {
+			continue
+		}
+		proofID := quorumProofID("governance-action", intent.ValidatorSetId, intent.Digest)
+		if found, proofErr := c.read(KeyForQuorumProof(proofID), new(QuorumProof)); proofErr != nil {
+			return nil, proofErr
+		} else if found {
+			continue
+		}
+		payload, marshalErr := Marshal(intent)
+		if marshalErr != nil {
+			return nil, marshalErr
+		}
+		appendCandidate("governance", &AuxiliaryCandidate{Kind: "governance-action", Key: append([]byte(nil), intent.Id...), Digest: append([]byte(nil), intent.Digest...), Payload: payload})
 	}
 
 	return result, nil
@@ -348,11 +377,11 @@ func (c *Contract) applyNativeAuxiliaryCertificate(height uint64, candidate *Aux
 			!bytes.Equal(candidate.Key, hashFields(message.SettlementDomainId, uint64Bytes(message.RotationNonce), message.HandoffGeneration, message.LifecycleIntentId)) {
 			return false
 		}
-		intent := new(SettlementDomainLifecycleIntent)
-		found, readErr := c.read(KeyForSettlementDomainLifecycleIntent(message.SettlementDomainId), intent)
-		readinessKind, expectedAction := "settlement-domain-retirement-readiness", "retire"
+		intent := new(SettlementDomainAction)
+		found, readErr := c.read(KeyForSettlementDomainAction(message.SettlementDomainId), intent)
+		readinessKind, expectedAction, expectedResolution := "settlement-domain-retirement-readiness", "resolve", "clean"
 		if candidate.Kind == "settlement-domain-retirement-cancellation" {
-			readinessKind, expectedAction = "settlement-domain-retirement-cancellation-readiness", "cancel"
+			readinessKind, expectedAction, expectedResolution = "settlement-domain-retirement-cancellation-readiness", "reactivate", ""
 		}
 		readiness := new(QuorumProof)
 		foundReadiness, readinessErr := c.read(KeyForNativeAuthorizationIntent(readinessKind, message.SettlementDomainId), readiness)
@@ -362,7 +391,7 @@ func (c *Contract) applyNativeAuxiliaryCertificate(height uint64, candidate *Aux
 		}
 		clock, clockErr := c.currentEpochClock(params)
 		if readErr != nil || !found || readinessErr != nil || !foundReadiness || clockErr != nil ||
-			intent.Action != expectedAction || intent.ExpiresAtTimestamp < clock.ConsensusTimeSeconds || message.HandoffTimestamp <= clock.ConsensusTimeSeconds ||
+			intent.Action != expectedAction || intent.Resolution != expectedResolution || intent.ExpiresAtTimestamp < clock.ConsensusTimeSeconds || message.HandoffTimestamp <= clock.ConsensusTimeSeconds ||
 			readiness.RotationNonce != message.RotationNonce || !bytes.Equal(readiness.Digest, message.Digest) ||
 			!bytes.Equal(intent.Id, message.LifecycleIntentId) || !bytes.Equal(intent.DeactivationGeneration, message.HandoffGeneration) {
 			return false
@@ -378,6 +407,23 @@ func (c *Contract) applyNativeAuxiliaryCertificate(height uint64, candidate *Aux
 		proof.LifecycleIntentId = append([]byte(nil), message.LifecycleIntentId...)
 		records[string(KeyForQuorumProof(proof.ProofId))] = proof
 		return true
+	case "governance-action":
+		intent := new(EVMGovernanceActionIntent)
+		if Unmarshal(candidate.Payload, intent) != nil || intent.ValidatorSetId != certificate.ValidatorSetId ||
+			!bytes.Equal(candidate.Key, intent.Id) || !bytes.Equal(candidate.Digest, intent.Digest) ||
+			!bytes.Equal(intent.Id, evmGovernanceActionIntentID(intent)) {
+			return false
+		}
+		params, paramsErr := c.currentProtocolParams()
+		if paramsErr != nil {
+			return false
+		}
+		domain, domainErr := settlementDomain(params, intent.SettlementDomainId, false)
+		clock, clockErr := c.currentEpochClock(params)
+		if domainErr != nil || clockErr != nil || domain.State == domainStateResolved ||
+			intent.ExpiresAtTimestamp < clock.ConsensusTimeSeconds || !bytes.Equal(intent.Digest, evmGovernanceActionDigest(domain, intent)) {
+			return false
+		}
 	default:
 		return true
 	}
@@ -393,12 +439,12 @@ func (c *Contract) persistCertifiedNativeAbandonment(height uint64, message *EVM
 	}
 	domain, domainErr := settlementDomain(params, message.SettlementDomainId, false)
 	clock, clockErr := c.currentEpochClock(params)
-	intent := new(SettlementDomainLifecycleIntent)
-	foundIntent, intentErr := c.read(KeyForSettlementDomainLifecycleIntent(message.SettlementDomainId), intent)
+	intent := new(SettlementDomainAction)
+	foundIntent, intentErr := c.read(KeyForSettlementDomainAction(message.SettlementDomainId), intent)
 	deactivated := new(SettlementDomainDeactivationSnapshot)
 	foundDeactivation, deactivationErr := c.read(KeyForSettlementDomainDeactivation(message.SettlementDomainId), deactivated)
-	if domainErr != nil || domain.Active || clockErr != nil || intentErr != nil || !foundIntent || deactivationErr != nil || !foundDeactivation ||
-		intent.Action != "abandon" || intent.ExpiresAtTimestamp < clock.ConsensusTimeSeconds ||
+	if domainErr != nil || domain.State != domainStateDeactivated || clockErr != nil || intentErr != nil || !foundIntent || deactivationErr != nil || !foundDeactivation ||
+		intent.Action != "resolve" || intent.Resolution != "abandon" || intent.ExpiresAtTimestamp < clock.ConsensusTimeSeconds ||
 		len(deactivated.Generation) != 32 || deactivated.Timestamp == 0 ||
 		deactivated.AbandonmentDelaySeconds < minimumDomainAbandonmentDelaySeconds || message.Epoch != deactivated.Timestamp ||
 		clock.ConsensusTimeSeconds != message.ControlBlockNumber || clock.ConsensusTimeSeconds < deactivated.Timestamp ||
@@ -424,11 +470,41 @@ func (c *Contract) persistCertifiedNativeAbandonment(height uint64, message *EVM
 		SettlementDomainId: append([]byte(nil), message.SettlementDomainId...), HandoffGeneration: append([]byte(nil), message.HandoffGeneration...),
 		LifecycleIntentId: append([]byte(nil), message.LifecycleIntentId...), ControlBlockNumber: message.ControlBlockNumber,
 	}
-	records[string(KeyForSettlementDomainRetirement(message.SettlementDomainId))] = &ReplayMarker{Id: proofID}
+	if !c.stageResolvedDomain(params, message.SettlementDomainId, message.HandoffGeneration, "ABANDONED", message.LifecycleIntentId, proofID, clock.ConsensusTimeSeconds, records) {
+		return false
+	}
 	if clock.ValidatorHandoffPrepared && handoffIncludesDomain(clock, message.SettlementDomainId) {
 		if c.markValidatorHandoffResolved(clock, message.SettlementDomainId, proofID, records) != nil {
 			return false
 		}
+	}
+	return true
+}
+
+func (c *Contract) stageResolvedDomain(params *ProtocolParams, domainID, generation []byte, outcome string, actionID, proofID []byte, timestamp uint64, records map[string]proto.Message) bool {
+	if params == nil || len(domainID) != 32 || len(generation) != 32 || (outcome != "RETIRED" && outcome != "ABANDONED") ||
+		len(actionID) != 32 || len(proofID) != 32 || timestamp == 0 {
+		return false
+	}
+	next := proto.Clone(params).(*ProtocolParams)
+	found := false
+	for _, domain := range next.SettlementDomains {
+		if domain != nil && bytes.Equal(domain.Id, domainID) {
+			if domain.State != domainStateDeactivated {
+				return false
+			}
+			domain.State = domainStateResolved
+			found = true
+			break
+		}
+	}
+	if !found {
+		return false
+	}
+	records[string(KeyForProtocolParams())] = next
+	records[string(KeyForSettlementDomainResolution(domainID))] = &SettlementDomainResolution{
+		SettlementDomainId: append([]byte(nil), domainID...), DeactivationGeneration: append([]byte(nil), generation...),
+		Outcome: outcome, GovernanceActionId: append([]byte(nil), actionID...), ProofId: append([]byte(nil), proofID...), CompletedTimestamp: timestamp,
 	}
 	return true
 }
@@ -598,14 +674,14 @@ func (c *Contract) persistCertifiedEVMControlEvidence(height uint64, message *EV
 		}
 		clock, clockErr := c.currentEpochClock(params)
 		domain, domainErr := settlementDomain(params, message.SettlementDomainId, false)
-		intent := new(SettlementDomainLifecycleIntent)
-		found, intentErr := c.read(KeyForSettlementDomainLifecycleIntent(message.SettlementDomainId), intent)
-		expectedAction := "retire"
+		intent := new(SettlementDomainAction)
+		found, intentErr := c.read(KeyForSettlementDomainAction(message.SettlementDomainId), intent)
+		expectedAction, expectedResolution := "resolve", "clean"
 		if message.ProofKind == "settlement-domain-retirement-cancellation-readiness" {
-			expectedAction = "cancel"
+			expectedAction, expectedResolution = "reactivate", ""
 		}
-		if clockErr != nil || domainErr != nil || domain.Active || intentErr != nil || !found ||
-			intent.Action != expectedAction || intent.ExpiresAtTimestamp < clock.ConsensusTimeSeconds || message.RotationNonce == 0 ||
+		if clockErr != nil || domainErr != nil || domain.State != domainStateDeactivated || intentErr != nil || !found ||
+			intent.Action != expectedAction || intent.Resolution != expectedResolution || intent.ExpiresAtTimestamp < clock.ConsensusTimeSeconds || message.RotationNonce == 0 ||
 			message.HandoffTimestamp == 0 || message.ControlBlockNumber == 0 || len(message.ControlBlockHash) != 32 ||
 			!bytes.Equal(intent.Id, message.LifecycleIntentId) || !bytes.Equal(intent.DeactivationGeneration, message.HandoffGeneration) {
 			return false
@@ -617,13 +693,13 @@ func (c *Contract) persistCertifiedEVMControlEvidence(height uint64, message *EV
 			return false
 		}
 		domain, domainErr := settlementDomain(params, message.SettlementDomainId, false)
-		intent := new(SettlementDomainLifecycleIntent)
-		found, intentErr := c.read(KeyForSettlementDomainLifecycleIntent(message.SettlementDomainId), intent)
-		expectedAction := "retire"
+		intent := new(SettlementDomainAction)
+		found, intentErr := c.read(KeyForSettlementDomainAction(message.SettlementDomainId), intent)
+		expectedAction, expectedResolution := "resolve", "clean"
 		if message.ProofKind == "settlement-domain-retirement-cancelled" {
-			expectedAction = "cancel"
+			expectedAction, expectedResolution = "reactivate", ""
 		}
-		if domainErr != nil || domain.Active || intentErr != nil || !found || intent.Action != expectedAction ||
+		if domainErr != nil || domain.State != domainStateDeactivated || intentErr != nil || !found || intent.Action != expectedAction || intent.Resolution != expectedResolution ||
 			message.RotationNonce == 0 || message.ControlBlockNumber == 0 || len(message.ControlBlockHash) != 32 ||
 			!bytes.Equal(intent.Id, message.LifecycleIntentId) || !bytes.Equal(intent.DeactivationGeneration, message.HandoffGeneration) {
 			return false
@@ -673,10 +749,41 @@ func (c *Contract) persistCertifiedEVMControlEvidence(height uint64, message *EV
 		records[string(KeyForNativeAuthorizationIntent(message.ProofKind, message.SettlementDomainId))] = proof
 	case "settlement-domain-retirement-cancelled":
 		records[string(KeyForSettlementDomainRetirementCancellation(message.SettlementDomainId, message.HandoffGeneration))] = &ReplayMarker{Id: proofID}
+		params, paramsErr := c.currentProtocolParams()
+		clock, clockErr := c.currentEpochClock(params)
+		if paramsErr != nil || clockErr != nil || !c.stageReactivatedDomain(params, message.SettlementDomainId, clock.ValidatorSetId, records) {
+			return false
+		}
 	case "settlement-domain-retired":
-		records[string(KeyForSettlementDomainRetirement(message.SettlementDomainId))] = &ReplayMarker{Id: proofID}
+		params, paramsErr := c.currentProtocolParams()
+		clock, clockErr := c.currentEpochClock(params)
+		if paramsErr != nil || clockErr != nil ||
+			!c.stageResolvedDomain(params, message.SettlementDomainId, message.HandoffGeneration, "RETIRED", message.LifecycleIntentId, proofID, clock.ConsensusTimeSeconds, records) {
+			return false
+		}
 	}
 	return true
+}
+
+func (c *Contract) stageReactivatedDomain(params *ProtocolParams, domainID []byte, validatorSetID uint64, records map[string]proto.Message) bool {
+	if params == nil || len(domainID) != 32 || validatorSetID == 0 {
+		return false
+	}
+	if found, err := c.read(KeyForSettlementDomainAuthority(domainID, validatorSetID), new(ReplayMarker)); err != nil || !found {
+		return false
+	}
+	next := proto.Clone(params).(*ProtocolParams)
+	for _, domain := range next.SettlementDomains {
+		if domain != nil && bytes.Equal(domain.Id, domainID) {
+			if domain.State != domainStateDeactivated {
+				return false
+			}
+			domain.State = domainStateActive
+			records[string(KeyForProtocolParams())] = next
+			return true
+		}
+	}
+	return false
 }
 
 func (c *Contract) stageDomainRotationNonce(domainID []byte, nonce uint64, records map[string]proto.Message) bool {

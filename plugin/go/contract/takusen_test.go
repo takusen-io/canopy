@@ -18,13 +18,13 @@ import (
 
 const testRequestArchiveID = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 
-func TestProtocolV5ExposesOneTransactionPerTrustBoundary(t *testing.T) {
+func TestProtocolV6ExposesOneTransactionPerTrustBoundary(t *testing.T) {
 	expected := []string{
 		MessageRegisterServicerName, MessageManageServicerName,
 		MessageBeginServicerUnstakeName,
 		MessageObserveDepositName, MessageResolveDepositName, MessageResolveSettlementName,
 		MessageObserveAuthorizationsName, MessageQueueAuthorizationName,
-		MessageSubmitExecutionsName, MessageFinalizeRequestsName, MessageGovernanceVoteName,
+		MessageSubmitExecutionsName, MessageFinalizeRequestsName,
 		MessageObserveBridgeLockName, MessageObserveBridgeReleaseName, MessageObserveEpochMintName,
 		MessageBurnBridgeName, MessageSetProducerPayoutName,
 	}

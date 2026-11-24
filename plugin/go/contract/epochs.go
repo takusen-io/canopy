@@ -346,13 +346,14 @@ func validatePreparedValidatorHandoff(clock *EpochClock, chainID uint64) *Plugin
 	return nil
 }
 
-// authorityHandoffDomains includes every governed custody/verifier domain.
-// Active controls user traffic only; it never permits stale validator
-// authority to survive on a staged or temporarily disabled EVM deployment.
+// authorityHandoffDomains includes every domain that has ever been active and
+// still needs live validator authority. Never-active staged domains have no
+// authority to rotate, while resolved domains are permanently closed.
 func authorityHandoffDomains(params *ProtocolParams) [][]byte {
 	domains := make([][]byte, 0, len(params.SettlementDomains))
 	for _, domain := range params.SettlementDomains {
-		if domain != nil && len(domain.Id) == 32 {
+		if domain != nil && len(domain.Id) == 32 &&
+			(domain.State == domainStateActive || domain.State == domainStateDeactivated) {
 			domains = append(domains, append([]byte(nil), domain.Id...))
 		}
 	}
