@@ -577,7 +577,7 @@ func TestAdversarialExecutionRejectsDuplicatesAndRevokedEnclave(t *testing.T) {
 		executionID := assignmentExecutionID(testSettlementDomainID(), id, "model", first, inputHash[:])
 		store.put(t, KeyForRequest(id), &RequestRecord{SettlementDomainId: testSettlementDomainID(),
 			RequestId: id, InputHash: inputHash[:], Requester: first,
-			OutputType: "boolean", Models: testModelBudgets(100, "model"), PricingPolicy: testPricingPolicy(), ExecutionQuorum: 1, DeadlineHeight: 30,
+			OutputType: "boolean", Models: testModelBudgets(100, "model"), PricingPolicy: testPricingPolicy(), DisplayAgreementThreshold: 1, DeadlineHeight: 30,
 			Assignments: []*Assignment{{Model: "model", Provider: "provider", ServicerAddress: first, ExecutionId: executionID, TeeKeyId: keyID, MaxProviderCost: 100}}, Status: "authorized",
 		})
 		store.put(t, KeyForReservation(testSettlementDomainID(), id), &ReservationRecord{SettlementDomainId: testSettlementDomainID(), RequestId: id, Requester: first, Budget: 100, Status: "reserved"})
@@ -1363,7 +1363,7 @@ func TestZeroCostEnclaveReceiptImmediatelySlashesAndLeavesAssignmentRetryable(t 
 	store.put(t, KeyForProtocolParams(), params)
 	store.put(t, KeyForRequest("request"), &RequestRecord{SettlementDomainId: testSettlementDomainID(),
 		RequestId: "request", Requester: owner, InputHash: inputHash[:], OutputType: "boolean",
-		Models: testModelBudgets(100, "model"), PricingPolicy: testPricingPolicy(), ExecutionQuorum: 1, Status: "authorized", DeadlineHeight: 100,
+		Models: testModelBudgets(100, "model"), PricingPolicy: testPricingPolicy(), DisplayAgreementThreshold: 1, Status: "authorized", DeadlineHeight: 100,
 		Assignments: []*Assignment{{Model: "model", Provider: "provider", ServicerAddress: owner, ExecutionId: assignmentExecutionID(testSettlementDomainID(), "request", "model", owner, inputHash[:]), TeeKeyId: keyID, MaxProviderCost: 100}},
 	})
 	store.put(t, KeyForReservation(testSettlementDomainID(), "request"), &ReservationRecord{SettlementDomainId: testSettlementDomainID(), RequestId: "request", Requester: owner, Budget: 100, Status: "reserved"})
@@ -1442,7 +1442,7 @@ func TestAssignmentProviderCostLimitIsConsensusAuthenticated(t *testing.T) {
 			store.put(t, KeyForProtocolParams(), func() *ProtocolParams { p := defaultProtocolParams(); p.Revision = 1; return p }())
 			store.put(t, KeyForRequest("request"), &RequestRecord{
 				SettlementDomainId: testSettlementDomainID(), RequestId: "request", Requester: owner, InputHash: inputHash[:],
-				OutputType: "boolean", Models: testModelBudgets(100, "model"), PricingPolicy: testPricingPolicy(), ExecutionQuorum: 1, Status: "authorized", DeadlineHeight: 100,
+				OutputType: "boolean", Models: testModelBudgets(100, "model"), PricingPolicy: testPricingPolicy(), DisplayAgreementThreshold: 1, Status: "authorized", DeadlineHeight: 100,
 				Assignments: []*Assignment{{Model: "model", Provider: "provider", ServicerAddress: owner, ExecutionId: executionID, TeeKeyId: keyID, MaxProviderCost: 100}},
 			})
 			store.put(t, KeyForReservation(testSettlementDomainID(), "request"), &ReservationRecord{SettlementDomainId: testSettlementDomainID(), RequestId: "request", Requester: owner, Budget: 100, Status: "reserved"})
@@ -1488,7 +1488,7 @@ func TestFinalReceiptMakesRequestReadyOnlyAfterAllAssignmentsResolve(t *testing.
 	store.put(t, KeyForProtocolParams(), params)
 	store.put(t, KeyForRequest("late"), &RequestRecord{SettlementDomainId: testSettlementDomainID(),
 		RequestId: "late", Requester: requester, InputHash: inputHash[:],
-		OutputType: "boolean", Models: testModelBudgets(200, "prior", "model"), PricingPolicy: testPricingPolicy(), ExecutionQuorum: 1, Status: "authorized", DeadlineHeight: 100,
+		OutputType: "boolean", Models: testModelBudgets(200, "prior", "model"), PricingPolicy: testPricingPolicy(), DisplayAgreementThreshold: 1, Status: "authorized", DeadlineHeight: 100,
 		Assignments: []*Assignment{
 			{Model: "prior", Completed: true, ExecutionId: "prior-execution"},
 			{Model: "model", Provider: "provider", ServicerAddress: owner, ExecutionId: assignmentExecutionID(testSettlementDomainID(), "late", "model", owner, inputHash[:]), TeeKeyId: keyID, MaxProviderCost: 100},

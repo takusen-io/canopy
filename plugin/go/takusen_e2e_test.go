@@ -262,7 +262,7 @@ func TestTakusenConsensusE2E(t *testing.T) {
 	observeAuthorization := func() (*contract.Authorization, map[string]any) {
 		message := &contract.Authorization{
 			SettlementDomainId: settlementDomain, RequestId: requestID, InputHash: inputHash[:], Requester: requesterAddress,
-			ReservedBudget: 100_000, OutputType: "boolean", Models: []*contract.ModelBudget{{Model: models[0], Budget: 100_000}}, ExecutionQuorum: 1,
+			ReservedBudget: 100_000, OutputType: "boolean", Models: []*contract.ModelBudget{{Model: models[0], Budget: 100_000}}, DisplayAgreementThreshold: 1,
 			DeadlineHeight: height + 100, AuthorizationDeadline: height + 100, DirectEoa: true,
 			RequestArchiveId: "sha256:" + hex.EncodeToString(inputHash[:]), OutputMinimum: 0, OutputMaximum: 1,
 		}
@@ -282,7 +282,7 @@ func TestTakusenConsensusE2E(t *testing.T) {
 			"requestId": requestID, "settlementDomainId": hex.EncodeToString(settlementDomain), "inputHash": hex.EncodeToString(inputHash[:]), "requester": hex.EncodeToString(requesterAddress),
 			"reservedBudget": message.ReservedBudget, "outputType": message.OutputType,
 			"models":          []map[string]any{{"model": models[0], "budget": uint64(100_000)}},
-			"executionQuorum": message.ExecutionQuorum, "deadlineHeight": message.DeadlineHeight,
+			"displayAgreementThreshold": message.DisplayAgreementThreshold, "deadlineHeight": message.DeadlineHeight,
 			"authorizationSignature": hex.EncodeToString(message.AuthorizationSignature), "authorizationDeadline": message.AuthorizationDeadline,
 			"directEoa": true, "requestArchiveId": message.RequestArchiveId, "outputMinimum": message.OutputMinimum,
 			"outputMaximum": message.OutputMaximum, "schemaHash": hex.EncodeToString(message.SchemaHash),

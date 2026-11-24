@@ -194,9 +194,9 @@ func checkResolveSettlement(message *MessageResolveSettlement) ([]byte, *PluginE
 func checkAuthorizationItem(message *Authorization) ([]byte, *PluginError) {
 	if !validHash(message.SettlementDomainId) || message.RequestId == "" || len(message.RequestId) > 128 ||
 		!validHash(message.InputHash) || !validAddress(message.Requester) || message.ReservedBudget == 0 ||
-		!validOutputType(message.OutputType) || !validRequestModels(message.Models, message.ReservedBudget) || message.ExecutionQuorum == 0 ||
+		!validOutputType(message.OutputType) || !validRequestModels(message.Models, message.ReservedBudget) || message.DisplayAgreementThreshold == 0 ||
 		!validRequestOutputSchema(message) ||
-		int(message.ExecutionQuorum) > len(message.Models) || message.DeadlineHeight == 0 ||
+		int(message.DisplayAgreementThreshold) > len(message.Models) || message.DeadlineHeight == 0 ||
 		len(message.AuthorizationSignature) == 0 || message.AuthorizationDeadline == 0 ||
 		((message.AuthorizationChainBlockNumber == 0) != (len(message.AuthorizationChainBlockHash) == 0)) ||
 		(len(message.AuthorizationChainBlockHash) != 0 && len(message.AuthorizationChainBlockHash) != 32) ||

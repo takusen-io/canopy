@@ -50,7 +50,7 @@ func authorizationSubject(message *Authorization) []byte {
 		[]byte("takusen:signed-authorization"), []byte(message.RequestId), message.InputHash,
 		message.SettlementDomainId,
 		message.Requester, uint64Bytes(message.ReservedBudget), []byte(message.OutputType),
-		modelBudgetBytes(message.Models), uint32Bytes(message.ExecutionQuorum),
+		modelBudgetBytes(message.Models), uint32Bytes(message.DisplayAgreementThreshold),
 		uint64Bytes(uint64(message.OutputMinimum)), uint64Bytes(uint64(message.OutputMaximum)),
 		stringListBytes(message.OutputChoices), message.SchemaHash,
 		uint64Bytes(message.DeadlineHeight), message.AuthorizationSignature, uint64Bytes(message.AuthorizationDeadline),

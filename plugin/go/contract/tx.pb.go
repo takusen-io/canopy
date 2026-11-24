@@ -911,10 +911,10 @@ type Authorization struct {
 	OutputType     string                 `protobuf:"bytes,5,opt,name=output_type,json=outputType,proto3" json:"output_type,omitempty"`
 	Models         []*ModelBudget         `protobuf:"bytes,6,rep,name=models,proto3" json:"models,omitempty"`
 	// Display-only agreement observation threshold.
-	ExecutionQuorum        uint32 `protobuf:"varint,7,opt,name=execution_quorum,json=executionQuorum,proto3" json:"execution_quorum,omitempty"`
-	DeadlineHeight         uint64 `protobuf:"varint,8,opt,name=deadline_height,json=deadlineHeight,proto3" json:"deadline_height,omitempty"`
-	AuthorizationSignature []byte `protobuf:"bytes,9,opt,name=authorization_signature,json=authorizationSignature,proto3" json:"authorization_signature,omitempty"`
-	AuthorizationDeadline  uint64 `protobuf:"varint,10,opt,name=authorization_deadline,json=authorizationDeadline,proto3" json:"authorization_deadline,omitempty"`
+	DisplayAgreementThreshold uint32 `protobuf:"varint,7,opt,name=display_agreement_threshold,json=displayAgreementThreshold,proto3" json:"display_agreement_threshold,omitempty"`
+	DeadlineHeight            uint64 `protobuf:"varint,8,opt,name=deadline_height,json=deadlineHeight,proto3" json:"deadline_height,omitempty"`
+	AuthorizationSignature    []byte `protobuf:"bytes,9,opt,name=authorization_signature,json=authorizationSignature,proto3" json:"authorization_signature,omitempty"`
+	AuthorizationDeadline     uint64 `protobuf:"varint,10,opt,name=authorization_deadline,json=authorizationDeadline,proto3" json:"authorization_deadline,omitempty"`
 	// direct_eoa lets the native state machine verify an ordinary EOA's EIP-712
 	// signature itself. Contract-wallet signatures retain validator observation.
 	DirectEoa bool `protobuf:"varint,11,opt,name=direct_eoa,json=directEoa,proto3" json:"direct_eoa,omitempty"`
@@ -1007,9 +1007,9 @@ func (x *Authorization) GetModels() []*ModelBudget {
 	return nil
 }
 
-func (x *Authorization) GetExecutionQuorum() uint32 {
+func (x *Authorization) GetDisplayAgreementThreshold() uint32 {
 	if x != nil {
-		return x.ExecutionQuorum
+		return x.DisplayAgreementThreshold
 	}
 	return 0
 }
@@ -2335,7 +2335,7 @@ const file_tx_proto_rawDesc = "" +
 	"request_id\x18\x03 \x01(\tR\trequestId\x12,\n" +
 	"\x12settlement_tx_hash\x18\x04 \x01(\fR\x10settlementTxHash\x12#\n" +
 	"\rexecution_ids\x18\x05 \x03(\tR\fexecutionIds\x12+\n" +
-	"\x11finalizes_request\x18\x06 \x01(\bR\x10finalizesRequest\"\xc8\x06\n" +
+	"\x11finalizes_request\x18\x06 \x01(\bR\x10finalizesRequest\"\xdd\x06\n" +
 	"\rAuthorization\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12\x1d\n" +
@@ -2345,8 +2345,8 @@ const file_tx_proto_rawDesc = "" +
 	"\x0freserved_budget\x18\x04 \x01(\x04R\x0ereservedBudget\x12\x1f\n" +
 	"\voutput_type\x18\x05 \x01(\tR\n" +
 	"outputType\x12*\n" +
-	"\x06models\x18\x06 \x03(\v2\x12.types.ModelBudgetR\x06models\x12)\n" +
-	"\x10execution_quorum\x18\a \x01(\rR\x0fexecutionQuorum\x12'\n" +
+	"\x06models\x18\x06 \x03(\v2\x12.types.ModelBudgetR\x06models\x12>\n" +
+	"\x1bdisplay_agreement_threshold\x18\a \x01(\rR\x19displayAgreementThreshold\x12'\n" +
 	"\x0fdeadline_height\x18\b \x01(\x04R\x0edeadlineHeight\x127\n" +
 	"\x17authorization_signature\x18\t \x01(\fR\x16authorizationSignature\x125\n" +
 	"\x16authorization_deadline\x18\n" +

@@ -251,7 +251,7 @@ func (c *Contract) stageAuthenticatedExecution(height uint64, servicerAddress []
 		request.ConsensusOutputHash = consensusHash
 		request.AgreementCount = agreement
 	} else {
-		// execution_quorum is requester-facing observation metadata only. Every
+		// display_agreement_threshold is requester-facing observation metadata only. Every
 		// selected assignment continues independently until it returns valid work
 		// or exhausts its own retries.
 		request.Status = "authorized"

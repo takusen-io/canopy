@@ -132,7 +132,7 @@ message Authorization {
   string output_type = 5;
   repeated ModelBudget models = 6;
   // Display-only agreement observation threshold.
-  uint32 execution_quorum = 7;
+  uint32 display_agreement_threshold = 7;
   uint64 deadline_height = 8;
   bytes authorization_signature = 9;
   uint64 authorization_deadline = 10;

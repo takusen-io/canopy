@@ -165,7 +165,7 @@ func TestAuthorizationSubjectBindsContent(t *testing.T) {
 	message := &Authorization{SettlementDomainId: testSettlementDomainID(),
 		RequestId: "request", InputHash: make([]byte, 32),
 		Requester: make([]byte, 20), ReservedBudget: 100, OutputType: "boolean", Models: testModelBudgets(100, "model"),
-		ExecutionQuorum: 1, DeadlineHeight: 100,
+		DisplayAgreementThreshold: 1, DeadlineHeight: 100,
 	}
 	first := authorizationSubject(message)
 	message.ReservedBudget++
