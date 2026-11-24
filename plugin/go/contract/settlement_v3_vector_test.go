@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestProtocolV5SettlementDigestMatchesEVMVector(t *testing.T) {
+func TestProtocolV6SettlementDigestMatchesEVMVector(t *testing.T) {
 	domain := mustHex("0xe61c642ed6163bf7964492c21077aae61e1427acd195e16e0a705c65a2943889", 32)
 	requestID := sha256.Sum256([]byte("request-1"))
 	modelID := sha256.Sum256([]byte("model-1"))
@@ -29,7 +29,7 @@ func TestProtocolV5SettlementDigestMatchesEVMVector(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := hex.EncodeToString(digest); got != "95e2315fd7a737af019844252675429a5c15c4e57d069af04533c892beba7355" {
-		t.Fatalf("v5 settlement digest = %s", got)
+	if got := hex.EncodeToString(digest); got != "1adab07f8f91cf5a5b9f1257a1eb3828532f16bb35328dd14f88fc3d8ff147f3" {
+		t.Fatalf("v6 settlement digest = %s", got)
 	}
 }

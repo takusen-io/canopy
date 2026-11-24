@@ -509,7 +509,7 @@ func assignmentExecutionID(settlementDomain []byte, requestID, model string, ser
 	requestHash := sha256.Sum256([]byte(requestID))
 	modelHash := sha256.Sum256([]byte(model))
 	hash := sha256.New()
-	_, _ = hash.Write([]byte("takusen:execution:v5"))
+	_, _ = hash.Write([]byte("takusen:execution:v6"))
 	_, _ = hash.Write(settlementDomain)
 	_, _ = hash.Write(requestHash[:])
 	_, _ = hash.Write(modelHash[:])

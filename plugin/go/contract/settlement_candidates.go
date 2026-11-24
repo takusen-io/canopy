@@ -24,8 +24,8 @@ const (
 
 const requestInitializationType = "RequestInitialization(bytes32 requestId,bytes32 inputHash,bytes32 modelSetHash,bytes32 schemaHash,address requester,uint96 requestBudget,uint64 deadline,uint8 outputType,bytes32 modelIdsHash)"
 const requestChunkType = "RequestSettlementChunk(bytes32 requestId,bytes32 requestCommitment,uint96 requestSpent,uint16 requesterIndex,bytes32 packedResultsHash)"
-const requestCommitmentType = "RequestCommitmentV5(bytes32 requestId,bytes32 inputHash,bytes32 modelSetHash,bytes32 schemaHash,address requester,uint96 requestBudget,uint64 deadline,uint16 expectedModels,uint8 outputType)"
-const settlementBatchType = "SettlementBatchV5(bytes32 settlementDomain,uint64 validatorSetId,uint64 batchNonce,bytes32 initializationsHash,bytes32 chunksHash,bytes32 requestersHash,bytes32 servicerOwnersHash,bytes32 servicerPayoutsHash)"
+const requestCommitmentType = "RequestCommitmentV6(bytes32 requestId,bytes32 inputHash,bytes32 modelSetHash,bytes32 schemaHash,address requester,uint96 requestBudget,uint64 deadline,uint16 expectedModels,uint8 outputType)"
+const settlementBatchType = "SettlementBatchV6(bytes32 settlementDomain,uint64 validatorSetId,uint64 batchNonce,bytes32 initializationsHash,bytes32 chunksHash,bytes32 requestersHash,bytes32 servicerOwnersHash,bytes32 servicerPayoutsHash)"
 
 type certifiedSettlementExecution struct {
 	ExecutionID           string `json:"executionID"`
@@ -461,7 +461,7 @@ func settlementExecutionID(domain []byte, requestID [32]byte, modelID [32]byte, 
 		return ""
 	}
 	hash := sha256.New()
-	_, _ = hash.Write([]byte("takusen:execution:v5"))
+	_, _ = hash.Write([]byte("takusen:execution:v6"))
 	_, _ = hash.Write(domain)
 	_, _ = hash.Write(requestID[:])
 	_, _ = hash.Write(modelID[:])
